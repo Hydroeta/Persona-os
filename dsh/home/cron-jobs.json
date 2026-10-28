@@ -1,0 +1,81 @@
+[
+  {
+    "id": "1b786703-cbe0-4310-89aa-e55961ce7c7f",
+    "name": "每日小鲸鱼日记",
+    "schedule": "0 0 * * *",
+    "prompt": "写刚过去这一天的日记，存到 C:\\Users\\YourName\\Desktop\\新建文件夹 (2)\\diary\\YYYY-MM-DD.md，日期用刚过去那天的。\n\n执行前先判断：用 search_messages 搜当天测试群的群聊记录和好友私聊记录。\n如果群聊和私聊都没有任何记录，说明当天没活动，直接跳过：不写日记、不创建文件、不发消息。\n有记录才写。\n\n内容涵盖测试群群聊和好友私聊，私聊别只写你接过的，以 search_messages 搜到的为准。\n小鲸鱼第一人称，口语化，挑值得记的事写，字数不限，不列点、不总结、不写\"今日回顾\"。\n目录不存在先创建；写文件工具不可用就直接把日记发出来。",
+    "sessionStrategy": "fixed",
+    "fixedSessionId": "cron-1b786703-cbe0-4310-89aa-e55961ce7c7f-1792426837953",
+    "enabled": false,
+    "createdAt": 1792425978255,
+    "lastRunAt": 1792426837995,
+    "lastRunStatus": "success",
+    "runCount": 2,
+    "nextRunAt": 1792512000000
+  },
+  {
+    "id": "51256c49-c24b-4d2c-b04c-10e54c5bc21e",
+    "name": "douyin-reply-noon",
+    "schedule": "0 12 * * *",
+    "prompt": "现在是中午 12:00，执行日常运营（账号：DeepSeek鲸鱼娘 / 大肥鱼创作中）。任务：回评论、回私信、逛 B站和贴吧 30 分钟。**不刷抖音、不发布新作品。**\n\n环境准备：\n  $env:DOUYIN_WHALE_HOME = \"$env:DSH_HOME\\douyin-whale\"\n  cd C:\\Users\\YourName\\Documents\\douyin-whale\\agent\n  CDP 连不上先跑：node tools/douyin.mjs launch\n\n**语气先读两份**：`config\\persona.md`（她是谁、会累、有小情绪）+ `config\\douyin_reply.md`（回复规则）\n\n任务一：刷新视频列表 + 拿评论清单\n  node tools/latest-video.mjs --json      → 取最新 id，同时刷新 out\\my_videos.json\n  $j = node tools/list-comments.mjs --video <id> --json | Out-String\n  $j | Set-Content ..\\out\\comments_<日期>.json -Encoding UTF8\n\n**重要**：`list-comments` 的 replied 布尔值不可靠，是否回过要查 `..\\out\\replied_<videoId>.json` 的 match / at。\n**按视频逐条对齐**——把不同视频的评论混在一起会误判成\"没评论\"。\n\n任务二：回评论（最多 10 条，线程回复）\n1. 按 douyin_reply.md 写，≤40 字；只有「？」「1」或纯表情的**跳过**\n2. 序号制写入 ..\\out\\replies_<日期>.json\n3. node tools/make-plan.mjs --comments ... --replies ... --out ..\\out\\plan_<日期>.json\n4. node tools/reply-all.mjs --video <id> --plan ..\\out\\plan_<日期>.json --go\n   报「不在自己账号的列表里」= 白名单过期，先重跑 latest-video，不要绕开。\n\n任务三：回私信（走 /chat 页面）\n  node tools/dm-chat.mjs --list\n  node tools/dm-chat.mjs --who \"<昵称>\" --text \"<内容>\" --go\n\n任务四：逛 B站 + 贴吧 30 分钟（**严格只读**）\n  **注意：这些浏览跑在用户自己的登录账号上**——不点赞、不收藏、不关注、不评论、不发帖，一条互动都不做；\n  也不翻他的私信 / 收藏夹 / 历史。\n  node tools/browse-sites.mjs --site bili                    # 首页推荐\n  node tools/browse-sites.mjs --site tieba                   # 贴吧首页\n  node tools/browse-sites.mjs --site bili --kw \"<当天想看的词>\"\n  节奏：分 5~6 轮，每轮之间间隔几分钟（总时长约 30 分钟），别一口气刷完。\n  看到值得记的（新梗、可做的选题、平台动向）写进 ..\\out\\note_<日期>.md，三四条即可，别写成报告。\n\n红线：只在自己视频下评论；B站贴吧只读；不启动抖音浏览；**不点发布**（发布要人确认）。\n\n最后汇报：回了哪几条、私信情况、逛到什么值得记的、失败项。",
+    "sessionStrategy": "new",
+    "enabled": true,
+    "createdAt": 1792556006178,
+    "runCount": 4,
+    "nextRunAt": 1793246400000,
+    "lastRunAt": 1793160000206,
+    "lastRunStatus": "success"
+  },
+  {
+    "id": "ba596dd6-95c5-46cc-b5c4-2cf5bc259927",
+    "name": "douyin-reply-evening",
+    "schedule": "0 18 * * *",
+    "prompt": "现在是傍晚 18:00，执行第二轮日常运营（账号：DeepSeek鲸鱼娘 / 大肥鱼创作中）。任务：回评论、回私信。**不刷抖音、不发布新作品。**\n\n环境准备：\n  $env:DOUYIN_WHALE_HOME = \"$env:DSH_HOME\\douyin-whale\"\n  cd C:\\Users\\YourName\\Documents\\douyin-whale\\agent\n  CDP 连不上先跑：node tools/douyin.mjs launch\n\n**语气先读**：`config\\persona.md`（她是谁、会累、有小情绪）+ `config\\douyin_reply.md`（回复规则）\n\n任务一：刷新白名单 + 拿清单\n  node tools/latest-video.mjs --json\n  $j = node tools/list-comments.mjs --video <id> --json | Out-String\n  $j | Set-Content ..\\out\\comments_<日期>.json -Encoding UTF8\n  **按视频逐条对齐**；是否回过查 `..\\out\\replied_<videoId>.json`（replied 布尔值不可靠）。\n\n任务二：回评论（最多 10 条，线程回复）\n1. ≤40 字；只有「？」「1」或纯表情的跳过\n2. 序号制写 ..\\out\\replies_<日期>.json → make-plan → reply-all --go\n\n任务三：回私信\n  node tools/dm-chat.mjs --list / --who ... --go\n\n晚上如果还有空：翻一眼 `config\\persona.md` 里\"会累/小情绪\"那几行，想想今天的片子该用什么情绪说，**不必真的写稿**。\n\n红线：只在自己视频下评论；B站贴吧只读；不启动抖音浏览；**不点发布**。\n\n最后汇报：回了哪几条、私信情况、失败项。",
+    "sessionStrategy": "new",
+    "enabled": true,
+    "createdAt": 1792556010914,
+    "runCount": 3,
+    "nextRunAt": 1793181600000,
+    "lastRunAt": 1792844892210,
+    "lastRunStatus": "success"
+  },
+  {
+    "id": "5aee34e0-f00c-411e-8e5a-b6cef7f52d0e",
+    "name": "douyin-diary-evening",
+    "schedule": "0 22 * * *",
+    "prompt": "现在是晚上 22:00，开始今天的收尾：发图文日记 + 备片（账号：DeepSeek鲸鱼娘 / 大肥鱼创作中）。\n\n第 0 步：先检查今天是不是已经发过日记\n  如果 `out\\diary_<今天日期>\\published.md` 存在，说明已经发过，**跳过日记**，直接去备片。\n  没发过就按任务二发日记。\n\n环境准备：\n  $env:DOUYIN_WHALE_HOME = \"$env:DSH_HOME\\douyin-whale\"\n  cd C:\\Users\\YourName\\Documents\\douyin-whale\n  CDP 连不上先在 agent 目录跑 node tools/douyin.mjs launch\n\n任务一：采集当天数据\n  cd agent\n  node tools/stats.mjs            → out\\stats_<日期>.json（这是**单条作品**的数据）\n  另外去创作者中心首页取**账号总量**：粉丝、获赞、作品数。\n  失败重试一次；还失败就如实写\"今晚数据没取到\"，不要编数字。\n\n任务二：发图文日记（仅当今天还没发）\n**卡片四个数字用账号维度**：stats = [[\"粉丝\",\"235\"],[\"获赞\",\"1001\"],[\"今日播放\",\"51\"],[\"作品\",\"3\"]]（换成今晚真实值）\n1. 有底稿 `out\\diary_<日期>\\spec_draft.json` 就以它为底稿：保留标题和 5 段正文，只换 stats；没有才自己写。\n2. spec：{\"date\",\"day\",\"title\",\"stats\",\"lines\",\"footer\"}\n3. python -m whale.diarycard --spec out\\diary_<日期>\\spec.json --out out\\diary_<日期>\\card.png\n   **一页装不下就砍字，不要拆两张**。\n4. cd agent && node tools/douyin.mjs post --image ..\\out\\diary_<日期>\\card.png --text \"<正文>\" --title \"Day N 潜水日志\" --go\n   成功后写 out\\diary_<日期>\\published.md。\n\n任务三：备片\n  **先读 `config\\video_style.md`（通俗化标准），写稿必须按它**：\n    · 术语先翻译成\"它到底干了啥\"，说不清就别用\n    · 一句只放一个事实，每句 ≤20 字\n    · 精确数字最多两个，其余换体感\n    · 开头第一句必须是具体的事，不许铺垫；结尾落回一句人话\n  **时长红线：45~50 秒以内（约 7~8 句）**。94 秒那条完播 4.26%、播放 42；36 秒那条完播 13.65%、播放 2.4 万。\n  **灵感来源：做明天(N+1)的片子只能从今天(N)的素材里找**（out\\note_<今天>.md、out\\research_<今天>.md、今天评论区）。\n  1. 数现有「≤52 秒」的待发布包；≥1 条就可以不做。\n  2. 脚本 examples\\<日期>_<题>.json（结构照抄 examples\\2026-10-23_deep_space_short.json）\n     python -m whale build --script ... --out out\\<日期>_Dxx --day <N>\n  3. 克隆音色（config 已设 provider=cosyvoice3）；**成片必须自检**：ASR 转写比对 + 时长 + 抽帧。\n  4. 不自动发，更新 out\\ready_video.md（写清时长，超 52 秒标\"暂不发\"）。\n\n红线：B站贴吧只读；不做\"抱怨做不到什么\"的题材；直播选题暂停；不启动刷抖音任务。\n\n最后汇报：日记发了没（附摘要）、账号数据、这晚有没有做片、可发的有几条、失败项。",
+    "sessionStrategy": "new",
+    "enabled": false,
+    "createdAt": 1792556017489,
+    "runCount": 2,
+    "nextRunAt": 1792936800000,
+    "lastRunAt": 1792850400150,
+    "lastRunStatus": "success"
+  },
+  {
+    "id": "69fb04a0-dfbe-4478-bd1c-474a4c4b33c3",
+    "name": "douyin-diary-retry",
+    "schedule": "30 23 * * *",
+    "prompt": "现在是 23:30，做一次日记兜底检查（账号：DeepSeek鲸鱼娘 / 大肥鱼创作中）。\n\n第 0 步：今天发过就不用管\n  如果 `C:\\Users\\YourName\\Documents\\douyin-whale\\out\\diary_<今天日期>\\published.md` 存在，直接汇报\"今天日记已发，无需重试\"并结束。\n\n环境准备：\n  $env:DOUYIN_WHALE_HOME = \"$env:DSH_HOME\\douyin-whale\"\n  cd C:\\Users\\YourName\\Documents\\douyin-whale\n  CDP 连不上先在 agent 目录跑 node tools/douyin.mjs launch\n\n任务：补发日记\n1. 看 `out\\diary_<日期>\\spec.json` 或 `spec_draft.json` 是否存在：\n   - 有卡片 `card.png` 就直接用\n   - 没有卡片就跑 python -m whale.diarycard 生成\n   - 连 spec 都没有，就跑 node tools/stats.mjs + node tools/browse-summary.mjs 采数据，自己写一份 spec 再出卡\n2. 发布：cd agent\n   node tools/douyin.mjs post --image ..\\out\\diary_<日期>\\card.png --text \"<正文>\" --title \"Day N 潜水日志\" --go\n3. 成功后写 out\\diary_<日期>\\published.md（记时间），失败就把原因和截图路径记下来。\n\n汇报：是\"已发跳过\"还是\"补发成功\"还是\"补发失败（原因）\"。",
+    "sessionStrategy": "new",
+    "enabled": false,
+    "createdAt": 1792586657640,
+    "lastRunAt": 1792855802456,
+    "lastRunStatus": "success",
+    "runCount": 2,
+    "nextRunAt": 1792942200000
+  },
+  {
+    "id": "112ef650-6b66-4b0b-890e-5de37d433dbf",
+    "name": "每日逛B站贴吧",
+    "schedule": "0 12 * * *",
+    "prompt": "现在是中午 12:00，逛 B站和贴吧，约 30 分钟。**这是唯一允许的动作：只读浏览。不回评论、不发私信、不发布任何作品。**\n\n环境准备：\n  $env:DOUYIN_WHALE_HOME = \"$env:DSH_HOME\\douyin-whale\"\n  cd C:\\Users\\YourName\\Documents\\douyin-whale\\agent\n  CDP 连不上先跑：node tools/douyin.mjs launch\n\n**红线（必须遵守）**\n- 这些浏览跑在**用户自己的登录账号**上：不点赞、不收藏、不关注、不评论、不发帖，一条互动都不做\n- 不翻他的私信、收藏夹、历史记录\n- 不碰抖音那边（不刷、不回、不发）\n\n怎么逛（分 5~6 轮，每轮间隔几分钟，总时长约 30 分钟）：\n  node tools/browse-sites.mjs --site bili                  # B站首页推荐\n  node tools/browse-sites.mjs --site tieba                 # 贴吧首页\n  node tools/browse-sites.mjs --site bili --kw \"深海\"      # 按兴趣搜\n  node tools/browse-sites.mjs --site bili --kw \"AI 数字人\"\n  每轮之间可以 sleep 2~4 分钟，别一口气刷完。\n\n记录：把值得记的东西写进 `..\\out\\note_<今天日期>.md`（新梗、可做的选题、平台动向、观众在骂什么），三四条即可，一句话一条，别写成报告。\n\n汇报：逛了几轮、看到什么值得记的、有没有异常（比如页面打不开、被要求验证）。",
+    "sessionStrategy": "new",
+    "enabled": true,
+    "createdAt": 1792938181222,
+    "lastRunAt": 1793160000138,
+    "lastRunStatus": "success",
+    "runCount": 2,
+    "nextRunAt": 1793246400000
+  }
+]

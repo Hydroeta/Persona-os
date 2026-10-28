@@ -1,0 +1,113 @@
+{
+  "master": {
+    "qq": "",
+    "session": "",
+    "bili_uid": 0,
+    "bili_name": ""
+  },
+  "paths": {
+    "data": "data",
+    "logs": "logs",
+    "scripts": "scripts",
+    "astrbot": "runtime/AstrBot",
+    "astrbot_config": "runtime/AstrBot/data/cmd_config.json",
+    "astrbot_db": "runtime/AstrBot/data/data_v4.db",
+    "python": ".venv/Scripts/python.exe",
+    "probe_python": ".venv/Scripts/python.exe",
+    "video_python": ".venv-video/Scripts/python.exe",
+    "llbot_exe": "runtime/LL/LuckyLillia.exe",
+    "gpt_sovits": "runtime/GPT-SoVITS",
+    "tts_python": ".venv-tts/Scripts/python.exe",
+    "tts_config": "config/tts.local.yaml",
+    "gpt_weights": "runtime/GPT-SoVITS/GPT_SoVITS/pretrained_models/s1v3.ckpt",
+    "sovits_weights": "models/sovits/dafeiyu_e14_s280.pth",
+    "pretrained_dir": "runtime/GPT-SoVITS/GPT_SoVITS/pretrained_models",
+    "voice_ref": "assets/voice/ref_190.wav",
+    "persona": "persona/default.md",
+    "stickers": "assets/stickers",
+    "sticker_index": "assets/stickers/index.json",
+    "sticker_source": "data/sticker-source",
+    "sticker_work": "cache/sticker-index",
+    "avatar": "assets/avatar",
+    "avatar_image": "assets/avatar/scene_final_1280.jpg",
+    "video_cache": "cache/video",
+    "ffmpeg": "runtime/ffmpeg/bin/ffmpeg.exe",
+    "ffprobe": "runtime/ffmpeg/bin/ffprobe.exe"
+  },
+  "services": {
+    "astrbot_url": "http://127.0.0.1:6185",
+    "dashboard_username": "astrbot",
+    "tts_url": "http://127.0.0.1:9880/tts",
+    "onebot_port": 6199,
+    "avatar_udp_port": 9999,
+    "avatar_web_port": 8899
+  },
+  "llm": {
+    "chat": {
+      "base_url": "https://api.deepseek.com/v1",
+      "model": "deepseek-flash",
+      "key_env": "DEEPSEEK_API_KEY"
+    },
+    "vision": {
+      "base_url": "https://api.deepseek.com/v1",
+      "model": "deepseek-flash",
+      "key_env": "DEEPSEEK_API_KEY"
+    },
+    "screen": {
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-vl-plus",
+      "key_env": "DASHSCOPE_API_KEY"
+    }
+  },
+  "audio": {
+    "playback_hint": "Default",
+    "capture_hint": "Default",
+    "listen_hints": [],
+    "use_astrbot_bridge": false,
+    "asr_model": "paraformer-realtime-v2",
+    "tts_raw_rate": 32000
+  },
+  "voice": {
+    "prompt_text": "那我以后还是干慢点吧",
+    "prompt_lang": "zh",
+    "text_lang": "zh",
+    "local_provider_id": "gpt_sovits",
+    "cloud_provider_id": ""
+  },
+  "features": {
+    "phone": false,
+    "avatar": false,
+    "bilibili": false,
+    "mic_guard": false
+  },
+  "bilibili": {
+    "max_like_per_day": 10,
+    "max_reply_per_day": 6,
+    "max_dm_per_day": 8,
+    "short_id": 0,
+    "keywords_at_host": ["主播", "你好", "在吗", "哈哈", "666", "awsl"],
+    "only_reply_questions": false,
+    "min_chars": 2,
+    "max_replies_per_10s": 3,
+    "per_user_cooldown_s": 15,
+    "min_pay_grade": 0,
+    "blacklist_users": [],
+    "auto_fill": true,
+    "auto_fill_interval_s": 45
+  },
+  "watchdog": {
+    "restart_qq": false
+  },
+  "douyin": {
+    "live_id": "改这里！直播间链接https://live.douyin.com/后面那串数字",
+    "keywords_at_host": ["主播", "你好", "在吗", "哈哈", "666"],
+    "only_reply_questions": false,
+    "min_chars": 2,
+    "max_replies_per_10s": 3,
+    "per_user_cooldown_s": 15,
+    "min_pay_grade": 0,
+    "blacklist_users": [],
+    "auto_fill": true,
+    "auto_fill_interval_s": 45
+  }
+}

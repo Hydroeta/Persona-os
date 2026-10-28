@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0a1",
+  "status": "local-preview-candidate",
+  "default_gpt": "upstream s1v3.ckpt",
+  "sovits": {
+    "destination": "models/sovits/dafeiyu_e14_s280.pth",
+    "size": 134946291,
+    "sha256": "08a5f8b2d0b85876d7a16937cd801f49844bd90c1316f3044c2a408d7c85a905"
+  },
+  "source_notes": "See source package assets/ASSETS.md"
+}
