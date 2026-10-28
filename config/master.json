@@ -1,0 +1,81 @@
+{
+  "$comment": "小鲸鱼生态 · 配置单一事实源。各组件的端口/路径以此为准；密钥只存 tools/keys.dpapi.json（DPAPI 加密），.env 由控制台生成/同步，不手工改。",
+  "version": 1,
+  "updated": "2026-10-28",
+
+  "ports": {
+    "console": 8900,
+    "dsh": 3080,
+    "astrbot": 6185,
+    "gpt_sovits": 9880,
+    "luckylillia_ws": 6199
+  },
+
+  "paths": {
+    "ohwhale": "ohwhale-deploy",
+    "dsh": "dsh",
+    "tulpa": "Tulpa/Tulpa",
+    "snowluma": "SnowLuma",
+    "pet": "dsh-pet",
+    "surfcore": "surfcore",
+    "search_gate": "tools/search_gate.py",
+    "key_vault": "tools/key_vault.py"
+  },
+
+  "keys": {
+    "$comment": "键名清单；值永远在 DPAPI 保险库，不写进本文件",
+    "required": ["DEEPSEEK_API_KEY"],
+    "optional": ["DASHSCOPE_API_KEY", "ASTRBOT_DASHBOARD_PASSWORD", "ONEBOT_ACCESS_TOKEN"]
+  },
+
+  "search_fetch": {
+    "$comment": "2026-11-01 起计费 ¥5/1000 次；统一走 tools/search_gate.py，禁止绕过",
+    "gateway": "tools/search_gate.py",
+    "allowed_scenes": ["memory_reflect", "bili_whale", "tulpa", "live_danmaku"],
+    "forbidden_scenes": ["voice_call", "selfwake", "companion", "chitchat"]
+  },
+
+  "export_policy": {
+    "$comment": "外发/打包清单：白名单目录之外一律不可外发；密钥与运行时数据永不外发",
+    "exportable": ["项目介绍.md", "使用说明.md", "console.py", "控制台.cmd", "config/"],
+    "never_export": [
+      "tools/keys.dpapi.json",
+      "**/.env", "**/connection.env", "**/config.json",
+      "**/node_modules/", "**/runtime/", "**/data/", "**/sessions/",
+      "**/models/", "**/logs/", "tools/search_gate.db"
+    ],
+    "third_party_notice": "SnowLuma 为第三方专有软件（@snowluma/runtime），来源其官方 Releases，使用前自行评估信任；哈希校验记录见其目录说明。"
+  },
+
+  "resource": {
+    "gpu": "RTX 3050 4GB",
+    "$comment": "通话/直播进行中，由 tools/resource_gate.py 暂停 bili-vision 等重任务；重任务开工前先 python tools/resource_gate.py acquire <名字>，干完 release <名字>（GPU 互斥租约，30 分钟 TTL）",
+    "heavy_tasks": ["bili-vision", "cron:douyin-reply-noon", "cron:douyin-reply-evening"]
+  },
+
+  "services": {
+    "$comment": "服务拓扑声明：控制台「全部启动」按 deps 拓扑序拉起；改这里即可调整，console.py 有内置兜底",
+    "list": [
+      {"id": "snowluma", "name": "SnowLuma 桥接", "deps": [], "probe": "process:node.exe@SnowLuma"},
+      {"id": "dsh", "name": "DSH 助手", "deps": [], "port": 3080, "probe": "http:http://127.0.0.1:3080/"},
+      {"id": "ohwhale", "name": "哦鲸鲸全家桶", "deps": [], "probe": "http:http://127.0.0.1:9880/docs + http:http://127.0.0.1:6185/"},
+      {"id": "tulpa", "name": "Tulpa QQ 机器人", "deps": ["snowluma"], "probe": "process:Tulpa.exe@Tulpa"},
+      {"id": "pet", "name": "桌宠（鲸鱼女仆）", "deps": ["dsh"], "probe": "process:dsh-pet-standalone-webm-chat.exe"}
+    ]
+  },
+
+  "alerts": {
+    "$comment": "告警外发（tools/alert.py）：Bark / Server酱 / 通用 webhook URL；留空 = 只写本地",
+    "webhook": ""
+  },
+
+  "backup": {
+    "$comment": "自动备份（tools/auto_backup.py）：mirror_dir 为异地/第二块盘目录，留空不同步",
+    "mirror_dir": ""
+  },
+
+  "llm_gate": {
+    "$comment": "LLM token 闸门（成本主战场）：tools/llm_gate.py，预算与场景配额在 tools/llm_gate.config.json",
+    "gateway": "tools/llm_gate.py"
+  }
+}

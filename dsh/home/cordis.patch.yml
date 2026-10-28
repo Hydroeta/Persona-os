@@ -1,0 +1,29 @@
+- id: session-log-deepseek
+  config:
+    enabled: false
+- id: otel
+  disabled: true
+- id: llm-deepseek
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    maxTokens: 8192
+    reasoningEffort: low
+    streamIdleTimeoutMs: 120000
+- insert:
+    - id: mcp-tulpa
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: tulpa
+        transport: streamable-http
+        url: !!js process.env.TULPA_MCP_URL
+        headers:
+          Authorization: !!js '`Bearer ${process.env.TULPA_MCP_TOKEN}`'
+        toolCallTimeoutMs: 240000
+        failOnStartupError: true
+- id: selfwake
+  config:
+    targetSessionId: 'session-cbd1dce1-45ec-41b0-8984-8d1256aee5a7'
+- id: dsh-whale-pod
+  config:
+    autoStart: false
+    stopOnExit: true

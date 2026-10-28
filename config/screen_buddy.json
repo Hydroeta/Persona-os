@@ -1,0 +1,28 @@
+{
+  "enabled": false,
+  "mode": "companion",
+  "interval_sec": 4,
+  "max_say_per_10min": 1,
+  "retention_days": 7,
+  "ocr": true,
+  "allow_image_upload": false,
+  "whitelist": [],
+  "blacklist": [
+    "keepass",
+    "1password",
+    "bitwarden",
+    "lastpass",
+    "authenticator",
+    "bank",
+    "alipay",
+    "wallet",
+    "wechat",
+    "weixin",
+    "qq",
+    "telegram",
+    "discord",
+    "slack",
+    "teams"
+  ],
+  "hotkey": "ctrl+alt+p"
+}

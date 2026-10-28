@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "billing_starts": "2026-11-01",
+  "daily_call_cap": 100,
+  "daily_cost_cap_yuan": 0.5,
+  "monthly_cost_cap_yuan": 10.0,
+  "cache_ttl_hours": 6,
+  "authority_min": 3,
+  "rerank_score_min": 1.5,
+  "rate_limit_per_min": 6,
+  "allowed_scenes": [
+    "memory_reflect",
+    "bili_whale",
+    "tulpa",
+    "live_danmaku"
+  ],
+  "forbidden_scenes": [
+    "voice_call",
+    "selfwake",
+    "companion",
+    "chitchat"
+  ],
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-chat",
+  "timeout_sec": 20
+}

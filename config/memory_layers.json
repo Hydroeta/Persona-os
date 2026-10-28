@@ -1,0 +1,41 @@
+{
+  "$comment": "记忆分层表（单一事实源）：同一事实只写一层，避免五套载体重复/矛盾",
+  "updated": "2026-10-28",
+  "layers": [
+    {
+      "name": "短期会话", "system": "DSH 会话上下文",
+      "write_trigger": "对话进行中自动",
+      "retrieval": "同会话内直接可见",
+      "note": "不落长期库；结束即挥发"
+    },
+    {
+      "name": "长期事实", "system": "knowledge-canvas（.dsh-knowledge/*.json）",
+      "write_trigger": "确认的事实/规则/人设要点；外部检索结果须先过 search_gate 审核",
+      "retrieval": "大纲自动注入，正文 knowledge_read",
+      "note": "business.json 为业务节点库（红线/人设/平台规则）"
+    },
+    {
+      "name": "反思与模式", "system": "meow-memory（七层 SQLite）",
+      "write_trigger": "会话反思、闲置梦境整理；陌生概念经 search_gate memory_reflect 场景回填",
+      "retrieval": "快照注入 + 关键词命中",
+      "note": "存模式与教训，不存原始事实，避免与本库重复"
+    },
+    {
+      "name": "日记", "system": "diary/ 目录 + knowledge-canvas 日记库",
+      "write_trigger": "人格第一人称，事件驱动（不按天）",
+      "retrieval": "日记本视图/会话附件",
+      "note": "存感受与生活流，不当事实库用"
+    },
+    {
+      "name": "cron 会话记忆", "system": "cron-scheduler 运行历史",
+      "write_trigger": "定时任务运行后自动",
+      "retrieval": "控制台定时任务页 / cron 面板",
+      "note": "9 个为历史会话记忆，当前启用 3 个定时任务"
+    }
+  ],
+  "rules": [
+    "事实 → knowledge-canvas；感受 → 日记；模式教训 → meow-memory",
+    "外部检索结果未经 search_gate audit 审核，不进任何长期层",
+    "memory-board 只做查看/编辑入口，不是独立存储层"
+  ]
+}
