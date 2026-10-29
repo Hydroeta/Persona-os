@@ -13,8 +13,6 @@ CLI：
     python tools/calendar_watch.py upcoming [天数]
     python tools/calendar_watch.py remind      # 到点提醒（日报/控制台调用）
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

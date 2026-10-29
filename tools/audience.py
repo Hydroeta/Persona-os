@@ -13,8 +13,6 @@ CLI：
     python tools/audience.py note 阿明 喜欢猫
     python tools/audience.py seen 阿明 "弹幕内容"
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

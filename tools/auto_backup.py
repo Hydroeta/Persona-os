@@ -12,8 +12,6 @@
 还原步骤（--verify 只校验不解压；真还原时手动解压并覆盖同名目录即可）：
   解压 backups/whale-YYYYMMDD-HHMM.zip → 覆盖到项目根 → 控制台填密钥 → 全部启动。
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

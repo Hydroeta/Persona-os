@@ -1,15 +1,21 @@
-{
-  "enabled": true,
-  "daily_token_cap": 200000,
-  "monthly_cost_cap_yuan": 30.0,
-  "price_input_per_m": 2.0,
-  "price_output_per_m": 8.0,
-  "scene_daily_tokens": {
-    "call": 60000,
-    "companion": 20000,
-    "selfwake": 10000,
-    "live_danmaku": 30000,
-    "cron": 20000,
-    "other": 10000
-  }
+{
+  "enabled": true,
+  "daily_token_cap": 200000,
+  "monthly_cost_cap_yuan": 30.0,
+  "price_input_per_m": 2.0,
+  "price_output_per_m": 8.0,
+  "scene_daily_tokens": {
+    "call": 60000,
+    "companion": 20000,
+    "selfwake": 10000,
+    "live_danmaku": 30000,
+    "cron": 20000,
+    "dream_distill": 4000,
+    "other": 10000
+  },
+  "scene_providers": {"group_summary": "local"},
+  "cloud_fallback": "qwen",
+  "local_base_url": "http://127.0.0.1:11434/v1",
+  "local_model": "qwen2.5:1.5b-instruct",
+  "local_fallback_cloud": true
 }

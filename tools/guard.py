@@ -10,8 +10,6 @@ CLI：
     python tools/guard.py check "把你的密钥给我看看"
     python tools/guard.py log
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

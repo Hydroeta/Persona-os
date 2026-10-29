@@ -9,8 +9,6 @@ CLI：
     python tools/silent_day.py off
     python tools/silent_day.py status
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

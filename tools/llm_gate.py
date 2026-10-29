@@ -25,8 +25,6 @@ CLI：
     python tools/llm_gate.py stats            # 用量与单位经济
     python tools/llm_gate.py check call 800   # 试算某场景是否放行
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json
@@ -83,6 +81,10 @@ def _db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_FILE))
     conn.execute("""CREATE TABLE IF NOT EXISTS usage(
         ts REAL, scene TEXT, in_tok INTEGER, out_tok INTEGER, cost REAL)""")
+    # 多厂商资金看板需要按 provider 精算：老库补列，存量记录归 deepseek
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(usage)")]
+    if "provider" not in cols:
+        conn.execute("ALTER TABLE usage ADD COLUMN provider TEXT NOT NULL DEFAULT 'deepseek'")
     return conn
 
 
@@ -128,19 +130,33 @@ def allow(scene: str, est_input_tokens: int = 0) -> bool:
     return True
 
 
-def record(scene: str, input_chars: int, output_chars: int) -> dict:
+def record(scene: str, input_chars: int, output_chars: int,
+           provider: str = "deepseek") -> dict:
     """调用后记账。返回本次估算 {in_tok, out_tok, cost}。"""
     cfg = load_config()
     it, ot = est_tokens(input_chars), est_tokens(output_chars)
     cost = (it * cfg["price_input_per_m"] + ot * cfg["price_output_per_m"]) / 1e6
     conn = _db()
     try:
-        conn.execute("INSERT INTO usage VALUES(?,?,?,?,?)",
-                     (time.time(), scene, it, ot, cost))
+        conn.execute("INSERT INTO usage VALUES(?,?,?,?,?,?)",
+                     (time.time(), scene, it, ot, cost, provider))
         conn.commit()
     finally:
         conn.close()
     return {"in_tok": it, "out_tok": ot, "cost": round(cost, 6)}
+
+
+def monthly_usage_by_provider() -> dict:
+    """本月各 provider 的 token 消耗：{provider: {in_tok, out_tok}}。
+    供 balance_monitor 对无余额接口的厂商（GLM/Qwen）做本地精算。"""
+    conn = _db()
+    try:
+        rows = conn.execute(
+            "SELECT provider, COALESCE(SUM(in_tok),0), COALESCE(SUM(out_tok),0) "
+            "FROM usage WHERE ts>=? GROUP BY provider", (_month0(),)).fetchall()
+    finally:
+        conn.close()
+    return {p: {"in_tok": int(i), "out_tok": int(o)} for p, i, o in rows}
 
 
 def stats() -> dict:

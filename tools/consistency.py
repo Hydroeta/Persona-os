@@ -11,8 +11,6 @@ data/content_out/*.md、日记 diary/*.md。
 CLI：
     python tools/consistency.py check
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

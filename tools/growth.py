@@ -9,8 +9,6 @@ CLI：
     python tools/growth.py list
     python tools/growth.py emit search_ok
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

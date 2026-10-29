@@ -6,7 +6,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 function Write-Step($t) { Write-Host "`n==== $t ====" -ForegroundColor Cyan }
 function Has-Cmd($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
 
-Write-Host "小鲸鱼 AI 虚拟角色生态 · 环境安装" -ForegroundColor Green
+Write-Host "persona-os · 环境安装" -ForegroundColor Green
 Write-Host "包目录：$Root"
 
 Write-Step "1/7 基础环境"

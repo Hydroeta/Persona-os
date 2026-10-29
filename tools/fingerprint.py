@@ -9,8 +9,6 @@ CLI：
     python tools/fingerprint.py analyze      # 与基线对比
     python tools/fingerprint.py baseline     # 把当前统计存为基线
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

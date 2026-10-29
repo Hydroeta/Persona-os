@@ -3,8 +3,6 @@
 双击「控制台.cmd」启动，浏览器打开 http://127.0.0.1:8900
 仅用标准库，仅监听本机回环。
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 import json, os, re, secrets, socket, subprocess, sys, threading, time, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,6 +24,10 @@ try:
     import state_engine
 except Exception:
     state_engine = None
+try:
+    import context_engine
+except Exception:
+    context_engine = None
 try:
     import daily_report
 except Exception:
@@ -71,7 +73,7 @@ for _m in ("goals", "time_capsule", "memory_review", "calendar_watch", "care",
            "allowance", "runbook", "silent_day", "guard", "growth",
            "fingerprint", "consistency", "persona_override", "voice_mail",
            "sleep_story", "group_summary", "desk_tidy", "audience",
-           "call_context"):
+           "call_context", "persona_switch"):
     try:
         globals()[_m] = __import__(_m)
     except Exception:
@@ -537,6 +539,7 @@ def env_set(path, key, value):
 
 KEY_DEFS = [
     ("DEEPSEEK_API_KEY", "DeepSeek 密钥", True),
+    ("ZHIPU_API_KEY", "GLM 智谱密钥", False),
     ("DASHSCOPE_API_KEY", "百炼 DashScope 密钥", False),
     ("ASTRBOT_DASHBOARD_PASSWORD", "AstrBot 面板密码", False),
     ("ONEBOT_ACCESS_TOKEN", "OneBot 访问令牌", False),
@@ -935,6 +938,11 @@ def metrics_summary():
         m["llm"] = llm_gate.stats()
     except Exception:
         pass
+    try:
+        import balance_monitor
+        m["balance"] = balance_monitor.status()
+    except Exception:
+        pass
     if state_engine:
         try:
             m["state"] = state_engine.status()
@@ -1007,6 +1015,17 @@ def todo_hints():
             hints.append(w)
             if alert:
                 alert.send("小鲸鱼预算告警", w, key="llm_budget")
+    except Exception:
+        pass
+    # 多厂商资金看板：余额/预算告急提示（DeepSeek 直查、GLM/Qwen 本地精算）
+    try:
+        import balance_monitor
+        hint = balance_monitor.routing_hint()
+        for name, reason in (hint.get("reasons") or {}).items():
+            w = "API 资金告急：%s %s，路由已自动降级让位" % (name, reason)
+            hints.append(w)
+            if alert:
+                alert.send("小鲸鱼 API 资金告警", w, key="balance_%s" % name)
     except Exception:
         pass
     return hints
@@ -1114,35 +1133,57 @@ PAGE = r"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8"><title>小鲸鱼控制台</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{--bg:#0f141b;--card:#1a2230;--line:#2a3547;--fg:#dbe6f4;--dim:#8fa0b8;--ok:#3ecf8e;--warn:#f5a623;--bad:#e5534b;--acc:#5b9dff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 "Microsoft YaHei",sans-serif}
-.wrap{max-width:960px;margin:0 auto;padding:24px 16px 60px}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;color:var(--acc);margin:28px 0 10px;border-left:3px solid var(--acc);padding-left:8px}
+:root{--bg:#0f141b;--card:rgba(26,34,48,.72);--line:rgba(42,53,71,.8);--fg:#dbe6f4;--dim:#8fa0b8;--ok:#3ecf8e;--warn:#f5a623;--bad:#e5534b;--acc:#5b9dff}
+*{box-sizing:border-box}body{margin:0;color:var(--fg);font:14px/1.6 "Microsoft YaHei",sans-serif;
+background-color:var(--bg);
+background-image:radial-gradient(circle at 15% 50%,rgba(91,157,255,.05),transparent 25%),radial-gradient(circle at 85% 30%,rgba(62,207,142,.05),transparent 25%);
+background-attachment:fixed}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:20px;margin:0 0 4px;background:linear-gradient(90deg,var(--acc),var(--ok));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;display:inline-block}
+h2{font-size:15px;color:var(--acc);margin:0 0 10px;border-left:3px solid var(--acc);padding-left:8px}
 .sub{color:var(--dim);font-size:12px;margin-bottom:18px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:0 20px;align-items:start}
+.grid>div{min-width:0}
+.span2{grid-column:span 2}
+@media (max-width:820px){.span2{grid-column:span 1}}
+.card{background:var(--card);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px;
+box-shadow:0 4px 20px rgba(0,0,0,.2);transition:transform .2s ease,border-color .2s ease}
+.card:hover{transform:translateY(-2px);border-color:rgba(91,157,255,.4)}
 .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .name{font-weight:600;min-width:150px}.detail{color:var(--dim);font-size:12px;flex:1}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--bad);display:inline-block;margin-right:6px}
-.on .dot{background:var(--ok)}.part .dot{background:var(--warn)}
-button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px}
-button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
-button:hover{filter:brightness(1.15)}
+.on .dot{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 2s infinite}
+.part .dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.6)}70%{box-shadow:0 0 0 9px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
+button{background:rgba(91,157,255,.12);border:1px solid var(--acc);color:var(--acc);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s}
+button:hover{background:var(--acc);color:#fff;box-shadow:0 0 10px rgba(91,157,255,.5)}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg);font-weight:400}
+button.ghost:hover{border-color:var(--acc);color:var(--acc);box-shadow:none;background:rgba(91,157,255,.08)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
 th{color:var(--dim);font-weight:400}
 .badge{font-size:11px;padding:2px 8px;border-radius:10px;background:#263144;color:var(--dim)}
 .badge.on{background:#14362a;color:var(--ok)}
-input[type=text],input[type=password]{background:#0d1219;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;width:260px}
+input[type=text],input[type=password],input:not([type]){background:#0d1219;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;width:260px}
 select{background:#0d1219;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 10px;max-width:340px}
 pre{background:#0d1219;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:12px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-all}
-.toast{position:fixed;top:16px;right:16px;background:#263144;padding:10px 18px;border-radius:8px;border:1px solid var(--acc);display:none;z-index:9}
-.hint{background:#2a2118;border:1px solid #4d3b1e;color:var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:8px}
+.toast{position:fixed;top:16px;right:16px;background:rgba(38,49,68,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:10px 18px;border-radius:8px;border:1px solid var(--acc);display:none;z-index:9;box-shadow:0 4px 20px rgba(0,0,0,.35)}
+.hint{background:rgba(42,33,24,.85);border:1px solid #4d3b1e;color:var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:8px}
+.pbar{width:100%;height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:4px}
+.pbar>i{display:block;height:100%;background:var(--acc);border-radius:3px;transition:width .5s}
+#metrics .row>div{background:rgba(13,18,25,.55);border:1px solid var(--line);border-radius:10px;padding:10px 14px;flex:1;min-width:230px}
+tr:hover td{background:rgba(91,157,255,.05)}
+.badge{border:1px solid var(--line)}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#2a3547;border-radius:4px}::-webkit-scrollbar-track{background:transparent}
 a{color:var(--acc);text-decoration:none}
 </style></head><body><div class="wrap">
 <h1>🐋 小鲸鱼生态控制台</h1>
 <div class="sub">统一管理 DSH · 哦鲸鲸 · Tulpa · SnowLuma · 桌宠 ｜ 仅本机访问</div>
 <div id="hints"></div>
 
+<div class="grid">
+<div class="span2">
 <h2>服务</h2>
 <div class="card row"><button onclick="startAll(false)">⏵ 全部启动（按依赖顺序）</button>
 <button class="ghost" onclick="startAll(true)">预检（不启动）</button>
@@ -1151,15 +1192,26 @@ a{color:var(--acc);text-decoration:none}
 <div id="sal"></div>
 <div id="svcs"></div>
 
+</div>
+<div>
 <h2>一键部署（新机器初始化）</h2>
 <div class="card" id="deploy" style="font-size:13px">加载中…</div>
 <pre id="deployOut" style="display:none"></pre>
 
+</div>
+<div class="span2">
 <h2>定时任务（DSH cron）</h2>
 <div class="card"><table id="cron"><thead><tr><th>任务</th><th>时间</th><th>状态</th><th>上次</th><th>次数</th><th></th></tr></thead><tbody></tbody></table></div>
 
+</div>
+<div class="span2">
 <h2>指标</h2><div class="card" id="metrics" style="font-size:13px">加载中…</div>
+</div>
+<div>
+<h2>💳 API 资金看板</h2><div class="card" id="apiBalance" style="font-size:13px">加载中…</div>
 
+</div>
+<div class="span2">
 <h2>陪伴与隐私</h2>
 <div class="card" id="care" style="font-size:13px">
 <div class="row"><div id="careState" style="flex:1">状态加载中…</div>
@@ -1180,12 +1232,18 @@ a{color:var(--acc);text-decoration:none}
 <pre id="rfull" style="display:none;white-space:pre-wrap;background:#0b1017;padding:10px;border-radius:6px"></pre>
 </div>
 
+</div>
+<div>
 <h2>关系与纪念日</h2>
 <div class="card" id="rel" style="font-size:13px">加载中…</div>
 
+</div>
+<div>
 <h2>成本沙盘（上线前先算算）</h2>
 <div class="card" id="sandbox" style="font-size:13px">加载中…</div>
 
+</div>
+<div class="span2">
 <h2>内容工坊（一个灵魂四张嘴）</h2>
 <div class="card" style="font-size:13px">
 <div class="row"><input id="ct" placeholder="标题" style="flex:1"><input id="cb" placeholder="正文素材" style="flex:2">
@@ -1193,20 +1251,28 @@ a{color:var(--acc);text-decoration:none}
 <button class="ghost" onclick="contentDiary()">从日记生成草稿</button></div>
 <div id="clist" style="margin-top:8px">加载中…</div></div>
 
+</div>
+<div>
 <h2>人格快照</h2>
 <div class="card" style="font-size:13px">
 <div class="row"><input id="snapnote" placeholder="快照备注（改了什么）" style="flex:1">
 <button onclick="snapCreate()">拍快照</button></div>
 <div id="snaplist" style="margin-top:8px">加载中…</div></div>
 
+</div>
+<div>
 <h2>时间机器</h2>
 <div class="card" style="font-size:13px">
 <div class="row"><select id="tldate" onchange="loadTimeline()"></select></div>
 <div id="tllist" style="margin-top:8px;max-height:300px;overflow:auto">加载中…</div></div>
 
+</div>
+<div>
 <h2>隐私仪表盘</h2>
 <div class="card" id="privacy" style="font-size:13px">加载中…</div>
 
+</div>
+<div class="span2">
 <h2>陪伴进阶（P2/P3）</h2>
 <div class="card" style="font-size:13px">
 <div id="p2sum">加载中…</div>
@@ -1227,26 +1293,37 @@ a{color:var(--acc);text-decoration:none}
 </div>
 </div>
 
+</div>
+<div>
 <h2>故障 Runbook</h2>
 <div class="card" id="runbook" style="font-size:13px">加载中…</div>
 
+</div>
+<div>
 <h2>一键自检</h2>
 <div class="card"><button onclick="selfCheck()">开始自检（端口/声卡/密钥/QQ/TTS/磁盘）</button>
 <label style="font-size:12px;color:var(--dim);margin-left:10px"><input type="checkbox" id="deepck"> 深度自检（OneBot 反连 + TTS 真合成一句，占显存，需服务已启动）</label><div id="sck" style="margin-top:10px"></div></div>
 
+</div>
+<div class="span2">
 <h2>密钥与配置</h2>
 <div class="card" id="keys"></div>
 
+</div>
+<div>
 <h2>QQ 登录</h2>
 <div class="card row"><div class="detail">启动 LuckyLillia 扫码登录窗口（未安装会自动补装）</div>
 <button onclick="qqLogin()">打开扫码登录</button>
 <a href="http://127.0.0.1:6185" target="_blank">AstrBot 面板</a>
 <a href="http://127.0.0.1:3080" style="margin-left:10px">DSH 面板</a></div>
 
+</div>
+<div class="span2">
 <h2>日志</h2>
 <div class="card"><div class="row"><select id="logsel" onchange="loadLog()"></select>
 <button class="ghost" onclick="loadLog()">刷新</button></div>
 <pre id="logview" style="margin-top:10px">选择日志文件…</pre></div>
+</div>
 </div>
 <div class="toast" id="toast"></div>
 <script>
@@ -1311,6 +1388,7 @@ h+=`<div>🎮 资源<br>${r.busy?`<span style="color:var(--warn)">通话/直播�
 if(l.today_tokens!=null){const ps=l.per_scene_today||{};
 h+=`<div>🧠 LLM token<br>今日 ${l.today_tokens}/${l.daily_token_cap||'-'}｜费用 今日 ¥${(l.today_cost||0).toFixed(3)} / 本月 ¥${(l.month_cost||0).toFixed(2)}（上限 ¥${l.monthly_cost_cap||'-'}）`+
 (Object.keys(ps).length?`<br><span style="color:var(--dim)">${Object.entries(ps).map(([k,v])=>k+': '+v.calls+'次/¥'+v.cost_per_call.toFixed(4)).join(' ｜ ')}</span>`:'')+`</div>`}
+renderBalance(d.balance);
 h+='</div>';
 if(d.health_events&&d.health_events.length)h+=`<div style="margin-top:8px;color:var(--dim)">最近事件: ${d.health_events.slice(0,5).map(e=>e.time+' '+e.event+' '+e.msg).join(' ｜ ')}</div>`;
 document.getElementById('metrics').innerHTML=h
@@ -1321,6 +1399,30 @@ document.getElementById('careScreen').innerHTML=`👁 读屏陪伴 <b>${sc.enabl
 <span style="color:var(--dim);font-size:12px">开启后屏幕内容只在本机内存处理，Ctrl+Alt+P 暂停</span>`}
 
 async function makeReport(){const d=await api('/api/report','POST',{});toast(d.ok?'日报已生成':'生成失败：'+(d.msg||''));loadMetrics()}
+async function refreshBalance(){const d=await api('/api/balance/refresh','POST',{});toast(d.ok?'资金看板已直查刷新':'刷新失败：'+(d.msg||''));loadMetrics()}
+function renderBalance(bal){
+const el=document.getElementById('apiBalance');if(!el)return;
+const bps=(bal&&bal.providers)||{};
+if(!Object.keys(bps).length){el.innerHTML='<span style="color:var(--dim)">未配置厂商（见 config/api_pricing.json）</span>';return}
+let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+<span style="color:var(--dim);font-size:12px">${bal.updated_at?'更新于 '+bal.updated_at:'未直查（DeepSeek 显示为缓存/待刷新）'}</span>
+<button class="ghost" style="font-size:12px" onclick="refreshBalance()">直查刷新</button></div>`;
+h+=Object.entries(bps).map(([k,v])=>{
+const tag=v.mode==='live'?'直查':'估算';
+const dot=v.warn?'bad':(v.status==='ok'||v.status==='estimated')?'ok':'';
+let row=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)">
+<span><span class="dot" style="background:${v.warn?'var(--bad)':'var(--ok)'};${v.warn?'':'box-shadow:0 0 8px var(--ok)'}"></span>${v.label||k} <span style="color:var(--dim);font-size:12px">（${tag}）</span></span>`;
+if(v.status==='ok')row+=`<span style="font-weight:700;color:${v.warn?'var(--bad)':'var(--fg)'}">¥ ${v.balance.toFixed(2)}</span></div>`;
+else if(v.status==='estimated'){
+const pct=v.budget?Math.min(v.used_this_month/v.budget*100,100):0;
+row+=`<span style="color:var(--dim);font-size:13px">已用 ¥${v.used_this_month.toFixed(4)} / ¥${v.budget.toFixed(2)}</span></div>
+<div class="pbar"><i style="width:${pct}%;background:${v.warn?'var(--bad)':'var(--acc)'}"></i></div>`}
+else row+=`<span style="color:var(--dim);font-size:12px">${v.msg||'未知'}</span></div>`;
+if(v.warn)row+=`<div style="color:var(--bad);font-size:12px;padding-top:2px">⚠ 资金告急，路由已自动降级让位</div>`;
+return row}).join('');
+h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding-top:8px;color:var(--dim)">
+<span><span class="dot" style="background:var(--ok);box-shadow:0 0 8px var(--ok)"></span>本地 Ollama（兜底）</span><span>¥ 0.00</span></div>`;
+el.innerHTML=h}
 async function showReport(){const d=await api('/api/report?full=1');const el=document.getElementById('rfull');el.style.display='block';el.textContent=d.text||''}
 async function forgetPreview(){const q=document.getElementById('fq').value.trim();if(!q)return toast('先填关键词');
 const d=await api('/api/memory/forget','POST',{topic:q,confirm:false,include_diary:document.getElementById('fdiary').checked});
@@ -1391,6 +1493,7 @@ const cs=d.consistency||{};if((cs.conflicts||[]).length)h+=`⚡ 人格裂缝 ${c
 const dk=d.desk||{};if(dk.ok&&(dk.suggestions||[]).length)h+=`🗂 桌面：${dk.suggestions.join('；')}<br>`;
 const gr=(d.growth||[]);const un=gr.filter(x=>x.unlocked);if(un.length)h+=`🌱 技能树：已解锁 ${un.length}/${gr.length}（${un.slice(-3).map(x=>x.name).join('、')}）<br>`;
 if((d.mails||[]).length)h+=`📮 语音留言 ${d.mails.length} 条（最近：${(d.mails[0].text||'').slice(0,20)}）<br>`;
+if(d.env&&d.env.line)h+='🌐 '+d.env.line+'<br>';
 document.getElementById('p2sum').innerHTML=h||'暂无动态';
 document.getElementById('sdbtn').textContent=(d.silent_day&&d.silent_day.silent)?'解除静默日':'一键静默日'}
 async function goalGen(){await api('/api/goals','POST',{action:'gen'});loadP2()}
@@ -1413,27 +1516,64 @@ loadSvcs();loadDeploy();loadCron();loadKeys();loadLogs();loadMetrics();loadSilen
 # 手机只读面板（默认关闭，config/console_mobile.json 开启；仅局域网/本机，token 同源）
 MOBILE_PAGE = """<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0f141b">
 <title>小鲸鱼 · 手机面板（只读）</title>
 <style>body{background:#0f141b;color:#dbe6f4;font:15px/1.7 sans-serif;margin:0;padding:18px}
 h1{font-size:18px}.c{background:#1a2230;border:1px solid #2a3547;border-radius:10px;padding:12px 14px;margin-bottom:10px}
 button{background:#e5534b;color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:14px}</style></head><body>
 <h1>🐋 手机面板（只读 + 一键停止全部）</h1>
+<div class="c" id="dream">🌙 还没有梦</div>
 <div id="m">加载中…</div>
 <div class="c"><button onclick="stopAll()">■ 一键停止全部服务</button><span id="sr"></span></div>
 <script>
 const T=new URLSearchParams(location.search).get('token')||'';
 fetch('/api/metrics',{headers:{'X-Console-Token':T}}).then(r=>r.json()).then(d=>{
-const st=d.state||{},l=d.llm||{},rp=d.report||{},c=d.call||{};
+const st=d.state||{},l=d.llm||{},rp=d.report||{},c=d.call||{},bp=(d.balance||{}).providers||{};
+const balLine=Object.entries(bp).map(([k,v])=>{
+const clr=v.warn?'#e5534b':'#3ecf8e';
+const body=v.status==='ok'?`¥${v.balance.toFixed(2)}`:v.status==='estimated'?`已用 ¥${v.used_this_month} / ¥${v.budget}`:(v.msg||'—');
+return `<div>${v.label||k}（${v.mode==='live'?'直查':'估算'}）：<span style="color:${clr}">${body}</span></div>`}).join('');
 document.getElementById('m').innerHTML=
 `<div class="c">🐳 她的状态<br>精力 ${st.energy_label||'—'}｜情绪 ${st.mood_label||'—'}</div>
 <div class="c">📞 通话<br>今日轮次 ${c.turns||0}${c.p95?`｜P95 ${c.p95}s`:''}</div>
 <div class="c">🧠 LLM<br>今日 ${l.today_tokens||0} token｜¥${(l.today_cost||0).toFixed(3)}</div>
+${balLine?`<div class="c">💳 API 资金<br>${balLine}</div>`:''}
 <div class="c">📄 日报 ${rp.date||'未生成'}<br>${(rp.anomalies||[]).join('；')||'暂无异常'}</div>`;
 }).catch(e=>{document.getElementById('m').textContent='加载失败：'+e});
+fetch('/api/dream-latest',{headers:{'X-Console-Token':T}}).then(r=>r.json()).then(d=>{
+if(d.text)document.getElementById('dream').innerHTML='🌙 梦 · '+d.date+'<br><span style="color:#9fb3c8">'+d.text.replace(/\n+/g,'<br>')+'</span>'});
+fetch('/api/p2',{headers:{'X-Console-Token':T}}).then(r=>r.json()).then(d=>{if(d.env&&d.env.line)document.getElementById('dream').insertAdjacentHTML('beforebegin','<div class="c">🌐 '+d.env.line+'</div>')});
 async function stopAll(){if(!confirm('确认停止全部服务？'))return;
 const r=await fetch('/api/stop-all',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':T},body:'{}'});
 const d=await r.json();document.getElementById('sr').textContent=' '+d.msg}
 </script></body></html>"""
+
+
+MANIFEST = {"name": "小鲸鱼控制台", "short_name": "小鲸鱼",
+            "start_url": "/mobile", "display": "standalone",
+            "background_color": "#0f141b", "theme_color": "#0f141b",
+            "icons": [{"src": "/icon.svg", "sizes": "any",
+                       "type": "image/svg+xml"}]}
+
+ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+<rect width="512" height="512" rx="96" fill="#0f141b"/>
+<text x="256" y="340" font-size="230" text-anchor="middle">🐋</text>
+</svg>"""
+
+
+def dream_latest() -> dict:
+    """最近一篇梦境日记（手机面板用），没有返回 {}。"""
+    d = ROOT / "diary"
+    if not d.is_dir():
+        return {}
+    fs = sorted(d.glob("dream-*.md"), reverse=True)
+    if not fs:
+        return {}
+    try:
+        return {"date": fs[0].stem[6:], "text": fs[0].read_text("utf-8")}
+    except OSError:
+        return {}
 
 
 def p2_summary() -> dict:
@@ -1450,6 +1590,7 @@ def p2_summary() -> dict:
     _safe("care", care.status if care else None, {})
     _safe("observe", care.observe_day if care else None, "")
     _safe("allowance", allowance.status if allowance else None, {})
+    _safe("env", context_engine.snapshot if context_engine else None, {})
     _safe("silent_day", silent_day.status if silent_day else None, {})
     _safe("growth", growth.list_all if growth else None, [])
     _safe("consistency", consistency.check if consistency else None, {})
@@ -1583,6 +1724,11 @@ class H(BaseHTTPRequestHandler):
         elif u.path == "/api/persona-snapshots":
             self._json({"snapshots": persona_snapshot.list_all()
                         if persona_snapshot else []})
+        elif u.path == "/api/personas":
+            self._json({"characters": persona_switch.list_characters()
+                        if persona_switch else [],
+                        "active": persona_switch.active_id()
+                        if persona_switch else None})
         elif u.path == "/api/call-mode":
             p = ROOT / "config" / "call_mode.json"
             try:
@@ -1600,6 +1746,22 @@ class H(BaseHTTPRequestHandler):
                 self._json(runbook.show(rid))
             else:
                 self._json({"items": runbook.list_all()})
+        elif u.path == "/manifest.json":
+            body = json.dumps(MANIFEST, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/manifest+json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif u.path == "/icon.svg":
+            body = ICON_SVG.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif u.path == "/api/dream-latest":
+            self._json(dream_latest())
         elif u.path == "/mobile":
             mp = ROOT / "config" / "console_mobile.json"
             try:
@@ -1675,6 +1837,12 @@ class H(BaseHTTPRequestHandler):
                                 "anomalies": r["anomalies"], "voice": r["voice"]})
                 except Exception as e:
                     self._json({"ok": False, "msg": type(e).__name__})
+        elif u.path == "/api/balance/refresh":
+            try:
+                import balance_monitor
+                self._json({"ok": True, "balance": balance_monitor.update_all()})
+            except Exception as e:
+                self._json({"ok": False, "msg": type(e).__name__})
         elif u.path == "/api/memory/forget":
             if not memory_bus:
                 self._json({"ok": False, "msg": "记忆模块不可用"})
@@ -1708,6 +1876,15 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     msg = str(e) if type(e).__name__ == "GateError" else type(e).__name__
                     self._json({"ok": False, "msg": msg})
+        elif u.path == "/api/persona-switch":
+            if not persona_switch:
+                self._json({"ok": False, "msg": "角色切换模块不可用"})
+            else:
+                try:
+                    self._json(persona_switch.switch_character(
+                        str(body.get("id", ""))))
+                except Exception as e:
+                    self._json({"ok": False, "msg": str(e)})
         elif u.path == "/api/call-mode":
             p = ROOT / "config" / "call_mode.json"
             try:

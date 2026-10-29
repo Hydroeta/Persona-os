@@ -11,8 +11,6 @@ CLI：
     python tools/goals.py done g1     # 打勾
     python tools/goals.py settle      # 结算昨天（完成记状态事件，失败不惩罚）
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

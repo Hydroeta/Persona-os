@@ -18,8 +18,6 @@ CLI：
     python tools/timeline.py day 2026-10-28
     python tools/timeline.py days
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

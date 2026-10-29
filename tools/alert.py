@@ -7,14 +7,12 @@
     "alerts": { "webhook": "" }
 webhook 支持三种（留空 = 不外发，只写本地日志）：
     · Bark       https://api.day.app/你的Key
-    · Server 酱  https://example.com/webhook
+    · Server 酱  https://sctapi.ftqq.com/你的SENDKEY.send
     · 通用 POST  任意接收 {"title","text"} JSON 的 URL（如企业微信/飞书机器人中转）
 
 防刷屏：同一 key 30 分钟内只发一次。
 CLI：python tools/alert.py test            # 发一条测试
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

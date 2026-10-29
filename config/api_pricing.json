@@ -1,0 +1,31 @@
+{
+  "providers": {
+    "deepseek": {
+      "mode": "live",
+      "label": "DeepSeek",
+      "input_per_m": 2.0,
+      "output_per_m": 8.0,
+      "low_balance_yuan": 5.0,
+      "note": "官方余额接口直查；低于 low_balance_yuan 触发路由降级"
+    },
+    "glm": {
+      "mode": "estimate",
+      "label": "GLM 智谱",
+      "model": "glm-4-flash",
+      "input_per_m": 0.0,
+      "output_per_m": 0.0,
+      "monthly_budget_yuan": 50.0,
+      "note": "无公开余额接口，按 token 账本×单价本地精算；glm-4-flash 免费"
+    },
+    "qwen": {
+      "mode": "estimate",
+      "label": "Qwen 百炼",
+      "model": "qwen-turbo",
+      "input_per_m": 0.3,
+      "output_per_m": 0.6,
+      "monthly_budget_yuan": 20.0,
+      "note": "真实余额需阿里云 BSS OpenAPI（主账号 AccessKey），这里走本地精算"
+    }
+  },
+  "budget_warn_ratio": 0.9
+}

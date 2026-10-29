@@ -12,8 +12,6 @@ CLI：
     python tools/watermark.py verify data/voice_mail/xxxx.wav
     python tools/watermark.py log
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import hashlib

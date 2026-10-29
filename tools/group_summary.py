@@ -12,8 +12,6 @@ Window.summarize()。本模块只做逻辑，不侵入那两个链路。
 CLI：
     python tools/group_summary.py demo
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import re

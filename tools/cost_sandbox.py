@@ -13,8 +13,6 @@ CLI：
     python tools/cost_sandbox.py call:50         # 覆盖单个场景：通话一天 50 轮
     python tools/cost_sandbox.py screen:100 companion:40
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json
