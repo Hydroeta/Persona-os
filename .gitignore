@@ -1,0 +1,60 @@
+# ===== 密钥与凭据 =====
+.env
+.env.*
+*.env
+connection.env
+**/keys.dpapi.json
+**/*.pem
+**/*.key
+
+# ===== 运行时数据（绝不入库）=====
+data/
+logs/
+sessions/
+runtime/
+models/
+backups/
+config/state.json
+**/_forgotten/
+**/call_metrics.jsonl
+**/memory_audit.jsonl
+**/guard.jsonl
+**/console_health.jsonl
+**/timeline/
+
+# ===== 数据库 =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== 备份包与模型权重 =====
+*.zip
+*.7z
+*.tar.gz
+*.wav
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# ===== Node =====
+node_modules/
+.pnpm-store/
+*.log
+
+# ===== 系统与编辑器 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
