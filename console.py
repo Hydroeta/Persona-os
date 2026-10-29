@@ -1130,7 +1130,7 @@ def self_check_deep():
 # ---------- 页面 ----------
 
 PAGE = r"""<!DOCTYPE html>
-<html lang="zh"><head><meta charset="utf-8"><title>小鲸鱼控制台</title>
+<html lang="zh"><head><meta charset="utf-8"><title>Persona-OS 控制台</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{--bg:#0f141b;--card:rgba(26,34,48,.72);--line:rgba(42,53,71,.8);--fg:#dbe6f4;--dim:#8fa0b8;--ok:#3ecf8e;--warn:#f5a623;--bad:#e5534b;--acc:#5b9dff}
@@ -1178,7 +1178,7 @@ tr:hover td{background:rgba(91,157,255,.05)}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#2a3547;border-radius:4px}::-webkit-scrollbar-track{background:transparent}
 a{color:var(--acc);text-decoration:none}
 </style></head><body><div class="wrap">
-<h1>🐋 小鲸鱼生态控制台</h1>
+<h1>🐋 Persona-OS 生态控制台</h1>
 <div class="sub">统一管理 DSH · 哦鲸鲸 · Tulpa · SnowLuma · 桌宠 ｜ 仅本机访问</div>
 <div id="hints"></div>
 
@@ -1518,7 +1518,7 @@ MOBILE_PAGE = """<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0f141b">
-<title>小鲸鱼 · 手机面板（只读）</title>
+<title>Persona-OS · 手机面板（只读）</title>
 <style>body{background:#0f141b;color:#dbe6f4;font:15px/1.7 sans-serif;margin:0;padding:18px}
 h1{font-size:18px}.c{background:#1a2230;border:1px solid #2a3547;border-radius:10px;padding:12px 14px;margin-bottom:10px}
 button{background:#e5534b;color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:14px}</style></head><body>
@@ -1550,7 +1550,7 @@ const d=await r.json();document.getElementById('sr').textContent=' '+d.msg}
 </script></body></html>"""
 
 
-MANIFEST = {"name": "小鲸鱼控制台", "short_name": "小鲸鱼",
+MANIFEST = {"name": "Persona-OS 控制台", "short_name": "Persona-OS",
             "start_url": "/mobile", "display": "standalone",
             "background_color": "#0f141b", "theme_color": "#0f141b",
             "icons": [{"src": "/icon.svg", "sizes": "any",
