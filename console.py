@@ -87,6 +87,20 @@ PET = ROOT / "dsh-pet"
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 CREATE_NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
 
+ALLOWED_HOSTS = ["127.0.0.1:", "localhost:"]  # Host 白名单；开 LAN 后追加局域网 IP
+
+
+def lan_ip():
+    """本机局域网 IP（判白名单/打印手机面板地址用），失败返回空串。"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("223.5.5.5", 80))  # 不真发包，只为拿到出口网卡 IP
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return ""
+
 # ---------- 基础工具 ----------
 
 def port_pid(port):
@@ -1616,9 +1630,10 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _auth(self):
-        """Host 白名单（挡 DNS rebinding）+ 一次性 token（挡 CSRF）。"""
+        """Host 白名单（挡 DNS rebinding）+ 一次性 token（挡 CSRF）。
+        手机面板开 LAN 时（console_mobile.json enabled+lan）追加本机局域网 IP。"""
         host = (self.headers.get("Host") or "").lower()
-        if not (host.startswith("127.0.0.1:") or host.startswith("localhost:")):
+        if not any(host.startswith(p) for p in ALLOWED_HOSTS):
             return False
         tok = parse_qs(urlparse(self.path).query).get("token", [""])[0] or \
             self.headers.get("X-Console-Token", "")
@@ -2042,9 +2057,23 @@ def main():
                     print("日报生成失败：%s" % e)
                 time.sleep(600)
         threading.Thread(target=_report_loop, daemon=True).start()
-    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    # 手机面板开 LAN 时绑 0.0.0.0，并把局域网 IP 加进 Host 白名单
+    bind, lip = "127.0.0.1", ""
+    try:
+        mc = json.loads((ROOT / "config" / "console_mobile.json").read_text("utf-8"))
+        if mc.get("enabled") and mc.get("lan"):
+            lip = lan_ip()
+            if lip:
+                bind = "0.0.0.0"
+                ALLOWED_HOSTS.append(lip + ":")
+    except Exception:
+        pass
+    srv = ThreadingHTTPServer((bind, port), H)
     print("控制台已启动（复制下面整行到浏览器，token 每次启动都会变）:")
     print("  http://127.0.0.1:%d/?token=%s" % (port, TOKEN))
+    if lip:
+        print("手机面板（同一 Wi-Fi 下手机浏览器打开，可加主屏幕）:")
+        print("  http://%s:%d/mobile?token=%s" % (lip, port, TOKEN))
     print("Ctrl+C 退出")
     try:
         srv.serve_forever()
