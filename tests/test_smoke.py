@@ -385,10 +385,10 @@ class TestPersonaSwitch(unittest.TestCase):
     def test_migrate_then_switch(self):
         r = persona_switch.ensure_migrated()
         self.assertTrue(r["migrated"])
-        self.assertEqual(persona_switch.active_id(), "jingjing")
+        self.assertEqual(persona_switch.active_id(), "ohwhale")
         # 迁移后视图带 _view_of 标记
         v = json.loads(persona_switch.VIEW_PERSONA.read_text("utf-8"))
-        self.assertEqual(v["_view_of"], "jingjing")
+        self.assertEqual(v["_view_of"], "ohwhale")
         self.assertEqual(v["identity"]["self_name"], "鲸鲸")
         # 造第二个角色（无状态存档），切换后视图换人、旧 state 视图被清掉
         self._add_char("lengku", "冷酷助理", with_state=False)
@@ -404,13 +404,13 @@ class TestPersonaSwitch(unittest.TestCase):
         lines = persona_switch.EVENTS_FILE.read_text("utf-8").strip().splitlines()
         evs = [json.loads(x) for x in lines]
         self.assertEqual(evs[-1]["to"], "lengku")
-        self.assertEqual(evs[-1]["from"], "jingjing")
+        self.assertEqual(evs[-1]["from"], "ohwhale")
         # 切不存在的角色报错
         with self.assertRaises(RuntimeError):
             persona_switch.switch_character("ghost")
         # list 能看到两个角色
         ids = [c["id"] for c in persona_switch.list_characters()]
-        self.assertEqual(sorted(ids), ["jingjing", "lengku"])
+        self.assertEqual(sorted(ids), ["lengku", "ohwhale"])
 
 
 class TestStateEnginePersonaPath(unittest.TestCase):
@@ -428,13 +428,13 @@ class TestStateEnginePersonaPath(unittest.TestCase):
         state_engine.DEFAULT_STATE_FILE = view
         state_engine.STATE_FILE = view
         state_engine.in_sleep = lambda ts=None, sleep=None: False
-        d = persona_switch.PERSONAS_DIR / "jingjing"
+        d = persona_switch.PERSONAS_DIR / "ohwhale"
         d.mkdir(parents=True)
         (d / "state.json").write_text(json.dumps(
             {"updated": time.time(), "energy": 0.8, "mood": 0.6,
              "sleep": {"start": "23:30", "end": "08:00"}}), "utf-8")
         persona_switch.ACTIVE_FILE.write_text(json.dumps(
-            {"active_id": "jingjing"}), "utf-8")
+            {"active_id": "ohwhale"}), "utf-8")
 
     def tearDown(self):
         (persona_switch.PERSONAS_DIR, persona_switch.ACTIVE_FILE,
@@ -445,7 +445,7 @@ class TestStateEnginePersonaPath(unittest.TestCase):
     def test_tick_writes_persona_file_and_mirrors_view(self):
         st = state_engine.tick()
         self.assertLess(st["energy"], 0.8)  # 清醒衰减，确实读到了角色存档
-        saved = json.loads((persona_switch.PERSONAS_DIR / "jingjing"
+        saved = json.loads((persona_switch.PERSONAS_DIR / "ohwhale"
                             / "state.json").read_text("utf-8"))
         self.assertAlmostEqual(saved["energy"], st["energy"], places=3)
         view = json.loads(state_engine.STATE_FILE.read_text("utf-8"))

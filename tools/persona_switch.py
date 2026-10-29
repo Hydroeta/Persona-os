@@ -2,7 +2,7 @@
 """小鲸鱼 · 多角色静默热切换（零 LLM 调用，纯工程切换）
 
 目录约定（正本在角色目录，config/ 下是激活角色的物化视图）：
-  config/personas/active.json          {"active_id": "jingjing", "updated": ...}
+  config/personas/active.json          {"active_id": "ohwhale", "updated": ...}
   config/personas/<id>/persona.json    该角色的人格+声音+记忆指针正本
   config/personas/<id>/state.json      该角色的情绪/精力/作息存档
   config/persona.json                  激活角色 persona.json 的物化视图（自动生成，勿手改）
@@ -23,7 +23,7 @@ CLI：
     python tools/persona_switch.py list              # 所有角色
     python tools/persona_switch.py active            # 当前激活
     python tools/persona_switch.py switch <id>       # 切换
-    python tools/persona_switch.py migrate           # 首次迁移：config/persona.json → personas/jingjing/
+    python tools/persona_switch.py migrate           # 首次迁移：config/persona.json → personas/ohwhale/
 """
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def switch_character(char_id: str) -> dict:
             "restart_hints": RESTART_HINTS}
 
 
-def ensure_migrated(default_id: str = "jingjing") -> dict:
+def ensure_migrated(default_id: str = "ohwhale") -> dict:
     """首次迁移：现有 config/persona.json + state.json 收编为第一个角色。"""
     if ACTIVE_FILE.is_file():
         return {"ok": True, "migrated": False, "active_id": active_id()}
