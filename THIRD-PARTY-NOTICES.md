@@ -23,6 +23,8 @@
 |---|---|---|---|---|
 | AstrBot | https://github.com/AstrBotDevs/AstrBot | **AGPL-3.0** | 见上游 `LICENSE` | 消息框架与管理面板（`:6185`）；`ohwhale-deploy/plugins/` 下 5 个插件运行于其上。**独立进程调用，未修改、未随仓库分发其源码** |
 | NapCatQQ | https://github.com/NapNeko/NapCatQQ | **GPL-3.0** | 见上游 `LICENSE` | QQ 协议端（OneBot 反向 WS `:6199`），消息收发链路。**以独立进程运行，本项目未链接其代码、未分发其二进制** |
+| Ollama | https://github.com/ollama/ollama | MIT | 见上游 `LICENSE` | 本地模型推理服务（`:11434`），`llm_client` 端云路由的 local provider。**独立进程，用户自备** |
+| Qwen2.5-1.5B-Instruct | https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct | Apache-2.0 | 见上游 `LICENSE` | Ollama 上的本地模型（群总结等低敏后台场景）。**模型权重由用户自行拉取，不随仓库分发** |
 | whale-pod | 见 `whale-pod/LICENSE` 内附来源说明 | MIT | Copyright (c) 2026 WhalePod contributors | DSH 插件宿主，原样引用 |
 | Tulpa `chatlocal` 模块 | https://github.com/fumingyang2004/Tulpa | MIT | `Copyright (c) 2026 Tulpa contributors` | QQ 侧本地聊天模块，原样保留（`Tulpa/Tulpa/chatlocal/`，适用上游根目录 MIT 许可） |
 
@@ -34,6 +36,10 @@
 > 关于 copyleft 的边界：AstrBot 以 AGPL-3.0 发布，若使用者修改 AstrBot 并对外提供网络服务，
 > 需按 AGPL 第 13 条向使用者提供修改后的源码；NapCatQQ 以 GPL-3.0 发布，本项目仅通过
 > OneBot 协议与之通信，不构成衍生作品。上述结论为事实描述，不构成法律意见。
+
+> 在线 API 服务（DeepSeek 对话、阿里云百炼·千问兜底、智谱 CogView 梦境配图、心知天气）均为
+> 用户自备账号的远程调用，服务条款由各提供商决定；本仓库不含其 SDK 或代码，密钥仅存于本机
+> DPAPI 保险库。
 
 ---
 
@@ -128,6 +134,7 @@
 | cron-scheduler | 0.2.10 | MIT（npm 标注） | 定时任务 |
 | mcp-tulpa | — | 未公开标注（以发布页为准） | 经 MCP 连接 Tulpa |
 | llm-deepseek | — | 未公开标注（以发布页为准） | DeepSeek 模型接入 |
+| dsh-image-gen | 0.10.0 | 未公开标注（以发布页为准） | 会话内文生图工具（多 provider） |
 
 > **SurfCore 补充说明**：
 > - B站插件灵感来源于 **B站 @凌羽clover**，特此致谢。
