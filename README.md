@@ -85,6 +85,7 @@ python -m unittest discover -s tests -v
   详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 的 A 节。
 - 全部第三方组件（直接使用 / 修改后分发 / 运行时集成）的许可证、版权行、修改声明与素材署名，
   集中在 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
 ## 许可
 
 本仓库自有代码以 MIT 发布（见 `LICENSE`）；第三方组件保持各自许可。
