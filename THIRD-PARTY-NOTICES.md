@@ -162,7 +162,7 @@
 
 - 本仓库自有 `.py` 文件统一带：
   ```text
-  # Copyright 2026 Xiaojingyu AI Companion contributors
+  # Copyright 2026 persona-os contributors
   # SPDX-License-Identifier: MIT
   ```
 - 修改自第三方的文件（当前为 `ohwhale-deploy/scripts/call_loop.py`）采用「前置自有声明 + 保留上游信息」，

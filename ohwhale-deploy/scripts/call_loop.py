@@ -14,7 +14,7 @@
     python -u call_loop.py            # 一直循环
     python -u call_loop.py --once     # 只处理一句话
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
+# Copyright 2026 persona-os contributors
 # SPDX-License-Identifier: MIT
 #
 # Modified from ohwhale-deploy (https://github.com/chauko0423/ohwhale-deploy, MIT)
