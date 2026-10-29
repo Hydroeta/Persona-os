@@ -114,7 +114,7 @@
   （OpenCode Zen、Kilo、GLM、Kimi 等），其服务条款由各提供商决定。
 - EAC 协付类渠道需在桌面端登录 GitHub 并 Star 该仓库后由服务端放行。
 
-### C3. 已在使用的 14 个 DSH 插件（均不随仓库分发）
+### C3. 已在使用的 15 个 DSH 插件（均不随仓库分发）
 
 仓库内只有 `dsh/home/cron-jobs.json` 与 `cordis.patch.yml` 两份**配置**，不包含下表任何插件代码。
 

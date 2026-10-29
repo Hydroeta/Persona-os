@@ -55,6 +55,7 @@ python -m unittest discover -s tests -v
 |---|---|---|
 | GPT-SoVITS 运行时 + 模型 | 本地语音合成与音色克隆 | 按 `ohwhale-deploy` 的脚本自行下载，约 4 GB |
 | Tulpa | QQ 客户端集成 | 官方 Releases（源码 MIT，发行包含预编译 exe；`chatlocal` 源码随仓库保留） |
+| Ollama + Qwen2.5-1.5B（可选） | 本地免费推理 provider（端云路由的 local 端） | `ollama pull qwen2.5:1.5b` |
 | SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
 | dsh-pet | 桌宠可执行程序 | 上游 Releases（本仓库只含人设/菜单） |
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
