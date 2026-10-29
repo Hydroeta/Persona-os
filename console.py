@@ -559,6 +559,36 @@ KEY_DEFS = [
     ("ONEBOT_ACCESS_TOKEN", "OneBot 访问令牌", False),
 ]
 
+def qq_master_get():
+    """读 ohwhale config.json 的 master.qq（缺文件/字段返回空串）。"""
+    try:
+        return str(json.loads((OHWHALE / "config.json").read_text("utf-8-sig"))
+                   .get("master", {}).get("qq", "") or "")
+    except Exception:
+        return ""
+
+
+def qq_master_set(qq):
+    """写主人 QQ 到 ohwhale config.json；文件不存在则从模板创建。"""
+    qq = str(qq).strip()
+    if not (qq.isdigit() and 5 <= len(qq) <= 12):
+        return False, "QQ 号应为 5~12 位数字"
+    cfg_file = OHWHALE / "config.json"
+    try:
+        if cfg_file.is_file():
+            cfg = json.loads(cfg_file.read_text("utf-8-sig"))
+        else:
+            tpl = OHWHALE / "config" / "config.example.json"
+            cfg = json.loads(tpl.read_text("utf-8-sig")) if tpl.is_file() else {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+        cfg.setdefault("master", {})["qq"] = qq
+        cfg_file.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), "utf-8")
+        return True, "已写入（重启哦鲸鲸生效）"
+    except Exception as e:
+        return False, "写入失败: %s" % type(e).__name__
+
+
 def keys_status():
     """密钥状态以 DPAPI 保险库为准；.env 只剩占位符，不再是事实源。"""
     res = []
@@ -1191,11 +1221,42 @@ tr:hover td{background:rgba(91,157,255,.05)}
 .badge{border:1px solid var(--line)}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#2a3547;border-radius:4px}::-webkit-scrollbar-track{background:transparent}
 a{color:var(--acc);text-decoration:none}
-</style></head><body><div class="wrap">
+/* --- SPA 布局：侧边栏 + Hash 路由页面视图 --- */
+body{display:flex}
+.sidebar{width:210px;min-height:100vh;position:fixed;left:0;top:0;background:rgba(18,25,36,.9);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:20px 0;z-index:5}
+.brand{padding:0 20px 16px;font-size:18px;font-weight:bold;background:linear-gradient(90deg,var(--acc),var(--ok));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.nav-btn{padding:11px 20px;cursor:pointer;color:var(--dim);font-size:14px;border-left:3px solid transparent;transition:all .2s;user-select:none}
+.nav-btn:hover{background:rgba(91,157,255,.08);color:var(--fg)}
+.nav-btn.active{border-left-color:var(--acc);color:var(--acc);font-weight:600;background:rgba(91,157,255,.06)}
+.side-sub{margin-top:auto;padding:14px 20px 0;font-size:11px;color:var(--dim);border-top:1px solid var(--line);line-height:1.5}
+.main{margin-left:210px;flex:1;padding:24px 28px 60px;max-width:1400px;min-width:0}
+.page-view{display:none;animation:fadeIn .25s ease}
+.page-view.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media (max-width:820px){
+body{display:block}
+.sidebar{position:static;width:100%;min-height:0;flex-direction:row;flex-wrap:wrap;padding:8px;border-right:none;border-bottom:1px solid var(--line)}
+.brand{padding:6px 10px;width:100%}
+.nav-btn{padding:8px 12px;border-left:none;border-bottom:2px solid transparent}
+.nav-btn.active{border-bottom-color:var(--acc)}
+.side-sub{display:none}
+.main{margin-left:0;padding:14px}
+}
+</style></head><body>
+<div class="sidebar">
+<div class="brand">🐋 Persona-OS</div>
+<div class="nav-btn active" data-page="dashboard" onclick="navigate('dashboard')">📊 仪表盘</div>
+<div class="nav-btn" data-page="ops" onclick="navigate('ops')">🛠 运维与配置</div>
+<div class="nav-btn" data-page="ai" onclick="navigate('ai')">🧠 智能与内容</div>
+<div class="nav-btn" data-page="companion" onclick="navigate('companion')">💖 陪伴与数据</div>
+<div class="side-sub">统一管理 DSH · 哦鲸鲸 · Tulpa · SnowLuma · 桌宠<br>仅本机访问 · token 鉴权</div>
+</div>
+<div class="main">
 <h1>🐋 Persona-OS 生态控制台</h1>
 <div class="sub">统一管理 DSH · 哦鲸鲸 · Tulpa · SnowLuma · 桌宠 ｜ 仅本机访问</div>
 <div id="hints"></div>
 
+<div id="page-dashboard" class="page-view active">
 <div class="grid">
 <div class="span2">
 <h2>服务</h2>
@@ -1207,17 +1268,6 @@ a{color:var(--acc);text-decoration:none}
 <div id="svcs"></div>
 
 </div>
-<div>
-<h2>一键部署（新机器初始化）</h2>
-<div class="card" id="deploy" style="font-size:13px">加载中…</div>
-<pre id="deployOut" style="display:none"></pre>
-
-</div>
-<div class="span2">
-<h2>定时任务（DSH cron）</h2>
-<div class="card"><table id="cron"><thead><tr><th>任务</th><th>时间</th><th>状态</th><th>上次</th><th>次数</th><th></th></tr></thead><tbody></tbody></table></div>
-
-</div>
 <div class="span2">
 <h2>指标</h2><div class="card" id="metrics" style="font-size:13px">加载中…</div>
 </div>
@@ -1225,6 +1275,17 @@ a{color:var(--acc);text-decoration:none}
 <h2>💳 API 资金看板</h2><div class="card" id="apiBalance" style="font-size:13px">加载中…</div>
 
 </div>
+<div>
+<h2>一键自检</h2>
+<div class="card"><button onclick="selfCheck()">开始自检（端口/声卡/密钥/QQ/TTS/磁盘）</button>
+<label style="font-size:12px;color:var(--dim);margin-left:10px"><input type="checkbox" id="deepck"> 深度自检（OneBot 反连 + TTS 真合成一句，占显存，需服务已启动）</label><div id="sck" style="margin-top:10px"></div></div>
+
+</div>
+</div>
+</div>
+
+<div id="page-companion" class="page-view">
+<div class="grid">
 <div class="span2">
 <h2>陪伴与隐私</h2>
 <div class="card" id="care" style="font-size:13px">
@@ -1250,35 +1311,6 @@ a{color:var(--acc);text-decoration:none}
 <div>
 <h2>关系与纪念日</h2>
 <div class="card" id="rel" style="font-size:13px">加载中…</div>
-
-</div>
-<div>
-<h2>成本沙盘（上线前先算算）</h2>
-<div class="card" id="sandbox" style="font-size:13px">加载中…</div>
-
-</div>
-<div class="span2">
-<h2>内容工坊（一个灵魂四张嘴）</h2>
-<div class="card" style="font-size:13px">
-<div class="row"><input id="ct" placeholder="标题" style="flex:1"><input id="cb" placeholder="正文素材" style="flex:2">
-<button onclick="contentCreate()">登记素材</button>
-<button class="ghost" onclick="contentDiary()">从日记生成草稿</button></div>
-<div id="clist" style="margin-top:8px">加载中…</div></div>
-
-</div>
-<div>
-<h2>人格快照</h2>
-<div class="card" style="font-size:13px">
-<div class="row"><input id="snapnote" placeholder="快照备注（改了什么）" style="flex:1">
-<button onclick="snapCreate()">拍快照</button></div>
-<div id="snaplist" style="margin-top:8px">加载中…</div></div>
-
-</div>
-<div>
-<h2>时间机器</h2>
-<div class="card" style="font-size:13px">
-<div class="row"><select id="tldate" onchange="loadTimeline()"></select></div>
-<div id="tllist" style="margin-top:8px;max-height:300px;overflow:auto">加载中…</div></div>
 
 </div>
 <div>
@@ -1308,20 +1340,69 @@ a{color:var(--acc);text-decoration:none}
 </div>
 
 </div>
+</div>
+</div>
+
+<div id="page-ai" class="page-view">
+<div class="grid">
+<div>
+<h2>成本沙盘（上线前先算算）</h2>
+<div class="card" id="sandbox" style="font-size:13px">加载中…</div>
+
+</div>
+<div class="span2">
+<h2>内容工坊（一个灵魂四张嘴）</h2>
+<div class="card" style="font-size:13px">
+<div class="row"><input id="ct" placeholder="标题" style="flex:1"><input id="cb" placeholder="正文素材" style="flex:2">
+<button onclick="contentCreate()">登记素材</button>
+<button class="ghost" onclick="contentDiary()">从日记生成草稿</button></div>
+<div id="clist" style="margin-top:8px">加载中…</div></div>
+
+</div>
+<div>
+<h2>人格快照</h2>
+<div class="card" style="font-size:13px">
+<div class="row"><input id="snapnote" placeholder="快照备注（改了什么）" style="flex:1">
+<button onclick="snapCreate()">拍快照</button></div>
+<div id="snaplist" style="margin-top:8px">加载中…</div></div>
+
+</div>
+<div>
+<h2>时间机器</h2>
+<div class="card" style="font-size:13px">
+<div class="row"><select id="tldate" onchange="loadTimeline()"></select></div>
+<div id="tllist" style="margin-top:8px;max-height:300px;overflow:auto">加载中…</div></div>
+
+</div>
+</div>
+</div>
+
+<div id="page-ops" class="page-view">
+<div class="grid">
+<div>
+<h2>一键部署（新机器初始化）</h2>
+<div class="card" id="deploy" style="font-size:13px">加载中…</div>
+<pre id="deployOut" style="display:none"></pre>
+
+</div>
+<div class="span2">
+<h2>定时任务（DSH cron）</h2>
+<div class="card"><table id="cron"><thead><tr><th>任务</th><th>时间</th><th>状态</th><th>上次</th><th>次数</th><th></th></tr></thead><tbody></tbody></table></div>
+
+</div>
 <div>
 <h2>故障 Runbook</h2>
 <div class="card" id="runbook" style="font-size:13px">加载中…</div>
 
 </div>
-<div>
-<h2>一键自检</h2>
-<div class="card"><button onclick="selfCheck()">开始自检（端口/声卡/密钥/QQ/TTS/磁盘）</button>
-<label style="font-size:12px;color:var(--dim);margin-left:10px"><input type="checkbox" id="deepck"> 深度自检（OneBot 反连 + TTS 真合成一句，占显存，需服务已启动）</label><div id="sck" style="margin-top:10px"></div></div>
-
-</div>
 <div class="span2">
 <h2>密钥与配置</h2>
 <div class="card" id="keys"></div>
+<div class="card"><div class="row">
+<span class="name" style="min-width:200px">主人 QQ（哦鲸鲸）</span>
+<span class="badge" id="qqm-badge">未配置</span>
+<input id="qqm-input" placeholder="QQ 号" style="width:140px">
+<button class="ghost" onclick="saveQqMaster()">保存</button></div></div>
 
 </div>
 <div>
@@ -1337,6 +1418,8 @@ a{color:var(--acc);text-decoration:none}
 <div class="card"><div class="row"><select id="logsel" onchange="loadLog()"></select>
 <button class="ghost" onclick="loadLog()">刷新</button></div>
 <pre id="logview" style="margin-top:10px">选择日志文件…</pre></div>
+</div>
+</div>
 </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -1391,6 +1474,12 @@ ${k.sync?`<span class="badge ${k.synced?'on':''}">${k.synced?'DSH 已同步':'DS
 <button class="ghost" onclick="saveKey('${k.key}')">保存</button></div>`).join('')}
 async function saveKey(key){const v=document.getElementById('k_'+key).value;if(!v)return toast('请输入值');
 const d=await api('/api/keys','POST',{key,value:v});toast(d.msg);loadKeys()}
+
+async function loadQqMaster(){const d=await api('/api/qq-master');const b=document.getElementById('qqm-badge');
+b.textContent=d.qq?'已配置':'未配置';b.className='badge'+(d.qq?' on':'');
+if(d.qq&&!document.getElementById('qqm-input').value)document.getElementById('qqm-input').value=d.qq}
+async function saveQqMaster(){const v=document.getElementById('qqm-input').value.trim();
+if(!v)return toast('请输入 QQ 号');const d=await api('/api/qq-master','POST',{qq:v});toast(d.msg);loadQqMaster()}
 
 async function qqLogin(){const d=await api('/api/qq-login','POST',{});toast(d.msg)}
 
@@ -1524,7 +1613,18 @@ async function contentDiary(){const d=await api('/api/content','POST',{action:'f
 async function loadRunbook(){const d=await api('/api/runbook');document.getElementById('runbook').innerHTML=(d.items||[]).map(r=>`<button class="ghost" style="margin-right:8px" onclick="showRb('${r.id}')">${r.title}</button>`).join('')+'<div id="rbsteps" style="margin-top:8px"></div>'}
 async function showRb(id){const d=await api('/api/runbook?id='+id);if(!d.found)return;document.getElementById('rbsteps').innerHTML='<b>'+d.title+'</b><ol>'+d.steps.map(s=>`<li>${s}</li>`).join('')+'</ol>'}
 
-loadSvcs();loadDeploy();loadCron();loadKeys();loadLogs();loadMetrics();loadSilent();loadRelations();loadSandbox();loadContent();loadSnaps();loadTimeline();loadPrivacy();loadP2();loadRunbook();setInterval(loadSvcs,10000);setInterval(loadMetrics,30000);
+/* --- Hash 路由：按需加载，刷新/前进后退保持当前页 --- */
+const PAGE_LOADS={dashboard:[loadSvcs,loadMetrics],ops:[loadDeploy,loadCron,loadKeys,loadQqMaster,loadLogs,loadRunbook],ai:[loadSandbox,loadContent,loadSnaps,loadTimeline],companion:[loadRelations,loadPrivacy,loadP2,loadSilent]};
+function navigate(id){if(!PAGE_LOADS[id])id='dashboard';
+document.querySelectorAll('.page-view').forEach(e=>e.classList.remove('active'));
+document.querySelectorAll('.nav-btn').forEach(e=>e.classList.toggle('active',e.dataset.page===id));
+const pv=document.getElementById('page-'+id);if(pv)pv.classList.add('active');
+if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);
+PAGE_LOADS[id].forEach(f=>{try{f()}catch(e){}})}
+window.addEventListener('hashchange',()=>navigate(location.hash.replace('#','')||'dashboard'));
+navigate(location.hash.replace('#','')||'dashboard');
+setInterval(()=>{if(document.getElementById('page-dashboard').classList.contains('active'))loadSvcs()},10000);
+setInterval(()=>{if(document.getElementById('page-dashboard').classList.contains('active'))loadMetrics()},30000);
 </script></body></html>"""
 
 # 手机只读面板（默认关闭，config/console_mobile.json 开启；仅局域网/本机，token 同源）
@@ -1683,6 +1783,8 @@ class H(BaseHTTPRequestHandler):
             self._json(items)
         elif u.path == "/api/keys":
             self._json(keys_status())
+        elif u.path == "/api/qq-master":
+            self._json({"qq": qq_master_get()})
         elif u.path == "/api/logs":
             self._json(log_list())
         elif u.path == "/api/log":
@@ -1838,6 +1940,9 @@ class H(BaseHTTPRequestHandler):
             self._json({"ok": ok, "msg": msg})
         elif u.path == "/api/keys":
             ok, msg = key_write(body.get("key", ""), body.get("value", ""))
+            self._json({"ok": ok, "msg": msg})
+        elif u.path == "/api/qq-master":
+            ok, msg = qq_master_set(body.get("qq", ""))
             self._json({"ok": ok, "msg": msg})
         elif u.path == "/api/qq-login":
             ok, msg = qq_login()
