@@ -43,8 +43,8 @@ THIRD-PARTY-NOTICES.md     第三方归属、许可证与修改声明（唯一�
 ## 快速开始
 
 ```powershell
-python console.py          # 打开 http://127.0.0.1:8900 ，按提示填密钥
-python -m unittest discover -s tests -v
+.\控制台.cmd                # 启动控制台（唯一入口），浏览器打开打印的带 token 链接
+python tests/test_smoke.py  # 117 项冒烟测试
 ```
 
 一键装基础环境（Node / Python / pnpm / ffmpeg）与包内依赖：双击 `一键安装.cmd`。
