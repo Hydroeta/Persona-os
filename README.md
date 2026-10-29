@@ -16,11 +16,11 @@
 | 控制台 `console.py` | 服务拓扑启动、就绪探针、健康守护、密钥保险库、指标面板、自检（纯标准库） |
 | 多角色 | `config/personas/` 多角色正本 + 激活指针，静默热切换（零 LLM 调用），状态/记忆按角色隔离 |
 | 语音通话 | 本地 ASR + GPT-SoVITS 音色克隆，按情绪/精力切换参考音（`config/persona.json` 的 `voice.states`）|
-| 聊天接入 | QQ（Tulpa / SnowLuma 协议端）、AstrBot 插件、B 站与抖音弹幕回复 |
+| 聊天接入 | QQ 双协议端（Tulpa←SnowLuma 注入桌面 QQ；哦鲸鲸←NapCat 便携 QQ）、AstrBot 插件、B 站与抖音弹幕回复 |
 | 桌宠 | 桌面角色（基于 dsh-pet 的定制人设与菜单） |
 | 记忆与关系 | 目标、时间胶囊、日记回顾、日历提醒、关心心跳、记忆总线 |
-| 成本与资源 | LLM token 闸门、场景配额、GPU 互斥租约、搜索网关、日报 |
-| 工具集 | `tools/` 40+ 个纯标准库模块；`tests/` 92 项冒烟测试 |
+| 成本与资源 | LLM token 闸门、场景配额、端云路由（Ollama 本地免费 / DeepSeek 主用 / 千问兜底）、GPU 互斥租约、搜索网关、日报 |
+| 工具集 | `tools/` 40+ 个纯标准库模块；`tests/` 117 项冒烟测试 |
 
 ## 目录
 
@@ -55,7 +55,7 @@ python -m unittest discover -s tests -v
 |---|---|---|
 | GPT-SoVITS 运行时 + 模型 | 本地语音合成与音色克隆 | 按 `ohwhale-deploy` 的脚本自行下载，约 4 GB |
 | Tulpa | QQ 客户端集成 | 官方 Releases（源码 MIT，发行包含预编译 exe；`chatlocal` 源码随仓库保留） |
-| SnowLuma | QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
+| SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
 | dsh-pet | 桌宠可执行程序 | 上游 Releases（本仓库只含人设/菜单） |
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
 | API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
