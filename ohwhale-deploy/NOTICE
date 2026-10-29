@@ -16,7 +16,7 @@ MIT source override, locked revision and rebuild instructions are included in
 third-party/camera-emulator-overrides and config/camera-source.json. A separately
 built unsigned candidate has passed direct-source frame tests; actual camera
 registration and QQ video on the second device remain unverified.
-LLBot distribution: https://luckylillia.com/ ; follow the terms of the selected release.
+NapCatQQ distribution: https://github.com/NapNeko/NapCatQQ (GPL-3.0) ; follow the terms of the selected release.
 VB-CABLE: https://vb-audio.com/Cable/ ; install from the vendor.
 FFmpeg: https://ffmpeg.org/ ; binary license depends on build configuration.
 The optional video-tools installer downloads Gyan's 9.0.2 essentials build,

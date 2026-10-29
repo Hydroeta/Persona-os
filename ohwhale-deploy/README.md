@@ -27,7 +27,7 @@
 | DeepSeek API Key | 聊天及视频图像理解；账号按服务商规则计费 |
 | DashScope API Key | 流式语音识别、电话截图理解；云端克隆音色需要单独配置 |
 | QQ 账号 | 使用者自己扫码；建议与日常账号分开 |
-| LuckyLillia/PMHQ 启动授权 | 客户端可能要求 Auth Token；与 OneBot 连接 token 不同，不能由项目代发 |
+| NapCat 首次登录 | 控制台二维码需手机 QQ 扫码并确认；强杀进程会丢登录记录需重扫 |
 | VB-CABLE | 本地 TTS 到 QQ 麦克风的音频回程 |
 | GPT-SoVITS 推理环境 | 默认音色的本地合成；显卡、驱动、PyTorch 组合需实测 |
 | B 站账号（可选） | 登录后的私信、点赞、评论等工具 |

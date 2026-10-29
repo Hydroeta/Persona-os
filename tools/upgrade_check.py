@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 升级兼容验证（P2-1）
 
-GPT-SoVITS / AstrBot / LuckyLillia 升级前后的核对流程：
+GPT-SoVITS / AstrBot / NapCat 升级前后的核对流程：
     升级前：python tools/upgrade_check.py baseline     # 记录当前指纹为基线
     升级后：python tools/upgrade_check.py check        # 与基线比对 + 就绪探测
 
 核对内容：
-  1. 关键文件 SHA256（GPT-SoVITS 权重、LuckyLillia.exe、start 脚本）
+  1. 关键文件 SHA256（GPT-SoVITS 权重、启动NapCat.bat、start 脚本）
   2. 端口就绪（9880 TTS /docs、6185 AstrBot、3080 DSH）
   3. Python / Node 版本未漂移
 """
@@ -26,7 +26,7 @@ BASELINE = ROOT / "tools" / "upgrade_baseline.json"
 WATCH_FILES = [
     ("GPT-SoVITS 权重", "ohwhale-deploy/**/GPT_SoVITS/*.pth"),
     ("GPT-SoVITS 配置", "ohwhale-deploy/**/GPT_SoVITS/*.json"),
-    ("LuckyLillia", "ohwhale-deploy/runtime/LL/LuckyLillia.exe"),
+    ("NapCat", "ohwhale-deploy/runtime/LL/NapCat.52230.Shell/启动NapCat.bat"),
     ("DSH 启动脚本", "dsh/start-dsh.ps1"),
     ("Tulpa 主程序", "Tulpa/Tulpa/Tulpa.exe"),
 ]

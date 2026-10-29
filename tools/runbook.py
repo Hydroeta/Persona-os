@@ -30,10 +30,10 @@ TREES = {
         "title": "反向 WS 断连",
         "steps": [
             "深度自检「OneBot 反向 WS（6199）」是否可连",
-            "LuckyLillia 面板反向地址应为 ws://127.0.0.1:6199/ws",
+            "NapCat 反向地址应为 ws://127.0.0.1:6199/ws（带 /ws 后缀）",
             "AstrBot :6185 子项是否为 ✓",
             "两侧 ONEBOT_ACCESS_TOKEN 是否一致（控制台密钥页重填一次）",
-            "重启顺序：先 LuckyLillia，再 AstrBot",
+            "重启顺序：先 NapCat，再 AstrBot",
         ],
     },
     "vram_oom": {
@@ -50,7 +50,7 @@ TREES = {
         "title": "QQ 不在线 / 掉登录",
         "steps": [
             "控制台「QQ 登录」重新扫码",
-            "LuckyLillia 窗口不要关（最小化即可）",
+            "NapCat 控制台窗口不要关（最小化即可）",
             "掉登录频繁 → 换登录方式（手表/平板协议更稳）",
         ],
     },

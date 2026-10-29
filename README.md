@@ -60,7 +60,7 @@ python -m unittest discover -s tests -v
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
 | API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
 | AstrBot（AGPL-3.0） | 消息框架与面板 | 由 ohwhale-deploy 安装，源码从上游获取 |
-| LuckyLillia（GPL-2.0） | QQ 协议端 | 官方 Releases，独立进程运行 |
+| NapCatQQ（GPL-3.0） | QQ 协议端 | 官方 Releases，独立进程运行 |
 
 ## 隐私与脱敏
 
@@ -81,7 +81,7 @@ python -m unittest discover -s tests -v
   灵感来源于 B站 @凌羽clover，特此致谢；其本地语音模型不随本仓库分发。
 - Tulpa（`chatlocal` 源码 MIT，`https://github.com/fumingyang2004/Tulpa`）
   的本地聊天模块随仓库保留；其发行包与 `Tulpa.exe` 需自行从官方 Releases 获取，本仓库未重新分发。
-- 消息框架 AstrBot（AGPL-3.0）与 QQ 协议端 LuckyLillia（GPL-2.0）以独立进程集成，
+- 消息框架 AstrBot（AGPL-3.0）与 QQ 协议端 NapCatQQ（GPL-3.0）以独立进程集成，
   详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 的 A 节。
 - 全部第三方组件（直接使用 / 修改后分发 / 运行时集成）的许可证、版权行、修改声明与素材署名，
   集中在 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
@@ -91,7 +91,7 @@ python -m unittest discover -s tests -v
 本仓库自有代码以 MIT 发布（见 `LICENSE`）；第三方组件保持各自许可。
 
 **注意 copyleft 组件**：消息框架 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 为 **AGPL-3.0**，
-QQ 协议端 [LuckyLillia](https://github.com/LLOneBot/LuckyLilliaBot) 为 **GPL-2.0**。
+QQ 协议端 [NapCatQQ](https://github.com/NapNeko/NapCatQQ) 为 **GPL-3.0**。
 两者以独立进程 / OneBot 协议集成，本仓库未修改、未分发其源码；对外服务或再分发前请自行遵守其条款。
 其余组件许可与完整版权行见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 

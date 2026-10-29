@@ -99,14 +99,14 @@ $petCount = @(Get-ChildItem (Join-Path $Root "dsh-pet") -Filter *.exe -ErrorActi
 Show-Item "dsh-pet.exe 桌宠" ($petCount -gt 0) "需连同 _internal\ 整个目录复制到 dsh-pet\"
 Show-Item "GPT-SoVITS 运行时" (Test-Path (Join-Path $Root "ohwhale-deploy\runtime\GPT-SoVITS")) "第 6 步可自动下载（源码钉版 + SHA256 校验）"
 Show-Item "SoVITS 模型权重" (Test-Path (Join-Path $Root "ohwhale-deploy\models\sovits")) "第 6 步可自动下载预训练模型（约 1.25 GB）"
-Show-Item "QQ 协议端 LuckyLillia" (Test-Path (Join-Path $Root "ohwhale-deploy\runtime\LL")) "第 6 步可自动下载（约 66 MB）"
+Show-Item "QQ 协议端 NapCat" (Test-Path (Join-Path $Root "ohwhale-deploy\runtime\LL")) "第 6 步可自动下载（约 66 MB）"
 Show-Item "语音参考音" (Test-Path (Join-Path $Root "ohwhale-deploy\assets\voice")) "因隐私未打包，自备授权音源放入 assets\voice\"
 $cableOk = $false
 try { $cableOk = [bool](Get-CimInstance Win32_SoundDevice -ErrorAction Stop | Where-Object { $_.Name -like "*CABLE*" }) } catch { $cableOk = $false }
 Show-Item "VB-CABLE 虚拟声卡" $cableOk "https://vb-audio.com/Cable/ 下载安装（QQ 语音回程必需）"
 
 Write-Step "6/7 可选：自动补齐能自动的组件"
-Write-Host "可自动：DSH 核心包与 14 家免费渠道 / GPT-SoVITS 源码+预训练模型+PyTorch / LuckyLillia / SnowLuma（需同意其 EULA）"
+Write-Host "可自动：DSH 核心包与 14 家免费渠道 / GPT-SoVITS 源码+预训练模型+PyTorch / NapCat / SnowLuma（需同意其 EULA）"
 Write-Host "合计下载约 4~5 GB，耗时较长；PyTorch 步骤需要 NVIDIA GPU，纯 CPU 只能跑文字与 ASR" -ForegroundColor Yellow
 $ans = Read-Host "现在自动补齐吗？(Y/N，默认 N)"
 if ($ans -match '^[Yy]') {

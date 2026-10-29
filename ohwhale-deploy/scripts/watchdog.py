@@ -81,7 +81,7 @@ def restart_stack():
             log(f"客户端停止失败：{e}")
             return
     subprocess.Popen([executable], cwd=str(Path(executable).parent))
-    log("已启动本安装的 LuckyLillia，等待登录")
+    log("已启动本安装的 NapCat，等待登录")
 
 
 def main():

@@ -31,7 +31,7 @@ powershell -NoProfile -File install/10_deps.ps1 -Video
 
 - 运行 `powershell -NoProfile -File install/15_tts.ps1`：下载锁定的 GPT-SoVITS 源码，校验并应用六个现用推理修补，建立 `.venv-tts`，安装 PyTorch 2.9.1 CUDA 12.8 及中文推理依赖。需要兼容的 NVIDIA 驱动；脚本最后检查 CUDA 是否可用。已在第二台 RTX 2060 6 GB 设备完成依赖、CUDA 及中文合成检查；完整功能仍待验收。
 - 源码和修补清单在 `config/runtimes.json`；修补说明在 `third-party/gpt-sovits-overrides/README.md`。不会覆盖未知的已有源码修改。
-- 运行 `install/16_qq_client.ps1`，从上游 v8.3.2 Release 下载、校验并解压 LuckyLillia Desktop 到 `runtime/LL`。还需安装官方 QQ，并在 LuckyLillia 选择有头模式；该模式提供实际电话窗口。源环境使用 QQ 9.9.35.52892，其他组合未验证。不要复制别人登录过的客户端目录。
+- QQ 协议端使用 NapCatQQ（NapCat.Shell 包 + 便携 QQ，位于 `runtime/LL/`）。启动用 `启动NapCat.bat`（带 QQ 路径与 Hook DLL 参数调用 NapCatWinBootMain.exe，裸双击会闪退）。首次启动控制台显示二维码，手机 QQ 扫码并点「确认登录」后落盘，之后免扫码。源环境使用 QQ 9.9.33-52230，其他组合未验证。不要复制别人登录过的客户端目录。
 - 视频抽帧运行 `install/17_video_tools.ps1`，下载并校验 Gyan 的 FFmpeg 9.0.2 构建，完整保留随包许可。默认安装到 `runtime/ffmpeg`，位置由 `paths.ffmpeg`、`paths.ffprobe` 指定。
 - 动态形象还需要 CameraEmulator。独立摄像头候选 ZIP 提供 `Install-camera.cmd`，校验后注册媒体源并创建当前用户摄像头；完整安装仍待第二台设备实测，见 `install/camera/README.md`。
 
@@ -91,11 +91,11 @@ powershell -NoProfile -File install/31_astrbot.ps1
 5. 建立本地 GPT-SoVITS TTS 提供商，ID 与 `voice.local_provider_id` 一致；地址、参考音频及参考文字与配置一致。
 6. 关闭 AstrBot 内置随机 TTS（`provider_tts_settings.enable=false`），由 voice_picker 控制语音，避免重复回答。
 
-LuckyLillia/PMHQ 首次启动还可能要求 **Auth Token**（上游授权），它不是 `.env` 中的 `ONEBOT_ACCESS_TOKEN`，也不是 DeepSeek/百炼密钥。按客户端提示由使用者在上游完成授权；项目不领取、重置或迁移该凭据。若重新领取可能影响现用设备，停在此步，保留现有授权，不把 QQ 登录或通话标为通过。上游相关说明见 [启动授权讨论](https://github.com/LLOneBot/LuckyLilliaBot/issues/793)。
+NapCat 无需上游 Auth Token。`.env` 中的 `ONEBOT_ACCESS_TOKEN` 即 OneBot 连接令牌，必须与 NapCat onebot11 配置（`napcat/config/onebot11_<机器人QQ号>.json`）里的 token 一致。
 
-LuckyLillia 打开窗口不代表 Bot 已启动。需要在控制面板点击“启动”，或由使用者确认后启用“启动软件后自动启动 Bot”。OneBot 反向连接也需单独启用；配置地址只是填写目标，不代表已经连接成功。
+NapCat 控制台出现二维码不代表已登录，必须用手机 QQ 扫码并在手机上点「确认登录」。进程被强杀会丢失登录记录，下次需重新扫码；请用正常方式关闭。
 
-在 LuckyLillia v8.3.2 中，如果运行中修改并保存了反向连接，日志仍没有连接记录，请在控制面板“停止”后重新“启动”，再登录机器人 QQ。CHUAKO 实测此步骤后配置才生效。先确认日志出现 `Connected to the websocket server: ws://127.0.0.1:6199/ws`，再由主人 QQ 发送新的私聊消息；重启前未上报的消息不能作为回复测试。保持 AstrBot 与 TTS 运行，无需重新填写密钥或重新领取 Auth Token。
+NapCat 的 OneBot 反向连接地址必须带 `/ws` 后缀：`ws://127.0.0.1:6199/ws`。确认 NapCat 控制台出现 OneBot WebSocket 连接成功日志后，再由主人 QQ 发送新的私聊消息做回复测试；连接建立前的消息不会补发。保持 AstrBot 与 TTS 运行。
 
 如果要保留源环境的云端克隆音色兜底，必须在自己的 DashScope 账号配置该音色，并把对应 AstrBot 提供商 ID 写入 `voice.cloud_provider_id`。
 原作者账号的云端音色 ID 不会随包迁移。只配本地 TTS 时，失败的语音可能退回文字。

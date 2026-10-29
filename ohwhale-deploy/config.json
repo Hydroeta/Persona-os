@@ -15,7 +15,7 @@
     "python": ".venv/Scripts/python.exe",
     "probe_python": ".venv/Scripts/python.exe",
     "video_python": ".venv-video/Scripts/python.exe",
-    "llbot_exe": "runtime/LL/LuckyLillia.exe",
+    "llbot_exe": "runtime/LL/NapCat.52230.Shell/启动NapCat.bat",
     "gpt_sovits": "runtime/GPT-SoVITS",
     "tts_python": ".venv-tts/Scripts/python.exe",
     "tts_config": "config/tts.local.yaml",
