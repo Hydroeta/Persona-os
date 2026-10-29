@@ -11,7 +11,7 @@
 
 仓库中**不包含**任何第三方二进制、模型权重、密钥或个人数据。
 
-> **copyleft 提示**：本项目依赖 **AstrBot（AGPL-3.0）** 与 **LuckyLillia（GPL-2.0）**。
+> **copyleft 提示**：本项目依赖 **AstrBot（AGPL-3.0）** 与 **NapCatQQ（GPL-3.0）**。
 > 两者均以独立进程、标准接口（HTTP / OneBot 反向 WS）方式调用，本仓库未并入其源码、
 > 未修改其代码；但再分发或对外提供服务前，请自行履行各自的 copyleft 条款。
 
@@ -22,7 +22,7 @@
 | 项目 | 链接 | 许可证 | 版权行 | 使用方式 |
 |---|---|---|---|---|
 | AstrBot | https://github.com/AstrBotDevs/AstrBot | **AGPL-3.0** | 见上游 `LICENSE` | 消息框架与管理面板（`:6185`）；`ohwhale-deploy/plugins/` 下 5 个插件运行于其上。**独立进程调用，未修改、未随仓库分发其源码** |
-| LuckyLillia | https://github.com/LLOneBot/LuckyLilliaBot | **GPL-2.0** | 见上游 `LICENSE` | QQ 协议端（OneBot 反向 WS `:6199`），语音通话与消息收发链路。**以独立进程运行，本项目未链接其代码、未分发其二进制** |
+| NapCatQQ | https://github.com/NapNeko/NapCatQQ | **GPL-3.0** | 见上游 `LICENSE` | QQ 协议端（OneBot 反向 WS `:6199`），消息收发链路。**以独立进程运行，本项目未链接其代码、未分发其二进制** |
 | whale-pod | 见 `whale-pod/LICENSE` 内附来源说明 | MIT | Copyright (c) 2026 WhalePod contributors | DSH 插件宿主，原样引用 |
 | Tulpa `chatlocal` 模块 | https://github.com/fumingyang2004/Tulpa | MIT | `Copyright (c) 2026 Tulpa contributors` | QQ 侧本地聊天模块，原样保留（`Tulpa/Tulpa/chatlocal/`，适用上游根目录 MIT 许可） |
 
@@ -32,7 +32,7 @@
 > CPython/PSF、WebView2/Microsoft 条款等），其清单见上游 `doc/THIRD_PARTY.md`。
 
 > 关于 copyleft 的边界：AstrBot 以 AGPL-3.0 发布，若使用者修改 AstrBot 并对外提供网络服务，
-> 需按 AGPL 第 13 条向使用者提供修改后的源码；LuckyLillia 以 GPL-2.0 发布，本项目仅通过
+> 需按 AGPL 第 13 条向使用者提供修改后的源码；NapCatQQ 以 GPL-3.0 发布，本项目仅通过
 > OneBot 协议与之通信，不构成衍生作品。上述结论为事实描述，不构成法律意见。
 
 ---
@@ -50,7 +50,7 @@
 | 修改开始年份 | 2026 |
 | 文件头处理 | `scripts/call_loop.py` 已前置本仓库版权行 + 修改说明；其余为 JSON/YAML 配置，按规范无法写入注释，修改事实统一记录于本清单 |
 | 未改动部分 | `plugins/` 下 5 个 AstrBot 插件（bili_scroll、companion、qq_power、stickers、voice_picker）为上游原样代码，随 ohwhale 的 MIT 许可分发 |
-| 上游已披露的 copyleft | 上游 `NOTICE` 已列明 AstrBot（AGPL-3.0，已核对原文一致）、GPT-SoVITS（MIT，`Copyright RVC-Boss`）、CameraEmulator（MIT，`Copyright 2026 Jean-Noël Haas (FinalAnalytics)`）、LLBot/LuckyLillia（上游 NOTICE 仅写“按其发行条款”，本项目另行核实为 **GPL-2.0**，见 A 节）、FFmpeg（依构建配置）、python-build-standalone（CPython 3.12.15，PSF 等）、VB-CABLE（厂商条款），本清单与之保持一致 |
+| 上游已披露的 copyleft | 上游 `NOTICE` 已列明 AstrBot（AGPL-3.0，已核对原文一致）、GPT-SoVITS（MIT，`Copyright RVC-Boss`）、CameraEmulator（MIT，`Copyright 2026 Jean-Noël Haas (FinalAnalytics)`）、NapCatQQ（**GPL-3.0**，见上游 LICENSE）、FFmpeg（依构建配置）、python-build-standalone（CPython 3.12.15，PSF 等）、VB-CABLE（厂商条款），本清单与之保持一致 |
 
 ### B2. dsh-pet（桌宠）
 
@@ -165,10 +165,10 @@
 ## 许可证兼容性结论
 
 - 本仓库**自有代码**以 MIT 发布。
-- 第三方组件构成：**AstrBot 为 AGPL-3.0，LuckyLillia 为 GPL-2.0**；whale-pod、Tulpa（chatlocal）、
+- 第三方组件构成：**AstrBot 为 AGPL-3.0，NapCatQQ 为 GPL-3.0**；whale-pod、Tulpa（chatlocal）、
   ohwhale-deploy、dsh-pet、GPT-SoVITS、DSH 核心包、dsh-our-free-model 等为 MIT；SnowLuma 为专有软件（未再分发）。
 - AGPL/GPL 组件以**独立进程 / 标准协议**方式集成，本仓库未并入或修改其源码，因此自有代码仍可按 MIT 发布；
-  但使用者对外提供服务或再分发时，需自行遵守 AstrBot（AGPL-3.0）与 LuckyLillia（GPL-2.0）的条款。
+  但使用者对外提供服务或再分发时，需自行遵守 AstrBot（AGPL-3.0）与 NapCatQQ（GPL-3.0）的条款。
 - 上述为技术事实与许可文本的对应关系，不构成法律意见；商用或再分发前建议咨询专业意见。
 
 ## 许可文本位置
@@ -180,4 +180,4 @@
 | whale-pod | `whale-pod/LICENSE` |
 | Tulpa chatlocal | `Tulpa/Tulpa/LICENSE` |
 | dsh-pet | `dsh-pet/LICENSE` |
-| AstrBot / LuckyLillia | 上游仓库 LICENSE（未随本仓库分发） |
+| AstrBot / NapCatQQ | 上游仓库 LICENSE（未随本仓库分发） |

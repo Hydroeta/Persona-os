@@ -5,7 +5,7 @@
 #   install\补齐组件.ps1 -Dsh                 只装 DSH 核心 npm 包
 #   install\补齐组件.ps1 -DshChannels          DSH CLI + 14 家免费渠道插件（装到 web profile）
 #   install\补齐组件.ps1 -Tts                 GPT-SoVITS 源码 + 预训练模型 + PyTorch
-#   install\补齐组件.ps1 -Qq                  LuckyLillia QQ 协议端
+#   install\补齐组件.ps1 -Qq                  NapCat QQ 协议端
 #   install\补齐组件.ps1 -SnowLuma            官方 Releases 下载 + SHA256 校验 + 解压（需同意其 EULA）
 #   install\补齐组件.ps1 -All -DryRun         只打印计划，不下载
 param([switch]$Dsh, [switch]$DshChannels, [switch]$Tts, [switch]$Qq, [switch]$SnowLuma, [switch]$All, [switch]$DryRun, [switch]$Quiet, [switch]$AcceptSnowLumaEula)
@@ -69,7 +69,7 @@ if ($Tts) {
 
 # ---------- QQ 协议端 ----------
 if ($Qq) {
-    Step "LuckyLillia QQ 协议端（约 66 MB）"
+    Step "NapCat QQ 协议端（约 40 MB）"
     $p = Join-Path $Root "ohwhale-deploy\install\16_qq_client.ps1"
     if ($DryRun) { Write-Host "[计划] powershell -File ohwhale-deploy\install\16_qq_client.ps1" }
     elseif (Test-Path $p) {

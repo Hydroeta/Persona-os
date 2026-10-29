@@ -132,7 +132,7 @@ def process_list():
     """带 3 秒缓存的进程清单（仅关心的几个）。"""
     if time.time() - _proc_cache["t"] < 3:
         return _proc_cache["data"]
-    names = "','".join(["Tulpa.exe", "node.exe", "LuckyLillia.exe",
+    names = "','".join(["Tulpa.exe", "node.exe", "NapCatWinBootMain.exe",
                         "dsh-pet-standalone-webm-chat.exe"])
     cmd = ("Get-CimInstance Win32_Process -Filter \"Name in ('%s')\" "
            "| Select-Object ProcessId,Name,ExecutablePath "
@@ -173,8 +173,8 @@ def spawn(argv, cwd, new_console=False):
 
 
 def flags_visible(argv):
-    # LuckyLillia 需要可见窗口（扫码）
-    return any("LuckyLillia" in str(a) or str(a).endswith(".cmd") for a in argv)
+    # NapCat 扫码等场景需要可见控制台窗口
+    return any(str(a).endswith((".cmd", ".bat")) for a in argv)
 
 # ---------- 服务定义 ----------
 
@@ -188,11 +188,11 @@ def svc_status():
 
     tts = port_pid(9880) is not None
     ab = port_pid(6185) is not None
-    ll = find_proc("LuckyLillia.exe") is not None
+    ll = find_proc("NapCatWinBootMain.exe") is not None
     up = sum([tts, ab, ll])
     svcs.append({"id": "ohwhale", "name": "哦鲸鲸全家桶",
                  "running": up == 3, "partial": 0 < up < 3,
-                 "detail": "TTS:9880 %s · AstrBot:6185 %s · QQ(LL) %s" % (
+                 "detail": "TTS:9880 %s · AstrBot:6185 %s · QQ(NapCat) %s" % (
                      "✓" if tts else "✗", "✓" if ab else "✗", "✓" if ll else "✗"),
                  "panel": "http://127.0.0.1:6185"})
 
@@ -328,7 +328,7 @@ def svc_ready(sid):
             "dsh": port_pid(3080) is not None and http_ok("http://127.0.0.1:3080/"),
             "ohwhale": (http_ok("http://127.0.0.1:9880/docs") and
                         http_ok("http://127.0.0.1:6185/") and
-                        find_proc("LuckyLillia.exe") is not None),
+                        find_proc("NapCatWinBootMain.exe") is not None),
             "tulpa": find_proc("Tulpa.exe", "Tulpa") is not None,
             "snowluma": find_proc("node.exe", "SnowLuma") is not None,
             "pet": find_proc("dsh-pet-standalone-webm-chat.exe") is not None,
@@ -666,17 +666,16 @@ def log_tail(path, lines=200):
 # ---------- QQ 登录 ----------
 
 def qq_login():
-    exe = OHWHALE / "runtime" / "LL" / "LuckyLillia.exe"
-    if not exe.is_file():
-        ps = OHWHALE / "install" / "16_qq_client.ps1"
-        if not ps.is_file():
-            return False, "LuckyLillia 未安装且找不到安装脚本"
-        subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                          "-File", str(ps)], cwd=str(OHWHALE),
-                         creationflags=CREATE_NEW_CONSOLE)
-        return True, "LuckyLillia 未安装，正在自动安装，完成后请再点一次"
-    subprocess.Popen([str(exe)], cwd=str(exe.parent))
-    return True, "登录窗口已启动：扫码后在面板点「启动」，确认反向连接 ws://127.0.0.1:6199/ws"
+    bat = OHWHALE / "runtime" / "LL" / "NapCat.52230.Shell" / "启动NapCat.bat"
+    if not bat.is_file():
+        inst = OHWHALE / "runtime" / "LL" / "NapCatInstaller.exe"
+        if not inst.is_file():
+            return False, "NapCat 未安装且找不到安装器"
+        subprocess.Popen([str(inst)], cwd=str(inst.parent))
+        return True, "NapCat 未安装，正在启动安装器，装完后再点一次"
+    subprocess.Popen(["cmd", "/c", str(bat)], cwd=str(bat.parent),
+                     creationflags=CREATE_NEW_CONSOLE)
+    return True, "NapCat 已启动：首次需扫码（手机确认登录），之后免扫码"
 
 # ---------- 一键部署 ----------
 
@@ -1083,7 +1082,7 @@ def self_check():
     import shutil
     # 端口占用
     for label, port in (("控制台", 8900), ("DSH", 3080), ("AstrBot", 6185),
-                        ("GPT-SoVITS", 9880), ("LuckyLillia WS", 6199)):
+                        ("GPT-SoVITS", 9880), ("NapCat WS", 6199)):
         pid = port_pid(port)
         items.append({"name": "端口 %d（%s）" % (port, label),
                       "ok": True,
@@ -1121,9 +1120,9 @@ def self_check():
         items.append({"name": "密钥保险库（DPAPI）", "ok": False,
                       "detail": "key_vault 不可用"})
     # QQ 在线
-    ll = find_proc("LuckyLillia.exe") is not None
-    items.append({"name": "QQ（LuckyLillia）在线", "ok": ll,
-                  "detail": "进程在" if ll else "未运行（控制台「QQ 登录」扫码）"})
+    ll = find_proc("NapCatWinBootMain.exe") is not None
+    items.append({"name": "QQ（NapCat）在线", "ok": ll,
+                  "detail": "进程在" if ll else "未运行（控制台「QQ 登录」启动）"})
     # TTS 试合成（业务探测，不真合成以免占显存）
     tts = http_ok("http://127.0.0.1:9880/docs")
     items.append({"name": "GPT-SoVITS 服务", "ok": tts,
@@ -1140,14 +1139,14 @@ def self_check():
 def self_check_deep():
     """端到端闭环探针（占 GPU / 依赖服务已启动，需用户确认后手动触发）。"""
     items = []
-    # OneBot 反向 WS：LuckyLillia → AstrBot 的连接端口真实可连
+    # OneBot 反向 WS：NapCat → AstrBot 的连接端口真实可连
     try:
         socket.create_connection(("127.0.0.1", 6199), timeout=3).close()
         ws = True
     except OSError:
         ws = False
     items.append({"name": "OneBot 反向 WS（6199）", "ok": ws,
-                  "detail": "端口可连接" if ws else "连不上（检查 LuckyLillia 反向连接配置）"})
+                  "detail": "端口可连接" if ws else "连不上（检查 NapCat 反向连接配置）"})
     # TTS 闭环：真合成一句，验证产物是非空 wav
     try:
         cfg = json.loads((OHWHALE / "config.json").read_text("utf-8"))
@@ -1407,8 +1406,8 @@ body{display:block}
 </div>
 <div>
 <h2>QQ 登录</h2>
-<div class="card row"><div class="detail">启动 LuckyLillia 扫码登录窗口（未安装会自动补装）</div>
-<button onclick="qqLogin()">打开扫码登录</button>
+<div class="card row"><div class="detail">启动 NapCat（协议端，首次扫码登录，之后免扫码）</div>
+<button onclick="qqLogin()">启动 NapCat</button>
 <a href="http://127.0.0.1:6185" target="_blank">AstrBot 面板</a>
 <a href="http://127.0.0.1:3080" style="margin-left:10px">DSH 面板</a></div>
 
