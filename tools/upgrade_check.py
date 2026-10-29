@@ -10,8 +10,6 @@ GPT-SoVITS / AstrBot / LuckyLillia 升级前后的核对流程：
   2. 端口就绪（9880 TTS /docs、6185 AstrBot、3080 DSH）
   3. Python / Node 版本未漂移
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import hashlib

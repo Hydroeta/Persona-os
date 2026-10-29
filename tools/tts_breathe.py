@@ -10,8 +10,6 @@ TTS 出来的句子太「朗读腔」：一口气说完、没有停顿。这里�
 CLI：
     python tools/tts_breathe.py "本来想说的话很长很长，长到一口气说不完的那种"
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import re

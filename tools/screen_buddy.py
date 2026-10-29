@@ -19,8 +19,6 @@ CLI：
     python tools/screen_buddy.py run            # 起一个带指示窗的常驻实例
     python tools/screen_buddy.py once           # 只采一次并打印抽象结果（调试）
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import ctypes
@@ -310,6 +308,12 @@ class Sampler:
             ev["changed"] = True
             self.focus_since = time.time()
             self.last_activity = act
+            try:                        # 活动切换进事件流（梦境蒸馏/潜意识的食材）
+                import timeline
+                timeline.emit("activity", "screen_buddy",
+                              activity=ev.get("activity", act), proc=proc)
+            except Exception:
+                pass
         ev["focus_min"] = round((time.time() - self.focus_since) / 60.0, 1)
         ev["chars"] = len(text)
         return ev

@@ -8,8 +8,6 @@ CLI：
     python tools/runbook.py list
     python tools/runbook.py show call_no_sound
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

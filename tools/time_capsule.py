@@ -12,8 +12,6 @@ CLI：
     python tools/time_capsule.py open <id>  # 拆开（标记已读）
     python tools/time_capsule.py list
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

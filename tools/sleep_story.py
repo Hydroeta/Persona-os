@@ -9,8 +9,6 @@ CLI：
     python tools/sleep_story.py list            # 可用主题
     python tools/sleep_story.py plan ocean      # 输出播放计划（JSON）
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

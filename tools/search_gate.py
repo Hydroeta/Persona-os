@@ -23,8 +23,6 @@
     live_danmaku     直播弹幕
 硬性禁止（即使调用方传入也拒绝）：voice_call / selfwake / companion / chitchat
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import hashlib

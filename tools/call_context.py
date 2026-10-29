@@ -11,8 +11,6 @@ CLI：
     python tools/call_context.py status      # 当前判断（调试用）
     python tools/call_context.py on / off
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

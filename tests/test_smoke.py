@@ -4,8 +4,6 @@
 覆盖：search_gate 闸门/缓存/隐私、key_vault DPAPI 往返、console 拓扑序、
       resource_gate busy 逻辑、call_loop 分句逻辑（拷贝自源码，防回归漂移）。
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 import json
 import os
 import sqlite3
@@ -45,6 +43,9 @@ import care          # noqa: E402
 import tts_breathe   # noqa: E402
 import voice_mail    # noqa: E402
 import sleep_story   # noqa: E402
+import dream_engine  # noqa: E402
+import context_engine  # noqa: E402
+import subconscious  # noqa: E402
 import call_context  # noqa: E402
 import silent_day    # noqa: E402
 import watermark     # noqa: E402
@@ -56,8 +57,10 @@ import audience      # noqa: E402
 import fingerprint   # noqa: E402
 import consistency   # noqa: E402
 import persona_override  # noqa: E402
+import persona_switch   # noqa: E402
 import group_summary  # noqa: E402
 import desk_tidy     # noqa: E402
+import balance_monitor  # noqa: E402
 
 
 class TestSearchGate(unittest.TestCase):
@@ -80,8 +83,8 @@ class TestSearchGate(unittest.TestCase):
             search_gate.search("测试", scene="random_chat")
 
     def test_privacy_scan(self):
-        self.assertFalse(search_gate.privacy_scan("打我电话 13800000000"))
-        self.assertFalse(search_gate.privacy_scan("邮箱 someone@example.com"))
+        self.assertFalse(search_gate.privacy_scan("打我电话 13812345678"))
+        self.assertFalse(search_gate.privacy_scan("邮箱 a@b.com"))
         self.assertTrue(search_gate.privacy_scan("今天B站有什么新番"))
 
     def test_authority_filter(self):
@@ -204,7 +207,7 @@ class TestLlmGate(unittest.TestCase):
         cfg = llm_gate.load_config()
         cap = cfg["scene_daily_tokens"]["selfwake"]
         conn = llm_gate._db()
-        conn.execute("INSERT INTO usage VALUES(?,?,?,?,?)",
+        conn.execute("INSERT INTO usage(ts,scene,in_tok,out_tok,cost) VALUES(?,?,?,?,?)",
                      (time.time(), "selfwake", cap, 0, 0.0))
         conn.commit()
         conn.close()
@@ -223,7 +226,7 @@ class TestLlmGate(unittest.TestCase):
     def test_daily_cap_blocks(self):
         cfg = llm_gate.load_config()
         conn = llm_gate._db()
-        conn.execute("INSERT INTO usage VALUES(?,?,?,?,?)",
+        conn.execute("INSERT INTO usage(ts,scene,in_tok,out_tok,cost) VALUES(?,?,?,?,?)",
                      (time.time(), "call", cfg["daily_token_cap"], 0, 0.0))
         conn.commit()
         conn.close()
@@ -341,6 +344,112 @@ class TestStateEngine(unittest.TestCase):
         self._seed(energy=0.05, mood=0.9)
         state_engine.tick()
         self.assertFalse(state_engine.allow_voice())
+
+
+class TestPersonaSwitch(unittest.TestCase):
+    """多角色静默热切换：迁移/切换/物化视图/事件日志（P2）。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.old = (persona_switch.ROOT, persona_switch.PERSONAS_DIR,
+                    persona_switch.ACTIVE_FILE, persona_switch.VIEW_PERSONA,
+                    persona_switch.VIEW_STATE, persona_switch.EVENTS_FILE)
+        persona_switch.ROOT = root
+        persona_switch.PERSONAS_DIR = root / "config" / "personas"
+        persona_switch.ACTIVE_FILE = persona_switch.PERSONAS_DIR / "active.json"
+        persona_switch.VIEW_PERSONA = root / "config" / "persona.json"
+        persona_switch.VIEW_STATE = root / "config" / "state.json"
+        persona_switch.EVENTS_FILE = root / "data" / "persona_events.jsonl"
+        cfg = root / "config"
+        cfg.mkdir()
+        (cfg / "persona.json").write_text(json.dumps(
+            {"identity": {"self_name": "鲸鲸"}}), "utf-8")
+        (cfg / "state.json").write_text(json.dumps(
+            {"energy": 0.8, "mood": 0.6}), "utf-8")
+
+    def tearDown(self):
+        (persona_switch.ROOT, persona_switch.PERSONAS_DIR,
+         persona_switch.ACTIVE_FILE, persona_switch.VIEW_PERSONA,
+         persona_switch.VIEW_STATE, persona_switch.EVENTS_FILE) = self.old
+        self.tmp.cleanup()
+
+    def _add_char(self, cid, name, with_state=True):
+        d = persona_switch.persona_dir(cid)
+        d.mkdir(parents=True)
+        (d / "persona.json").write_text(json.dumps(
+            {"id": cid, "identity": {"self_name": name}}), "utf-8")
+        if with_state:
+            (d / "state.json").write_text(json.dumps(
+                {"energy": 0.5, "mood": 0.5}), "utf-8")
+
+    def test_migrate_then_switch(self):
+        r = persona_switch.ensure_migrated()
+        self.assertTrue(r["migrated"])
+        self.assertEqual(persona_switch.active_id(), "jingjing")
+        # 迁移后视图带 _view_of 标记
+        v = json.loads(persona_switch.VIEW_PERSONA.read_text("utf-8"))
+        self.assertEqual(v["_view_of"], "jingjing")
+        self.assertEqual(v["identity"]["self_name"], "鲸鲸")
+        # 造第二个角色（无状态存档），切换后视图换人、旧 state 视图被清掉
+        self._add_char("lengku", "冷酷助理", with_state=False)
+        r = persona_switch.switch_character("lengku")
+        self.assertTrue(r["changed"])
+        v = json.loads(persona_switch.VIEW_PERSONA.read_text("utf-8"))
+        self.assertEqual(v["identity"]["self_name"], "冷酷助理")
+        self.assertFalse(persona_switch.VIEW_STATE.exists())
+        # 重复切同一角色是幂等的
+        r = persona_switch.switch_character("lengku")
+        self.assertFalse(r["changed"])
+        # 事件日志有且仅有一条切换记录（migrate 内部一次 + 显式一次）
+        lines = persona_switch.EVENTS_FILE.read_text("utf-8").strip().splitlines()
+        evs = [json.loads(x) for x in lines]
+        self.assertEqual(evs[-1]["to"], "lengku")
+        self.assertEqual(evs[-1]["from"], "jingjing")
+        # 切不存在的角色报错
+        with self.assertRaises(RuntimeError):
+            persona_switch.switch_character("ghost")
+        # list 能看到两个角色
+        ids = [c["id"] for c in persona_switch.list_characters()]
+        self.assertEqual(sorted(ids), ["jingjing", "lengku"])
+
+
+class TestStateEnginePersonaPath(unittest.TestCase):
+    """状态引擎按激活角色解析存档路径，并同步物化视图（P2）。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.old = (persona_switch.PERSONAS_DIR, persona_switch.ACTIVE_FILE,
+                    state_engine.STATE_FILE, state_engine.DEFAULT_STATE_FILE,
+                    state_engine.in_sleep)
+        persona_switch.PERSONAS_DIR = root / "config" / "personas"
+        persona_switch.ACTIVE_FILE = persona_switch.PERSONAS_DIR / "active.json"
+        # 视图也指到临时目录，避免测试写真实 config/state.json
+        view = root / "config" / "state.json"
+        state_engine.DEFAULT_STATE_FILE = view
+        state_engine.STATE_FILE = view
+        state_engine.in_sleep = lambda ts=None, sleep=None: False
+        d = persona_switch.PERSONAS_DIR / "jingjing"
+        d.mkdir(parents=True)
+        (d / "state.json").write_text(json.dumps(
+            {"updated": time.time(), "energy": 0.8, "mood": 0.6,
+             "sleep": {"start": "23:30", "end": "08:00"}}), "utf-8")
+        persona_switch.ACTIVE_FILE.write_text(json.dumps(
+            {"active_id": "jingjing"}), "utf-8")
+
+    def tearDown(self):
+        (persona_switch.PERSONAS_DIR, persona_switch.ACTIVE_FILE,
+         state_engine.STATE_FILE, state_engine.DEFAULT_STATE_FILE,
+         state_engine.in_sleep) = self.old
+        self.tmp.cleanup()
+
+    def test_tick_writes_persona_file_and_mirrors_view(self):
+        st = state_engine.tick()
+        self.assertLess(st["energy"], 0.8)  # 清醒衰减，确实读到了角色存档
+        saved = json.loads((persona_switch.PERSONAS_DIR / "jingjing"
+                            / "state.json").read_text("utf-8"))
+        self.assertAlmostEqual(saved["energy"], st["energy"], places=3)
+        view = json.loads(state_engine.STATE_FILE.read_text("utf-8"))
+        self.assertAlmostEqual(view["energy"], st["energy"], places=3)
 
 
 class TestMemoryBus(unittest.TestCase):
@@ -629,6 +738,454 @@ class TestMemoryHealthDream(unittest.TestCase):
         self.assertIn("梦", r["text"])
         self.assertTrue(memory_bus.AUDIT_FILE.is_file())
 
+    def test_dream_custom_day(self):
+        r = memory_bus.dream(force=True, day="2026-01-15")
+        self.assertTrue(r["path"].endswith("dream-2026-01-15.md"))
+
+
+class TestDreamEngine(unittest.TestCase):
+    """梦境蒸馏：LLM 路径 / 闸门降级 / 安静日与幂等（P2）。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.old = (dream_engine.DIARY_DIR, dream_engine.REPORT_DIR,
+                    dream_engine.SAY_LOG, dream_engine.THOUGHTS_FILE,
+                    llm_client.chat,
+                    memory_bus.write, memory_bus.DIARY_DIR,
+                    memory_bus.AUDIT_FILE, timeline.emit, timeline.day)
+        dream_engine.DIARY_DIR = root / "diary"
+        dream_engine.REPORT_DIR = root / "reports"
+        dream_engine.SAY_LOG = root / "screen_says.jsonl"
+        dream_engine.THOUGHTS_FILE = root / "thoughts.jsonl"
+        dream_engine.DIARY_DIR.mkdir()
+        memory_bus.DIARY_DIR = root / "diary_tpl"
+        memory_bus.AUDIT_FILE = root / "logs" / "audit.jsonl"
+        memory_bus.DIARY_DIR.mkdir()
+        self.memories, self.events = [], []
+        memory_bus.write = lambda *a, **k: self.memories.append((a, k)) or "id"
+        timeline.emit = lambda *a, **k: self.events.append((a, k))
+        timeline.day = lambda d: [{"type": "call_turn", "source": "call",
+                                   "payload": {"user": "端口又冲突了"}}]
+
+    def tearDown(self):
+        (dream_engine.DIARY_DIR, dream_engine.REPORT_DIR,
+         dream_engine.SAY_LOG, dream_engine.THOUGHTS_FILE,
+         llm_client.chat,
+         memory_bus.write, memory_bus.DIARY_DIR,
+         memory_bus.AUDIT_FILE, timeline.emit, timeline.day) = self.old
+        self.tmp.cleanup()
+
+    def test_llm_dream(self):
+        llm_client.chat = lambda *a, **k: ("梦见红色的端口在排队唱歌。\n"
+                                           "【记住了】\n- 主人修好了端口\n- 下午通了话")
+        r = dream_engine.run("2026-10-29", force=True)
+        text = Path(r["path"]).read_text("utf-8")
+        self.assertIn("排队唱歌", text)
+        self.assertNotIn("【记住了】", text)
+        self.assertEqual(len(self.memories), 1)        # 核心记忆合成一条写 soul
+        self.assertEqual(self.memories[0][0][0], "soul")
+        self.assertEqual(self.events[0][0][0], "dream_distill")
+
+    def test_fallback_on_gate(self):
+        def boom(*a, **k):
+            raise llm_gate.GateError("超预算")
+        llm_client.chat = boom
+        r = dream_engine.run("2026-10-29", force=True)
+        self.assertTrue(r.get("fallback"))
+        self.assertTrue(Path(r["path"]).is_file())     # 模板梦兜底仍出文件
+        self.assertTrue(r["path"].endswith("dream-2026-10-29.md"))
+
+    def test_quiet_day_skip_and_idempotent(self):
+        timeline.day = lambda d: []
+        r = dream_engine.run("2026-10-29")
+        self.assertTrue(r.get("skipped"))              # 无素材不产文件
+        self.assertFalse((dream_engine.DIARY_DIR / "dream-2026-10-29.md").exists())
+        llm_client.chat = lambda *a, **k: "做了个短梦。"
+        timeline.day = lambda d: [{"type": "call_end", "source": "call",
+                                   "payload": {}}]
+        dream_engine.run("2026-10-29", force=True)
+        r2 = dream_engine.run("2026-10-29")            # 已有文件不再重跑
+        self.assertTrue(r2.get("skipped"))
+
+
+class TestCloudFallback(unittest.TestCase):
+    """DeepSeek 故障时自动落千问（OpenAI 兼容端点）。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = (key_vault.get_key, llm_client._http_post,
+                    llm_gate.allow, llm_gate.record, llm_gate.CONFIG_FILE,
+                    timeline.emit)
+        cfg = Path(self.tmp.name) / "gate.json"
+        cfg.write_text(json.dumps({"cloud_fallback": "qwen"}), "utf-8")
+        llm_gate.CONFIG_FILE = cfg
+        key_vault.get_key = lambda n: "k-" + n
+        llm_gate.allow = lambda *a, **k: None
+        llm_gate.record = lambda *a, **k: None
+        self.urls = []
+        self.events = []
+        timeline.emit = lambda *a, **k: self.events.append((a, k)) or True
+
+    def tearDown(self):
+        (key_vault.get_key, llm_client._http_post,
+         llm_gate.allow, llm_gate.record, llm_gate.CONFIG_FILE,
+         timeline.emit) = self.old
+        self.tmp.cleanup()
+
+    def test_fallback(self):
+        def fake(url, body, key):
+            self.urls.append(url)
+            if "deepseek" in url:
+                raise OSError("down")
+            return {"choices": [{"message": {"content": "ok"}}]}
+        llm_client._http_post = fake
+        out = llm_client.chat([{"role": "user", "content": "hi"}],
+                              scene="other")
+        self.assertEqual(out, "ok")
+        self.assertEqual(len(self.urls), 2)
+        self.assertIn("dashscope", self.urls[1])
+        kinds = [a[0] for a, k in self.events]
+        self.assertIn("llm_fallback", kinds)   # 切换留痕，潜意识可感知
+
+
+class TestContextEngine(unittest.TestCase):
+    """环境快照：时段/节假日覆盖/天气缓存/每日一条记忆。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.old = (context_engine.CACHE_FILE, context_engine.STAMP_FILE,
+                    context_engine.CONFIG_FILE, memory_bus.write,
+                    timeline.emit)
+        context_engine.CACHE_FILE = root / "w.json"
+        context_engine.STAMP_FILE = root / "stamp.json"
+        context_engine.CONFIG_FILE = root / "env.json"
+        self.mem, self.tl = [], []
+        memory_bus.write = lambda *a, **k: self.mem.append((a, k)) or "id"
+        timeline.emit = lambda *a, **k: self.tl.append((a, k)) or True
+
+    def tearDown(self):
+        (context_engine.CACHE_FILE, context_engine.STAMP_FILE,
+         context_engine.CONFIG_FILE, memory_bus.write,
+         timeline.emit) = self.old
+        self.tmp.cleanup()
+
+    def test_period_and_weekend(self):
+        self.assertEqual(context_engine.period(7), "清晨")
+        self.assertEqual(context_engine.period(23), "深夜")
+        sat = time.mktime((2026, 10, 31, 10, 0, 0, 0, 0, 0))
+        snap = context_engine.snapshot(now=sat)   # 2026-10-31 周六
+        self.assertTrue(snap["weekend"])
+        self.assertIn("周末", snap["line"])
+
+    def test_holiday_override(self):
+        context_engine.CONFIG_FILE.write_text(
+            json.dumps({"holidays": {"2026-10-31": "万圣节前夕"}}), "utf-8")
+        sat = time.mktime((2026, 10, 31, 10, 0, 0, 0, 0, 0))
+        snap = context_engine.snapshot(now=sat)
+        self.assertEqual(snap["holiday"], "万圣节前夕")
+
+    def test_weather_cache_and_note(self):
+        import urllib.request
+        real = urllib.request.urlopen
+
+        class R:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"current_condition": [
+                    {"temp_C": "18", "lang_zh": [{"value": "阴"}]}]}).encode()
+        urllib.request.urlopen = lambda *a, **k: R()
+        try:
+            r1 = context_engine.note()
+            self.assertIn("阴", r1["line"])
+            self.assertEqual(len(self.mem), 1)          # soul 写入一条
+            urllib.request.urlopen = lambda *a, **k: (_ for _ in ()
+                                                     ).throw(OSError("断网"))
+            w = context_engine.weather(fetch=True)      # 断网回落旧缓存
+            self.assertEqual(w.get("text"), "阴")
+            r2 = context_engine.note()                  # 当天不重复写记忆
+            self.assertTrue(r2["skipped"])
+            self.assertEqual(len(self.mem), 1)
+        finally:
+            urllib.request.urlopen = real
+
+
+class TestDreamIllustrator(unittest.TestCase):
+    """梦境配图：无 key 静默跳过；成功路径落盘。"""
+    def setUp(self):
+        import urllib.request
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.old = (dream_engine.DIARY_DIR, key_vault.get_key,
+                    urllib.request.urlopen)
+        dream_engine.DIARY_DIR = root / "diary"
+        dream_engine.DIARY_DIR.mkdir()
+
+    def tearDown(self):
+        import urllib.request
+        dream_engine.DIARY_DIR, key_vault.get_key, urllib.request.urlopen = \
+            self.old
+        self.tmp.cleanup()
+
+    def test_skip_without_key(self):
+        key_vault.get_key = lambda n: ""
+        self.assertEqual(dream_engine._illustrate("2026-10-29", "梦"), "")
+
+    def test_illustrate_ok(self):
+        import urllib.request
+        key_vault.get_key = lambda n: "k"
+
+        class R:
+            def __init__(self, data):
+                self.data = data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return self.data
+
+        def fake(u, timeout=0):
+            if isinstance(u, urllib.request.Request):
+                return R(json.dumps({"data": [{"url": "http://x/y.png"}]})
+                         .encode())
+            return R(b"\x89PNG")
+        urllib.request.urlopen = fake
+        p = dream_engine._illustrate("2026-10-29", "梦见深海")
+        self.assertTrue(p.endswith("dream-2026-10-29.png"))
+        self.assertTrue(Path(p).is_file())
+
+
+class TestSubconscious(unittest.TestCase):
+    """潜意识吸水器：规则命中 / 游标幂等 / 高重要度上浮 soul。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.old = (subconscious.THOUGHTS_FILE, subconscious.CURSOR_FILE,
+                    timeline.day, state_engine.status, memory_bus.write,
+                    context_engine.weather)
+        subconscious.THOUGHTS_FILE = root / "thoughts.jsonl"
+        subconscious.CURSOR_FILE = root / "cursor.json"
+        self.written = []
+        memory_bus.write = lambda *a, **k: self.written.append((a, k)) or "id"
+        state_engine.status = lambda: {"energy": 0.9}
+        context_engine.weather = lambda *a, **k: {}
+        now = time.time()
+        self.events = [
+            {"ts": now - 3 * 3600, "type": "activity", "source": "screen_buddy",
+             "payload": {"activity": "coding", "proc": "code.exe"}},
+            {"ts": now - 3600, "type": "call_end", "source": "call", "payload": {}},
+            {"ts": now - 1800, "type": "llm_fallback", "source": "llm_client",
+             "payload": {"provider": "qwen"}},
+            {"ts": now, "type": "activity", "source": "screen_buddy",
+             "payload": {"activity": "gaming", "proc": "steam.exe"}},
+        ]
+        timeline.day = lambda d: list(self.events)
+
+    def tearDown(self):
+        (subconscious.THOUGHTS_FILE, subconscious.CURSOR_FILE,
+         timeline.day, state_engine.status, memory_bus.write,
+         context_engine.weather) = self.old
+        self.tmp.cleanup()
+
+    def test_rules_fire(self):
+        subconscious.tick()
+        rules = {json.loads(l)["rule"] for l in
+                 subconscious.THOUGHTS_FILE.read_text("utf-8").splitlines()}
+        self.assertIn("long_focus", rules)       # coding 持续 3h → 关心
+        self.assertIn("gaming_relaxed", rules)
+        self.assertIn("call_happened", rules)
+        self.assertIn("llm_fallback", rules)     # 云端切换被察觉
+        titles = [a[0][1] for a in self.written]
+        self.assertTrue(any("long_focus" in t for t in titles))   # 重要性 2 上浮
+        self.assertFalse(any("gaming" in t for t in titles))      # 重要性 1 不上浮
+
+    def test_tick_idempotent(self):
+        subconscious.tick()
+        r2 = subconscious.tick()                 # 游标之后无新事件
+        self.assertEqual(r2["new_events"], 0)
+        self.assertEqual(r2["thoughts"], 0)
+
+
+class TestLLMRouter(unittest.TestCase):
+    """llm_client 场景→provider 路由：local 走 Ollama、不过闸门、可落回云端。"""
+    def setUp(self):
+        self.old = (llm_gate.load_config, llm_client._http_post,
+                    llm_gate.allow, llm_gate.record, key_vault.get_key)
+        self.calls, self.gated = [], []
+        key_vault.get_key = lambda name: "fake-key"
+        llm_gate.allow = lambda *a, **k: self.gated.append(a) or True
+        llm_gate.record = lambda *a, **k: {}
+        llm_gate.load_config = lambda: {
+            "scene_providers": {"judge": "local"},
+            "local_base_url": "http://127.0.0.1:11434/v1",
+            "local_model": "test-model", "local_fallback_cloud": True}
+
+    def tearDown(self):
+        (llm_gate.load_config, llm_client._http_post,
+         llm_gate.allow, llm_gate.record, key_vault.get_key) = self.old
+
+    def _ok(self, url, body, key):
+        self.calls.append(url)
+        return {"choices": [{"message": {"content": "本地回话"}}]}
+
+    def test_local_route_skips_gate(self):
+        llm_client._http_post = self._ok
+        out = llm_client.chat([{"role": "user", "content": "hi"}], scene="judge")
+        self.assertEqual(out, "本地回话")
+        self.assertIn("11434", self.calls[0])
+        self.assertFalse(self.gated)                     # 本地不过预算闸门
+
+    def test_cloud_route_unaffected(self):
+        llm_client._http_post = self._ok
+        llm_client.chat([{"role": "user", "content": "hi"}], scene="cron")
+        self.assertIn("deepseek", self.calls[0])         # 未标 local 的场景照旧
+        self.assertTrue(self.gated)
+
+    def test_local_failure_falls_back_to_cloud(self):
+        def flaky(url, body, key):
+            self.calls.append(url)
+            if "11434" in url:
+                raise OSError("refused")
+            return {"choices": [{"message": {"content": "云端兜底"}}]}
+        llm_client._http_post = flaky
+        out = llm_client.chat([{"role": "user", "content": "x"}], scene="judge")
+        self.assertEqual(out, "云端兜底")
+        self.assertEqual(len(self.calls), 2)
+
+    def test_no_fallback_when_forced_local(self):
+        llm_gate.load_config = lambda: {"scene_providers": {"judge": "local"},
+                                        "local_fallback_cloud": False}
+        def down(url, body, key):
+            raise OSError("refused")
+        llm_client._http_post = down
+        with self.assertRaises(RuntimeError):
+            llm_client.chat([{"role": "user", "content": "x"}], scene="judge")
+
+
+class TestBalanceMonitor(unittest.TestCase):
+    """多厂商资金看板：DeepSeek 直查解析、GLM/Qwen 本地精算、余额降级路由。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        td = Path(self.tmp.name)
+        self.old = (balance_monitor.PRICING_FILE, balance_monitor.CACHE_FILE,
+                    balance_monitor._http_get_json, llm_gate.DB_FILE,
+                    key_vault.get_key)
+        balance_monitor.PRICING_FILE = td / "pricing.json"
+        balance_monitor.CACHE_FILE = td / "balance.json"
+        llm_gate.DB_FILE = td / "gate.db"
+        balance_monitor.PRICING_FILE.write_text(json.dumps({
+            "providers": {
+                "deepseek": {"mode": "live", "label": "DeepSeek",
+                             "low_balance_yuan": 5.0},
+                "qwen": {"mode": "estimate", "label": "Qwen",
+                         "input_per_m": 0.3, "output_per_m": 0.6,
+                         "monthly_budget_yuan": 20.0}},
+            "budget_warn_ratio": 0.9}), "utf-8")
+
+    def tearDown(self):
+        (balance_monitor.PRICING_FILE, balance_monitor.CACHE_FILE,
+         balance_monitor._http_get_json, llm_gate.DB_FILE,
+         key_vault.get_key) = self.old
+        self.tmp.cleanup()
+
+    def test_deepseek_live_parse(self):
+        key_vault.get_key = lambda name: "fake-key"
+        balance_monitor._http_get_json = lambda url, key: {
+            "balance_infos": [{"currency": "CNY", "total_balance": "3.50"}]}
+        r = balance_monitor.check_deepseek()
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(r["balance"], 3.5)
+
+    def test_deepseek_no_key(self):
+        key_vault.get_key = lambda name: None
+        self.assertEqual(balance_monitor.check_deepseek()["status"], "error")
+
+    def test_estimate_from_ledger(self):
+        llm_gate.record("cron", 2000, 1000, provider="qwen")  # 1001+501 tok
+        r = balance_monitor.calc_local_estimate(
+            "qwen", {"input_per_m": 1.0, "output_per_m": 1.0,
+                     "monthly_budget_yuan": 20.0})
+        self.assertEqual(r["status"], "estimated")
+        self.assertAlmostEqual(r["used_this_month"], 0.0015, places=4)
+        self.assertEqual(r["budget"], 20.0)
+
+    def test_usage_by_provider_and_migration(self):
+        # 模拟老库（无 provider 列）→ record 触发补列，存量归 deepseek
+        conn = sqlite3.connect(str(llm_gate.DB_FILE))
+        conn.execute("CREATE TABLE usage(ts REAL, scene TEXT, in_tok INTEGER,"
+                     " out_tok INTEGER, cost REAL)")
+        conn.execute("INSERT INTO usage VALUES(?,?,?,?,?)",
+                     (time.time(), "call", 100, 50, 0.001))
+        conn.commit(); conn.close()
+        llm_gate.record("cron", 100, 50, provider="glm")
+        by = llm_gate.monthly_usage_by_provider()
+        self.assertEqual(by["deepseek"]["in_tok"], 100)   # 存量迁移
+        self.assertEqual(by["glm"]["in_tok"], 51)         # est_tokens(100)=51
+
+    def test_update_all_warn_and_hint(self):
+        key_vault.get_key = lambda name: "fake-key"
+        balance_monitor._http_get_json = lambda url, key: {
+            "balance_infos": [{"currency": "CNY", "total_balance": "3.50"}]}
+        out = balance_monitor.update_all()
+        self.assertTrue(out["providers"]["deepseek"]["warn"])   # 3.5 < 5 阈值
+        self.assertTrue(balance_monitor.CACHE_FILE.is_file())
+        hint = balance_monitor.routing_hint()
+        self.assertIn("deepseek", hint["avoid"])
+
+    def test_router_yields_to_fallback_on_low_balance(self):
+        """DeepSeek 余额告急时，llm_client 把首位让给 cloud_fallback。"""
+        old = (llm_gate.load_config, llm_client._http_post,
+               llm_gate.allow, llm_gate.record, key_vault.get_key,
+               balance_monitor.routing_hint, timeline.emit)
+        calls, recorded = [], []
+        try:
+            key_vault.get_key = lambda name: "fake-key"
+            llm_gate.allow = lambda *a, **k: True
+            llm_gate.record = lambda *a, **k: recorded.append(k) or {}
+            llm_gate.load_config = lambda: {"cloud_fallback": "qwen"}
+            balance_monitor.routing_hint = lambda: {
+                "avoid": ["deepseek"], "reasons": {"deepseek": "余额 ¥3.50 低于阈值"}}
+            timeline.emit = lambda *a, **k: None
+            llm_client._http_post = lambda url, body, key: (
+                calls.append(url) or {"choices": [{"message": {"content": "ok"}}]})
+            llm_client.chat([{"role": "user", "content": "hi"}], scene="cron")
+            self.assertIn("dashscope", calls[0])              # qwen 先上
+            self.assertEqual(recorded[0]["provider"], "qwen")  # 账本记 qwen
+        finally:
+            (llm_gate.load_config, llm_client._http_post,
+             llm_gate.allow, llm_gate.record, key_vault.get_key,
+             balance_monitor.routing_hint, timeline.emit) = old
+
+
+class TestActivityTimeline(unittest.TestCase):
+    """读屏活动切换写入 timeline（梦境蒸馏/潜意识的食材）。"""
+    def setUp(self):
+        self.old = (screen_buddy.foreground, timeline.emit)
+        self.events = []
+        timeline.emit = lambda *a, **k: self.events.append((a, k))
+
+    def tearDown(self):
+        screen_buddy.foreground, timeline.emit = self.old
+
+    def test_transition_emits_once(self):
+        state = {"proc": "code.exe"}
+        screen_buddy.foreground = lambda: (state["proc"], "x.py")
+        s = screen_buddy.Sampler({"ocr": False})
+        s.snapshot()                                     # 首次: ""→coding
+        state["proc"] = "steam.exe"
+        s.snapshot()                                     # coding→gaming
+        s.snapshot()                                     # 无切换不重复报
+        kinds = [a[0][0] for a in self.events]
+        self.assertEqual(kinds, ["activity", "activity"])
+        self.assertEqual(self.events[1][1]["activity"], "gaming")
+
 
 class TestPersonaSnapshot(unittest.TestCase):
     """人格快照 create/list/rollback 往返（P1）。"""
@@ -908,13 +1465,13 @@ class TestMemoryReview(unittest.TestCase):
 
     def test_export_mask(self):
         (memory_review.DIARY_DIR / "2026-10-28.md").write_text(
-            "他手机 13800000000 邮箱 someone@example.com", "utf-8")
+            "他手机 13812345678 邮箱 a@b.com", "utf-8")
         out = Path(self.tmp.name) / "out.md"
         r = memory_review.export_diaries(out, mask=True)
         self.assertEqual(r["entries"], 1)
         txt = out.read_text("utf-8")
-        self.assertNotIn("13800000000", txt)
-        self.assertNotIn("someone@example.com", txt)
+        self.assertNotIn("13812345678", txt)
+        self.assertNotIn("a@b.com", txt)
 
 
 class TestCalendarWatch(unittest.TestCase):

@@ -16,8 +16,6 @@ CLI：
     python tools/persona_snapshot.py list
     python tools/persona_snapshot.py rollback 20261028-153000
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import hashlib

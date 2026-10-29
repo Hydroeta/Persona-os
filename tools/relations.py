@@ -22,8 +22,6 @@ CLI：
     python tools/relations.py everyone        # 温度计排行
     python tools/relations.py today          # 今天的纪念日/里程碑
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

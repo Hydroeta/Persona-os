@@ -13,8 +13,6 @@ CLI：
     python tools/voice_mail.py list
     python tools/voice_mail.py synth <id>       # 补合成（TTS 起来后）
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

@@ -7,8 +7,6 @@
 CLI：
     python tools/desk_tidy.py scan
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import sys

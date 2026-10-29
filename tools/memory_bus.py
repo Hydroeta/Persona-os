@@ -19,8 +19,6 @@ CLI：
     python tools/memory_bus.py forget 猫 --yes --include-diary
     python tools/memory_bus.py audit
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json
@@ -291,12 +289,13 @@ def health(limit: int = 5) -> dict:
             "total_tracked": len(expiring) + len(cold)}
 
 
-def dream(force: bool = False) -> dict:
+def dream(force: bool = False, day: str | None = None) -> dict:
     """「她昨晚的梦」：整理记忆时随机抽几条，生成一篇梦境日记。
 
-    纯模板、零 LLM 成本；每天最多一篇（已存在直接返回）。
+    纯模板、零 LLM 成本；按日期幂等（已存在直接返回）。
+    day 可指定落款日期（默认今天），供凌晨蒸馏任务补写「昨天」。
     """
-    day = time.strftime("%Y-%m-%d")
+    day = day or time.strftime("%Y-%m-%d")
     if DIARY_DIR.is_dir():
         out = DIARY_DIR / ("dream-%s.md" % day)
     else:

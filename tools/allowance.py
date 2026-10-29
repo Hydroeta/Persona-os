@@ -9,8 +9,6 @@ CLI：
     python tools/allowance.py              # 当前零花钱状况（含她的口吻提示）
     python tools/allowance.py set 20       # 设月预算 ¥20
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

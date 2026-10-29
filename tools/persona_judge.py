@@ -12,8 +12,6 @@ CLI：
     python tools/persona_judge.py "她刚说的一句话"     # 单句打分
     python tools/persona_judge.py --recent 5          # 抽最近 5 轮回复打分
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

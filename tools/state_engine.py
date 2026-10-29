@@ -7,7 +7,10 @@ selfwake 是否打扰，都读同一个 state.json，避免各插件各算一套
 模型（刻意简单、可解释，不做玄学）：
   · 精力 energy：睡眠时段内每小时 +0.10（8 小时回满）；清醒每小时 -0.045（约 22 小时耗尽）
   · 情绪 mood：0~1 的愉悦度，向基线 0.55 每天回落 10%；事件可加减
-  · 作息 sleep：默认 23:30 ~ 08:00，可在 config/state.json 改
+  · 作息 sleep：默认 23:30 ~ 08:00，可在角色 state.json 改
+
+存档路径：多角色模式下读写 config/personas/<激活角色>/state.json，
+并同步物化 config/state.json 视图；无 personas/ 时回退旧版单文件。
 
 CLI：
     python tools/state_engine.py status            # 当前状态（含中文标签与建议）
@@ -15,8 +18,6 @@ CLI：
     python tools/state_engine.py event call_ok     # 记一个事件（见 EVENTS）
     python tools/state_engine.py set-sleep 23:30 08:00
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json
@@ -25,7 +26,23 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-STATE_FILE = ROOT / "config" / "state.json"
+DEFAULT_STATE_FILE = ROOT / "config" / "state.json"
+# 测试/调用方可直接补丁本常量覆盖存档路径；默认时按激活角色解析
+STATE_FILE = DEFAULT_STATE_FILE
+
+
+def _state_file() -> Path:
+    """解析当前应读写的 state 文件：显式覆盖 > 激活角色存档 > 旧版单文件。"""
+    if STATE_FILE != DEFAULT_STATE_FILE:
+        return STATE_FILE
+    try:
+        import persona_switch
+        act = persona_switch.active_id()
+        if act:
+            return persona_switch.persona_dir(act) / "state.json"
+    except Exception:
+        pass
+    return STATE_FILE
 
 DEFAULT = {
     "updated": 0.0,
@@ -51,7 +68,7 @@ MOOD_DECAY_PER_DAY = 0.10
 
 def _load() -> dict:
     try:
-        d = json.loads(STATE_FILE.read_text("utf-8"))
+        d = json.loads(_state_file().read_text("utf-8"))
     except Exception:
         d = {}
     st = dict(DEFAULT)
@@ -62,11 +79,19 @@ def _load() -> dict:
 
 def _save(st: dict) -> None:
     st["updated"] = time.time()
+    target = _state_file()
+    text = json.dumps(st, ensure_ascii=False, indent=2)
     try:
-        STATE_FILE.parent.mkdir(exist_ok=True)
-        STATE_FILE.write_text(json.dumps(st, ensure_ascii=False, indent=2), "utf-8")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, "utf-8")
     except OSError:
-        pass
+        return
+    # 写入角色存档时，同步物化 config/state.json 视图（persona_snapshot 等读视图）
+    if target != STATE_FILE:
+        try:
+            STATE_FILE.write_text(text, "utf-8")
+        except OSError:
+            pass
 
 
 def _hm(s: str) -> int:

@@ -17,8 +17,6 @@ CLI：
 明文注入子进程环境变量（ohwhale 的 secret() 环境变量优先；Node --env-file 不覆盖
 已有环境变量），明文不再落盘。绕过控制台直接跑脚本时，先 materialize、用完 scrub。
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import base64

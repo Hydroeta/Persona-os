@@ -6,15 +6,13 @@
 
 数据全部来自已有账本，不新增埋点：
   logs/call_metrics.jsonl、tools/llm_gate.db、tools/search_gate.db、
-  logs/resource.jsonl、logs/console_health.jsonl、data/call_summaries/、dsh/Users/YourName
+  logs/resource.jsonl、logs/console_health.jsonl、data/call_summaries/、dsh/home/cron-jobs.json
 
 CLI：
     python tools/daily_report.py            # 生成今天的日报（异常会外发告警）
     python tools/daily_report.py --no-alert
     python tools/daily_report.py show       # 打印最新一份
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

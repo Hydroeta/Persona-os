@@ -13,8 +13,6 @@ CLI：
     python tools/care.py nudge       # 到点就给一句关怀（没到点输出空）
     python tools/care.py observe     # 她观察你的一天
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json

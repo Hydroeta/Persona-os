@@ -9,8 +9,6 @@ CLI：
     python tools/resource_gate.py status    # {"busy":bool,"why":...,"vram_mb":...}
     python tools/resource_gate.py record    # 记录一次显存峰值（可挂计划任务每 5 分钟）
 """
-# Copyright 2026 Xiaojingyu AI Companion contributors
-# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import json
