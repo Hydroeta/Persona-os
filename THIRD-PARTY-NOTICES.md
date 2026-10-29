@@ -25,7 +25,7 @@
 | NapCatQQ | https://github.com/NapNeko/NapCatQQ | **GPL-3.0** | 见上游 `LICENSE` | QQ 协议端（OneBot 反向 WS `:6199`），消息收发链路。**以独立进程运行，本项目未链接其代码、未分发其二进制** |
 | Ollama | https://github.com/ollama/ollama | MIT | 见上游 `LICENSE` | 本地模型推理服务（`:11434`），`llm_client` 端云路由的 local provider。**独立进程，用户自备** |
 | Qwen2.5-1.5B-Instruct | https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct | Apache-2.0 | 见上游 `LICENSE` | Ollama 上的本地模型（群总结等低敏后台场景）。**模型权重由用户自行拉取，不随仓库分发** |
-| whale-pod | 见 `whale-pod/LICENSE` 内附来源说明 | MIT | Copyright (c) 2026 WhalePod contributors | DSH 插件宿主，原样引用 |
+| whale-pod | https://github.com/ZelotsNullzwei/whale-pod | MIT | Copyright (c) 2026 WhalePod contributors | DSH 插件宿主，原样引用 |
 | Tulpa `chatlocal` 模块 | https://github.com/fumingyang2004/Tulpa | MIT | `Copyright (c) 2026 Tulpa contributors` | QQ 侧本地聊天模块，原样保留（`Tulpa/Tulpa/chatlocal/`，适用上游根目录 MIT 许可） |
 
 > 关于 Tulpa：其自有代码（含 `chatlocal/`、`desktop/`）以 MIT 发布，发行包中的 `Tulpa.exe` 为预编译产物，非闭源。
