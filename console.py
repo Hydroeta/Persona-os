@@ -87,6 +87,9 @@ DSH = ROOT / "dsh"
 TULPA = ROOT / "Tulpa" / "Tulpa"
 SNOWLUMA = ROOT / "SnowLuma"
 PET = ROOT / "dsh-pet"
+PET_EXE = PET / "dsh-pet-standalone-webm-chat.exe"
+PET_CFG = Path(os.environ.get("APPDATA") or str(ROOT)) / "dsh-pet-standalone-webm-chat" / "config.json"
+PET_MODELS_DIR = PET / "_internal" / "assets" / "characters"
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 CREATE_NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
@@ -209,8 +212,10 @@ def svc_status():
                  "detail": ("PID %d" % pid) if pid else "未运行", "panel": "http://127.0.0.1:5099"})
 
     pid = find_proc("dsh-pet-standalone-webm-chat.exe")
-    installed = (PET / "dsh-pet-standalone-webm-chat.exe").is_file()
-    svcs.append({"id": "pet", "name": "桌宠（鲸鱼女仆）", "running": pid is not None,
+    installed = PET_EXE.is_file()
+    cur_model = pet_current_model()
+    model_name = {m["id"]: m["name"] for m in pet_models()}.get(cur_model, cur_model)
+    svcs.append({"id": "pet", "name": "桌宠（%s）" % (model_name or "未配置"), "running": pid is not None,
                  "optional": True, "installed": installed,
                  "detail": ("未安装（可选）" if not installed else
                             ("PID %d" % pid if pid else "未运行")), "panel": ""})
@@ -233,9 +238,11 @@ def svc_action(sid, action):
         return False, "DSH 未在运行"
 
     if sid == "ohwhale":
-        py = OHWHALE / "runtime" / "Python312" / "python" / "python.exe"
+        py = OHWHALE / ".venv" / "Scripts" / "python.exe"
         if not py.is_file():
-            return False, "找不到 runtime/Python312/python/python.exe"
+            py = OHWHALE / "runtime" / "Python312" / "python" / "python.exe"
+        if not py.is_file():
+            return False, "找不到 ohwhale Python（.venv 或 runtime/Python312）"
         act = "start" if action == "start" else "stop"
         spawn([str(py), "-m", "ohwhale.deploy", act], OHWHALE, new_console=True)
         return True, ("哦鲸鲸启动中（TTS→AstrBot→QQ，约 30 秒）" if act == "start"
@@ -289,6 +296,52 @@ def svc_action(sid, action):
         return False, "桌宠未在运行"
 
     return False, "未知服务"
+
+# ---------- 形象总控（人格卡 × 桌宠模型 联动） ----------
+
+def pet_current_model():
+    """桌宠当前模型（读 %APPDATA% 下桌宠配置的 character 字段）。"""
+    try:
+        return str(json.loads(PET_CFG.read_text("utf-8")).get("character") or "")
+    except Exception:
+        return ""
+
+
+def pet_models():
+    """可用桌宠模型：characters/ 下的子目录，显示名取桌宠配置的 character_aliases。"""
+    cur = pet_current_model()
+    aliases = {}
+    try:
+        aliases = json.loads(PET_CFG.read_text("utf-8")).get("character_aliases") or {}
+    except Exception:
+        pass
+    out = []
+    if PET_MODELS_DIR.is_dir():
+        for d in sorted(PET_MODELS_DIR.iterdir()):
+            if d.is_dir():
+                out.append({"id": d.name, "name": aliases.get(d.name) or d.name,
+                            "is_active": d.name == cur})
+    return out
+
+
+def pet_set_model(model):
+    """改桌宠配置的 character 字段（其余字段原样保留）。返回是否有改动。"""
+    cfg = json.loads(PET_CFG.read_text("utf-8"))
+    if cfg.get("character") == model:
+        return False
+    cfg["character"] = model
+    PET_CFG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), "utf-8")
+    return True
+
+
+def persona_pet_map(char_id):
+    """角色人格卡里登记的桌宠模型（persona.json 的 pet.character）。"""
+    try:
+        p = json.loads((ROOT / "config" / "personas" / char_id
+                        / "persona.json").read_text("utf-8"))
+        return str((p.get("pet") or {}).get("character") or "")
+    except Exception:
+        return ""
 
 # ---------- 就绪探针 / 依赖拓扑 / 健康守护（P0-2） ----------
 
@@ -1385,7 +1438,7 @@ body{display:block}
 <div>
 <h2>人格蒸馏（素材 → 人格卡）</h2>
 <div class="card" style="font-size:13px">
-<div class="row"><input id="distillpath" placeholder="素材路径或链接（字幕/文本/音视频，平台页面需 yt-dlp）" style="flex:2">
+<div class="row"><input id="distillpath" placeholder="素材路径或链接（B站链接优先原生字幕，零依赖）" style="flex:2">
 <input id="distillcard" placeholder="人格卡" value="little_whale" style="width:110px"></div>
 <div class="row" style="margin-top:6px">
 <button onclick="distillRun(false)">蒸馏预览</button>
@@ -1596,10 +1649,10 @@ const card=document.getElementById('distillcard').value.trim()||'little_whale';
 const el=document.getElementById('distillout');el.style.display='block';el.textContent=apply?'蒸馏并写卡中…（LLM 调用，稍等）':'蒸馏中…（LLM 调用，稍等）';
 const d=await api('/api/persona-distill','POST',{path:p,card,apply});
 if(!d.ok){el.textContent='失败：'+(d.msg||'');return}
-let t='台词 '+d.transcript_chars+' 字\n新增：'+JSON.stringify(d.added)+'\n\n蒸馏结果：\n'+JSON.stringify(d.distilled,null,2);
-if(d.applied)t+='\n\n已写卡（备份 '+d.backup+'）；重启 Tulpa 会话后生效';
+let t=(d.new_card?'【将新建人格卡：'+d.card+'】\n':'')+'台词 '+d.transcript_chars+' 字\n新增：'+JSON.stringify(d.added)+(d.voice_ref?'\n音色参考：'+d.voice_ref.ref_audio_path+'\n  prompt: '+d.voice_ref.prompt_text:'\n音色参考：无（文本素材无音频）')+'\n\n蒸馏结果：\n'+JSON.stringify(d.distilled,null,2);
+if(d.applied)t+='\n\n'+(d.new?'已新建人格卡':'已写卡（备份 '+d.backup+'）')+'；重启 Tulpa 会话后生效';
 else t+='\n\n（预览，未写卡）';
-el.textContent=t;if(apply)toast('人格卡已更新')}
+el.textContent=t;if(apply)toast(d.new_card?'人格卡已新建':'人格卡已更新')}
 async function snapRollback(id){if(!confirm('回滚到快照 '+id+'？当前状态会先自动存一份。'))return;
 const d=await api('/api/persona-snapshot','POST',{action:'rollback',id});toast(d.ok?('已回滚（当前状态存为 '+d.guard_snapshot+'）'):'失败：'+(d.msg||''));loadSnaps()}
 async function loadSnaps(){const d=await api('/api/persona-snapshots');
@@ -1881,6 +1934,18 @@ class H(BaseHTTPRequestHandler):
                         if persona_switch else [],
                         "active": persona_switch.active_id()
                         if persona_switch else None})
+        elif u.path == "/api/avatar":
+            chars = []
+            if persona_switch:
+                for c in persona_switch.list_characters():
+                    c["pet_model"] = persona_pet_map(c["id"])
+                    chars.append(c)
+            self._json({"ok": True, "personas": chars,
+                        "active_persona": persona_switch.active_id()
+                        if persona_switch else None,
+                        "pet_models": pet_models(),
+                        "active_model": pet_current_model(),
+                        "pet_installed": PET_EXE.is_file()})
         elif u.path == "/api/call-mode":
             p = ROOT / "config" / "call_mode.json"
             try:
