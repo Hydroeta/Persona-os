@@ -68,6 +68,10 @@ try:
     import persona_snapshot
 except Exception:
     persona_snapshot = None
+try:
+    import persona_distill
+except Exception:
+    persona_distill = None
 # P2/P3 功能模块（观测/陪伴类，挂了不影响控制台主线）
 for _m in ("goals", "time_capsule", "memory_review", "calendar_watch", "care",
            "allowance", "runbook", "silent_day", "guard", "growth",
@@ -1370,6 +1374,17 @@ body{display:block}
 
 </div>
 <div>
+<h2>人格蒸馏（素材 → 人格卡）</h2>
+<div class="card" style="font-size:13px">
+<div class="row"><input id="distillpath" placeholder="素材路径（.srt/.txt/.md 或音视频）" style="flex:2">
+<input id="distillcard" placeholder="人格卡" value="little_whale" style="width:110px"></div>
+<div class="row" style="margin-top:6px">
+<button onclick="distillRun(false)">蒸馏预览</button>
+<button class="ghost" onclick="distillRun(true)">应用写卡</button></div>
+<pre id="distillout" style="margin-top:8px;max-height:280px;overflow:auto;white-space:pre-wrap;display:none"></pre></div>
+
+</div>
+<div>
 <h2>时间机器</h2>
 <div class="card" style="font-size:13px">
 <div class="row"><select id="tldate" onchange="loadTimeline()"></select></div>
@@ -1567,6 +1582,15 @@ async function contentAct(id,action,platform){const d=await api('/api/content','
 async function loadContent(){const d=await api('/api/content');
 document.getElementById('clist').innerHTML=(d.items||[]).map(it=>`<div style="margin-bottom:8px">· <b>${it.title}</b> <span class="badge">${it.status}</span><br>${['bilibili','douyin','qq'].map(p=>`<span style="margin-right:8px">${p}: ${it.platforms&&it.platforms[p]?(it.approved&&it.approved.includes(p)?'✅已审核':`<button class="ghost" onclick="contentAct('${it.id}','approve','${p}')">审核</button>`):`<button class="ghost" onclick="contentAct('${it.id}','rewrite','${p}')">改写</button>`}</span>`).join('')}</div>`).join('')||'还没有素材'}
 async function snapCreate(){const d=await api('/api/persona-snapshot','POST',{action:'create',note:document.getElementById('snapnote').value});toast(d.ok?'快照已建':'失败：'+(d.msg||''));loadSnaps()}
+async function distillRun(apply){const p=document.getElementById('distillpath').value.trim();if(!p)return toast('先填素材路径');
+const card=document.getElementById('distillcard').value.trim()||'little_whale';
+const el=document.getElementById('distillout');el.style.display='block';el.textContent=apply?'蒸馏并写卡中…（LLM 调用，稍等）':'蒸馏中…（LLM 调用，稍等）';
+const d=await api('/api/persona-distill','POST',{path:p,card,apply});
+if(!d.ok){el.textContent='失败：'+(d.msg||'');return}
+let t='台词 '+d.transcript_chars+' 字\n新增：'+JSON.stringify(d.added)+'\n\n蒸馏结果：\n'+JSON.stringify(d.distilled,null,2);
+if(d.applied)t+='\n\n已写卡（备份 '+d.backup+'）；重启 Tulpa 会话后生效';
+else t+='\n\n（预览，未写卡）';
+el.textContent=t;if(apply)toast('人格卡已更新')}
 async function snapRollback(id){if(!confirm('回滚到快照 '+id+'？当前状态会先自动存一份。'))return;
 const d=await api('/api/persona-snapshot','POST',{action:'rollback',id});toast(d.ok?('已回滚（当前状态存为 '+d.guard_snapshot+'）'):'失败：'+(d.msg||''));loadSnaps()}
 async function loadSnaps(){const d=await api('/api/persona-snapshots');
@@ -2060,6 +2084,18 @@ class H(BaseHTTPRequestHandler):
                                     **persona_snapshot.rollback(str(body.get("id", "")))})
                     else:
                         self._json({"ok": False, "msg": "未知 action"})
+                except Exception as e:
+                    self._json({"ok": False, "msg": str(e) or type(e).__name__})
+        elif u.path == "/api/persona-distill":
+            if not persona_distill:
+                self._json({"ok": False, "msg": "蒸馏模块不可用"})
+            else:
+                try:
+                    r = persona_distill.run(
+                        str(body.get("path", "")),
+                        card_name=str(body.get("card", "little_whale")) or "little_whale",
+                        apply=bool(body.get("apply")))
+                    self._json({"ok": True, **r})
                 except Exception as e:
                     self._json({"ok": False, "msg": str(e) or type(e).__name__})
         elif u.path == "/api/memory/dream":
