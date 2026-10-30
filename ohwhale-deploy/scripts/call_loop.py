@@ -14,12 +14,6 @@
     python -u call_loop.py            # 一直循环
     python -u call_loop.py --once     # 只处理一句话
 """
-# Copyright 2026 persona-os contributors
-# SPDX-License-Identifier: MIT
-#
-# Modified from ohwhale-deploy (https://github.com/chauko0423/ohwhale-deploy, MIT)
-# since 2026: 接入 voice.states 状态化参考音（ref_audio 与 prompt_text 同步切换），修正 ROOT_DIR。
-# 原文件本身未带独立版权头；完整上游许可见 ohwhale-deploy/LICENSE 与 NOTICE。
 
 from __future__ import annotations
 
@@ -235,14 +229,20 @@ def ambient_plan() -> dict:
 
 
 def voice_extra() -> dict:
-    """声音状态化：按 config/persona.json voice.states + 状态引擎选语速/参考音频。"""
+    """声音状态化：按 config/persona.json voice.states + 状态引擎选语速/参考音频。
+    顶层 voice.ref_audio / prompt_text 是默认参考音（人格蒸馏同步进来的克隆音色）；
+    各 state 若自带 ref_audio 则覆盖默认。"""
     try:
         with open(PERSONA_JSON, encoding="utf-8") as f:
-            states = (json.load(f).get("voice") or {}).get("states") or {}
+            voice = json.load(f).get("voice") or {}
     except Exception:  # noqa: BLE001
         return {}
+    states = voice.get("states") or {}
     if not isinstance(states, dict):
         states = {}
+    # 默认参考音来自顶层 voice（人格蒸馏 sync_voice_to_config 写入）
+    default_ref = voice.get("ref_audio")
+    default_prompt = voice.get("prompt_text")
     key = "default"
     sick = False   # P2「角色生病」：精力极低时声音沙哑、语速再压一档
     if state_engine is not None:
@@ -265,14 +265,16 @@ def voice_extra() -> dict:
         extra["speed_factor"] = float(pick["speed_factor"])
     if sick:   # 生病时不管选到哪个状态，语速都再压一档，且保证有减速
         extra["speed_factor"] = round(float(extra.get("speed_factor", 1.0)) * 0.9, 3)
-    ref = pick.get("ref_audio")
+    # 状态自带参考音优先，否则用顶层默认参考音（人格蒸馏同步的克隆音色）
+    ref = pick.get("ref_audio") or default_ref
     if ref:
         p = ref if os.path.isabs(ref) else os.path.join(ROOT_DIR, ref)
         if os.path.isfile(p):
             extra["ref_audio_path"] = p
             # 换参考音必须同步换提示文本，否则音素对不上、克隆音跑偏
-            if pick.get("prompt_text"):
-                extra["prompt_text"] = str(pick["prompt_text"])
+            prompt = pick.get("prompt_text") or default_prompt
+            if prompt:
+                extra["prompt_text"] = str(prompt)
     return extra
 
 
