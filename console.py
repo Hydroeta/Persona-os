@@ -1376,7 +1376,7 @@ body{display:block}
 <div>
 <h2>人格蒸馏（素材 → 人格卡）</h2>
 <div class="card" style="font-size:13px">
-<div class="row"><input id="distillpath" placeholder="素材路径（.srt/.txt/.md 或音视频）" style="flex:2">
+<div class="row"><input id="distillpath" placeholder="素材路径或链接（字幕/文本/音视频，平台页面需 yt-dlp）" style="flex:2">
 <input id="distillcard" placeholder="人格卡" value="little_whale" style="width:110px"></div>
 <div class="row" style="margin-top:6px">
 <button onclick="distillRun(false)">蒸馏预览</button>
