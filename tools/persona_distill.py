@@ -7,10 +7,11 @@
 ——那些是人工调校的底线，素材只补充、不覆盖；rules.json（系统边界）永不涉及。
 
 输入三选一：
-  1. 字幕/台词文本（.srt/.txt/.md，首选，零依赖）
+  1. 字幕/台词文本（.srt/.vtt/.txt/.md，首选，零依赖）
   2. 音视频文件（.mp4/.mkv/.mp3/.wav 等）：ffmpeg 抽 16k 单声道 wav，
      faster-whisper 本地转写（两者都是可选依赖，缺了会给出明确提示）
-  3. 直接传台词字符串（API 用）
+  3. 网络链接：字幕/文本/音视频直链直接下载处理；视频平台页面链接
+     （B站/YouTube 等）走 yt-dlp（可选依赖）：优先抓字幕，抓不到再下音频转写
 
 蒸馏走 llm_client.chat（scene="distill"，预算闸门内，配额兜底 other）。
 合并策略：列表字段 strip 去重追加；emotion_patterns 只加新 key；
@@ -33,7 +34,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -41,9 +44,13 @@ sys.path.insert(0, str(ROOT / "tools"))
 CARD_DIR = ROOT / "Tulpa" / "Tulpa" / "chatlocal" / "prompts" / "mcp_chat"
 USER_CARD_DIR = Path.home() / ".tulpa" / "prompts" / "mcp_chat"
 
-TEXT_EXTS = {".srt", ".txt", ".md"}
+TEXT_EXTS = {".srt", ".vtt", ".txt", ".md"}
 AV_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm",
            ".mp3", ".wav", ".m4a", ".flac", ".ogg"}
+
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) persona-distill/1.0"
+_TEXT_MAX_BYTES = 5 * 1024 * 1024
+_AV_MAX_BYTES = 500 * 1024 * 1024
 
 # 素材可以生长的字段（其余字段人工维护，蒸馏不碰）
 LIST_FIELDS = ("core_traits", "catchphrases", "speaking_style")
@@ -53,18 +60,28 @@ SHOT_FIELDS = ("few_shots",)
 
 # ---------- 1. 转写 ----------
 
+def _strip_subtitle(raw: str) -> str:
+    """剥 srt/vtt 的序号、时间轴、标签，只留台词行。"""
+    lines = []
+    for ln in raw.replace("\r\n", "\n").split("\n"):
+        s = ln.strip()
+        if not s or s.isdigit():
+            continue
+        if s.startswith("WEBVTT") or s.startswith("NOTE"):
+            continue
+        if re.match(r"^\d{2}:\d{2}:\d{2}[,.]\d+\s*-->\s*", s):
+            continue
+        s = re.sub(r"</?c[^>]*>", "", s)  # vtt 的 <c.xxx> 标签
+        s = re.sub(r"<[^>]+>", "", s).strip()
+        if s:
+            lines.append(s)
+    return "\n".join(lines)
+
+
 def _read_text_file(path: Path) -> str:
     raw = path.read_text("utf-8-sig", errors="replace")
-    if path.suffix.lower() == ".srt":
-        lines = []
-        for ln in raw.replace("\r\n", "\n").split("\n"):
-            s = ln.strip()
-            if not s or s.isdigit():
-                continue
-            if re.match(r"^\d{2}:\d{2}:\d{2}[,.]\d+\s*-->\s*", s):
-                continue
-            lines.append(s)
-        return "\n".join(lines)
+    if path.suffix.lower() in (".srt", ".vtt"):
+        return _strip_subtitle(raw)
     return raw
 
 
@@ -107,8 +124,81 @@ def transcribe_av(path: Path, model_size: str = "small") -> str:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _download(url: str, max_bytes: int) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = r.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise RuntimeError("下载内容超过 %dMB 上限" % (max_bytes // 1024 // 1024))
+    return data
+
+
+def _ytdlp_cmd() -> list[str] | None:
+    exe = shutil.which("yt-dlp")
+    if exe:
+        return [exe]
+    try:
+        import yt_dlp  # noqa: F401
+        return [sys.executable, "-m", "yt_dlp"]
+    except ImportError:
+        return None
+
+
+def _transcript_from_page(url: str) -> str:
+    """视频平台页面链接：yt-dlp 先抓字幕，抓不到再下音频转写。"""
+    base = _ytdlp_cmd()
+    if not base:
+        raise RuntimeError(
+            "页面链接需要 yt-dlp：pip install yt-dlp。"
+            "或者直接提供字幕/文本文件或直链（零依赖）")
+    tmp = Path(tempfile.mkdtemp(prefix="pdistill_dl_"))
+    try:
+        # 先字幕（人工字幕 + 自动字幕，中文优先）
+        subprocess.run(
+            base + ["--skip-download", "--write-subs", "--write-auto-subs",
+                    "--sub-langs", "zh.*,zh-Hans.*,en.*", "--sub-format", "srt/vtt",
+                    "--no-playlist", "-o", str(tmp / "sub.%(ext)s"), url],
+            capture_output=True, timeout=300)
+        subs = sorted(tmp.glob("sub.*.srt")) + sorted(tmp.glob("sub.*.vtt"))
+        if subs:
+            return _read_text_file(subs[0])
+        # 字幕不可得：下音频走 whisper
+        r = subprocess.run(
+            base + ["-f", "bestaudio/best", "--no-playlist",
+                    "-o", str(tmp / "audio.%(ext)s"), url],
+            capture_output=True, timeout=600)
+        aud = sorted(p for p in tmp.glob("audio.*") if p.suffix.lower() in AV_EXTS)
+        if r.returncode != 0 or not aud:
+            raise RuntimeError("yt-dlp 抓字幕和音频都失败（链接无效或平台限制）")
+        return transcribe_av(aud[0])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _transcript_from_url(url: str) -> str:
+    ext = Path(urlparse(url).path).suffix.lower()
+    if ext in TEXT_EXTS:
+        raw = _download(url, _TEXT_MAX_BYTES).decode("utf-8-sig", "replace")
+        return _strip_subtitle(raw) if ext in (".srt", ".vtt") else raw
+    if ext in AV_EXTS:
+        tmp = Path(tempfile.mkdtemp(prefix="pdistill_dl_"))
+        try:
+            f = tmp / ("av" + ext)
+            f.write_bytes(_download(url, _AV_MAX_BYTES))
+            return transcribe_av(f)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return _transcript_from_page(url)
+
+
 def load_transcript(source: str | Path) -> str:
-    """统一入口：字幕/文本直接读，音视频走转写。"""
+    """统一入口：字幕/文本直接读，音视频走转写，链接先下载。"""
+    if str(source).startswith(("http://", "https://")):
+        text = _transcript_from_url(str(source))
+        text = text.strip()
+        if len(text) < 20:
+            raise RuntimeError("提取到的台词太短（%d 字），没有蒸馏价值" % len(text))
+        return text
     p = Path(source)
     if not p.is_file():
         raise RuntimeError("素材文件不存在：%s" % source)
@@ -327,7 +417,7 @@ def run(source: str | Path, card_name: str = "little_whale",
 def main(argv: list[str]) -> int:
     import argparse
     ap = argparse.ArgumentParser(description="人格蒸馏：素材 → Tulpa 人格卡增量更新")
-    ap.add_argument("source", help="素材文件（.srt/.txt/.md 或音视频）")
+    ap.add_argument("source", help="素材文件或链接（.srt/.vtt/.txt/.md、音视频、平台页面链接）")
     ap.add_argument("--card", default="little_whale", help="目标人格卡名（默认 little_whale）")
     ap.add_argument("--apply", action="store_true", help="实际写卡（默认只预览）")
     ap.add_argument("--max-chars", type=int, default=12000, help="蒸馏截取上限")
