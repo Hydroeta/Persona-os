@@ -91,6 +91,23 @@
 
 > MIT 只要求保留版权与许可声明，不要求公开修改源码；修改事实仍在此显式声明，避免「原样引用」的误导。
 
+### B3. dsh-pet 桥接事实契约（本地文件通道）
+
+本项目通过 `tools/pet_adapter.py` 以本地 jsonl / 菜单 / 进程方式与 dsh-pet 交互，未修改其二进制，也未依赖其内部事件协议；上游格式变化仅影响适配器实现（`tools/pet_adapters/dsh_pet.py`）。
+
+| 项 | 实测取值（2026-10-30） | 上游依据 |
+|---|---|---|
+| 桥目录 | win32 `%APPDATA%\dsh-pet-bridge`（不可配）；darwin `~/Library/Application Support/dsh-pet-bridge`；其他 `~/.config/dsh-pet-bridge` | `_internal/integrations/dsh-pet-bridge/index.js` |
+| 实例文件 | `dsh-{pid}.jsonl`，消费端 glob `dsh*.jsonl`（兼容旧单文件 `dsh.jsonl`） | 同上 |
+| 读取方式 | byte-offset tail，不回放历史 | 同上 |
+| 记录外壳 | `{"ts": <秒>, "agent": "dsh", "event": "AgentStatus", ...}` | 同上 |
+| 本项目只写 | `tool/call`、`tool/result`、`execution/failed` 三种已核实外壳 | 同上 |
+| 反向控制 | 同目录 `watchdog-request-{id}.json` → 桌宠回 `watchdog-response-{id}.json` | 同上 |
+| 桌宠侧开关 | `%APPDATA%\dsh-pet-standalone-webm-chat\config.json` 的 `agent_link.dsh` | 实机配置 |
+
+> 上述为实测事实契约，可能随上游版本变更；变更只影响 `tools/pet_adapters/dsh_pet.py` 一个文件，事件源不受牵连。
+> 桌宠通道只传状态与摘要，不承载密钥、读屏画面、通话音频与聊天原文。
+
 ---
 
 ## C. 运行时集成（不随仓库分发）

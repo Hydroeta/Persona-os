@@ -84,6 +84,10 @@ try:
 except Exception:  # noqa: BLE001
     state_engine = None
 try:
+    import pet_bus
+except Exception:  # noqa: BLE001
+    pet_bus = None
+try:
     import relations
 except Exception:  # noqa: BLE001
     relations = None
@@ -1118,6 +1122,8 @@ def main():
     last_presence = time.time()   # 静默模式上次主动「在呢」的时间
     if timeline is not None:
         timeline.emit("call_start", "call")
+    if pet_bus is not None:
+        pet_bus.publish("call_start")
     # 来电情境判断（默认关闭）：开会→耳语（语速压低），游戏→长话短说
     if call_context is not None:
         try:
@@ -1299,6 +1305,8 @@ def main():
         report_stats()
         if timeline is not None:
             timeline.emit("call_end", "call", turns=turn_count)
+        if pet_bus is not None:
+            pet_bus.publish("call_end", turns=turn_count)
         if state_engine is not None:
             try:
                 state_engine.event("call_ok")

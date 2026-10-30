@@ -115,6 +115,27 @@ def in_sleep(ts: float | None = None, sleep: dict | None = None) -> bool:
     return (a <= now < b) if a < b else (now >= a or now < b)
 
 
+_last_pet_bucket = None
+
+
+def _pet_publish(st: dict) -> None:
+    """桌宠联动：精力/情绪桶（0.05）变化才发一条，避免每 tick 刷屏。永不抛错。"""
+    global _last_pet_bucket
+    try:
+        bucket = (int(float(st.get("energy", 0)) * 20), int(float(st.get("mood", 0)) * 20))
+        if bucket == _last_pet_bucket:
+            return
+        _last_pet_bucket = bucket
+        import pet_bus
+        lb = labels(st)
+        pet_bus.publish("state_change", energy=round(bucket[0] / 20.0, 2),
+                        mood=round(bucket[1] / 20.0, 2),
+                        energy_label=lb["energy"], mood_label=lb["mood"],
+                        sleeping=lb["sleeping"])
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def tick(ts: float | None = None) -> dict:
     """按经过时间结算精力/情绪，返回最新状态。"""
     ts = time.time() if ts is None else ts
@@ -133,6 +154,7 @@ def tick(ts: float | None = None) -> dict:
         mood = st["mood"] + (MOOD_BASELINE - st["mood"]) * min(1.0, MOOD_DECAY_PER_DAY * days)
         st["mood"] = max(0.0, min(1.0, mood))
     _save(st)
+    _pet_publish(st)
     return st
 
 
@@ -145,6 +167,7 @@ def event(kind: str, ts: float | None = None) -> dict:
     st["last_event"] = kind
     st["last_event_ts"] = time.time() if ts is None else ts
     _save(st)
+    _pet_publish(st)
     return st
 
 

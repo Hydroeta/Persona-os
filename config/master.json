@@ -60,7 +60,7 @@
       {"id": "dsh", "name": "DSH 助手", "deps": [], "port": 3080, "probe": "http:http://127.0.0.1:3080/"},
       {"id": "ohwhale", "name": "哦鲸鲸全家桶", "deps": [], "probe": "http:http://127.0.0.1:9880/docs + http:http://127.0.0.1:6185/"},
       {"id": "tulpa", "name": "Tulpa QQ 机器人", "deps": ["snowluma"], "probe": "process:Tulpa.exe@Tulpa"},
-      {"id": "pet", "name": "桌宠（鲸鱼女仆）", "deps": ["dsh"], "probe": "process:dsh-pet-standalone-webm-chat.exe"}
+      {"id": "pet", "name": "桌宠（鲸鱼女仆）", "deps": ["dsh"], "optional": true, "probe": "process:dsh-pet-standalone-webm-chat.exe"}
     ]
   },
 
