@@ -204,9 +204,9 @@ def svc_status():
     svcs.append({"id": "tulpa", "name": "Tulpa QQ 机器人", "running": pid is not None,
                  "detail": ("PID %d" % pid) if pid else "未运行", "panel": ""})
 
-    pid = find_proc("node.exe", "SnowLuma")
+    pid = find_proc("node.exe", "SnowLuma") or port_pid(5099)
     svcs.append({"id": "snowluma", "name": "SnowLuma 桥接", "running": pid is not None,
-                 "detail": ("PID %d" % pid) if pid else "未运行", "panel": ""})
+                 "detail": ("PID %d" % pid) if pid else "未运行", "panel": "http://127.0.0.1:5099"})
 
     pid = find_proc("dsh-pet-standalone-webm-chat.exe")
     installed = (PET / "dsh-pet-standalone-webm-chat.exe").is_file()
@@ -244,6 +244,9 @@ def svc_action(sid, action):
     if sid == "tulpa":
         exe = TULPA / "Tulpa.exe"
         if action == "start":
+            pid = find_proc("Tulpa.exe", "Tulpa")
+            if pid:
+                return True, "Tulpa 已在运行（PID %d），跳过重复启动" % pid
             if not exe.is_file():
                 return False, "找不到 Tulpa.exe"
             spawn([str(exe)], TULPA)
@@ -255,13 +258,15 @@ def svc_action(sid, action):
         return False, "Tulpa 未在运行"
 
     if sid == "snowluma":
+        pid = find_proc("node.exe", "SnowLuma") or port_pid(5099)
         if action == "start":
+            if pid:
+                return True, "SnowLuma 已在运行（PID %d），跳过重复启动" % pid
             node = SNOWLUMA / "node.exe"
             if not node.is_file():
                 return False, "找不到 SnowLuma/node.exe"
             spawn([str(node), "index.mjs"], SNOWLUMA)
             return True, "SnowLuma 启动中"
-        pid = find_proc("node.exe", "SnowLuma")
         if pid:
             kill_pid(pid)
             return True, "SnowLuma 已停止"
@@ -270,6 +275,9 @@ def svc_action(sid, action):
     if sid == "pet":
         exe = PET / "dsh-pet-standalone-webm-chat.exe"
         if action == "start":
+            pid = find_proc("dsh-pet-standalone-webm-chat.exe")
+            if pid:
+                return True, "桌宠已在运行（PID %d），跳过重复启动" % pid
             if not exe.is_file():
                 return False, "桌宠未安装（可选组件，不影响其他服务）"
             spawn([str(exe)], PET)
@@ -337,7 +345,8 @@ def svc_ready(sid):
                         http_ok("http://127.0.0.1:6185/") and
                         find_proc("NapCatWinBootMain.exe") is not None),
             "tulpa": find_proc("Tulpa.exe", "Tulpa") is not None,
-            "snowluma": find_proc("node.exe", "SnowLuma") is not None,
+            "snowluma": (find_proc("node.exe", "SnowLuma") is not None
+                         or port_pid(5099) is not None),
             "pet": find_proc("dsh-pet-standalone-webm-chat.exe") is not None,
         }
     return _ready_cache["data"].get(sid, False)
