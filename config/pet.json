@@ -1,0 +1,9 @@
+{
+  "$comment": "桌宠通道：enabled=false 只落盘不推送；adapter=null 强制关闭；bridge_dir 留空按平台推导（Win=%APPDATA%\\dsh-pet-bridge）",
+  "enabled": true,
+  "adapter": "dsh_pet",
+  "degrade": "silent",
+  "bridge_dir": "",
+  "agent": "小鲸鱼",
+  "session": "pet-bus"
+}

@@ -205,8 +205,11 @@ def svc_status():
                  "detail": ("PID %d" % pid) if pid else "未运行", "panel": ""})
 
     pid = find_proc("dsh-pet-standalone-webm-chat.exe")
+    installed = (PET / "dsh-pet-standalone-webm-chat.exe").is_file()
     svcs.append({"id": "pet", "name": "桌宠（鲸鱼女仆）", "running": pid is not None,
-                 "detail": ("PID %d" % pid) if pid else "未运行", "panel": ""})
+                 "optional": True, "installed": installed,
+                 "detail": ("未安装（可选）" if not installed else
+                            ("PID %d" % pid if pid else "未运行")), "panel": ""})
     for s in svcs:
         s["ready"] = svc_ready(s["id"])
         s["restarts"] = _restart_count(s["id"])
@@ -264,7 +267,7 @@ def svc_action(sid, action):
         exe = PET / "dsh-pet-standalone-webm-chat.exe"
         if action == "start":
             if not exe.is_file():
-                return False, "找不到桌宠 exe"
+                return False, "桌宠未安装（可选组件，不影响其他服务）"
             spawn([str(exe)], PET)
             return True, "桌宠启动中"
         pid = find_proc("dsh-pet-standalone-webm-chat.exe")
@@ -1433,7 +1436,7 @@ document.getElementById('hints').innerHTML=(d.hints||[]).map(h=>`<div class="hin
 document.getElementById('wd').checked=!!(d.health&&d.health.enabled);
 const sa=d.startall||{};document.getElementById('sal').innerHTML=(sa.log&&sa.log.length)?`<div class="card"><pre>${sa.log.join('\n')}</pre></div>`:'';
 document.getElementById('svcs').innerHTML=d.services.map(s=>`<div class="card row ${s.running?'on':(s.partial?'part':'')}"><span class="dot"></span><span class="name">${s.name}</span>
-<span class="badge ${s.ready?'on':''}">${s.ready?'就绪':'未就绪'}</span>
+<span class="badge ${s.ready?'on':''}">${s.ready?'就绪':(s.optional?'可选':'未就绪')}</span>
 ${s.restarts?`<span class="badge" style="color:var(--warn)">重启×${s.restarts}</span>`:''}
 <span class="detail">${s.detail}</span>
 ${s.panel?`<a href="${s.panel}" target="_blank">面板</a>`:''}
