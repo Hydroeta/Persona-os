@@ -58,7 +58,8 @@ python tests/test_smoke.py  # 117 项冒烟测试
 | Tulpa | QQ 客户端集成 | 官方 Releases（源码 MIT，发行包含预编译 exe；`chatlocal` 源码随仓库保留） |
 | Ollama + Qwen2.5-1.5B（可选） | 本地免费推理 provider（端云路由的 local 端） | `ollama pull qwen2.5:1.5b` |
 | SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
-| dsh-pet | 桌宠可执行程序 | 上游 Releases（本仓库只含人设/菜单；mortis 形象素材 `characters/mortis` 与自建 mortis-pet 需自备，见 NOTICES B2） |
+| dsh-pet | 桌宠可执行程序（老桌宠，含事件播报通道） | 上游 Releases（本仓库只含人设/菜单，见 NOTICES B2） |
+| mortis-pet + mortis 素材 | 第二桌宠（独立展示型，无事件通道） | 项目自建，需连同形象素材 `characters/mortis` 自备，不入库（见 NOTICES B2） |
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
 | API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
 | AstrBot（AGPL-3.0） | 消息框架与面板 | 由 ohwhale-deploy 安装，源码从上游获取 |
@@ -79,7 +80,7 @@ python tests/test_smoke.py  # 117 项冒烟测试
   贡献者 B站 @快乐小咸鱼a（灵动岛改动与优化）、B站 @咕噜千鹤子（语音功能）。
   本仓库仅包含人设与菜单定制（JSON），**未重新分发素材或二进制**，素材不适用 MIT 许可。
   另含第二形象 **mortis（若叶睦）**：素材渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，
-  权利归原作方所有，仅限个人非商业使用，**自备不入库**；其桌宠载体为项目自建的
+  权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用，**自备不入库**；其桌宠载体为项目自建的
   mortis-pet（PySide6，未随仓库分发）。mortis 同时是第二个 persona（`config/personas/mortis/`，
   语音链路走 IndexTTS2），详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) B2。
 - 语音/聊天部署包来自 `https://github.com/chauko0423/ohwhale-deploy`（MIT）。
