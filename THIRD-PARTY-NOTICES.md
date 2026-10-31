@@ -87,7 +87,9 @@
 > **mortis（若叶睦）形象素材说明**：mortis 桌宠素材（VP9 alpha 透明底，`characters/mortis`）
 > 渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，**素材文件不入库、不再分发**；
 > 相关权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用。
-> mortis-pet 源码（`mortis-pet/`）为本项目自有 MIT 代码；其台词文本（`config.json`）整理自上游 dsh-pet 的 mortis 角色包。
+> mortis-pet 源码（`mortis-pet/`）为本项目自有 MIT 代码；其台词文本（`config.json`）为本项目编写——
+> dsh-pet 的 mortis 角色包仅含视频素材与素材元数据、不含台词文本文件（实测 2026-11-01），故台词不构成对上游作品的修改；
+> 部分台词化用原作角色名台词/梗，相关权利归原作方（BanG Dream! 项目相关权利方）所有。
 >
 > **可裁剪说明**：dsh-pet 为**可选组件**，不下装不影响本项目其他任何服务。（项目自建的 mortis-pet 同为可选：源码以 MIT 随仓库提供（`mortis-pet/`），视频素材属第三方权利、自备不入库；它不是第三方组件。）
 >
@@ -177,17 +179,18 @@
 
 | 组件 | 许可证 | 说明 |
 |---|---|---|
-| GPT-SoVITS | MIT（`Copyright (c) 2024 RVC-Boss`） | **遗留可选，不再默认**（TTS 主链路已迁 IndexTTS2）；钉版脚本仍可拉取其源码与权重（权重约 1.24 GB，含源码与运行时约 4 GB），不入库；模型与素材另有各自条款 |
+| GPT-SoVITS | MIT（`Copyright (c) 2024 RVC-Boss`） | **遗留可选，不再默认**（TTS 主链路已迁 IndexTTS2）；钉版脚本仍可拉取其源码与权重（权重约 1.24 GB，含源码与运行时约 4 GB，安装后含独立 venv 与 PyTorch 共约 9.8 GB），不入库；模型与素材另有各自条款 |
 | IndexTTS2 | 代码 Apache-2.0；模型权重为 bilibili Model Use License | **默认 TTS 引擎**（本地 HTTP `:9881`，`services.tts_engine` 默认 `indextts2`，可切回遗留 `gpt_sovits`）；用户自备独立环境（`index-tts/`）与权重（默认 `C:\idx_models`），不入库；经 `ohwhale-deploy/scripts/indextts_server.py` 提供本地 HTTP 合成（零样本克隆；`media_type=wav` 输出供 AstrBot 语音消息链直接落盘为 .wav） |
 | SnowLuma | 专有软件 | 仅由安装脚本下载官方原包并校验 SHA256，不修改、不代跑；EULA 对自动化部署有限制 |
 | Tulpa 可执行程序 | MIT（源码）/ 官方发行包 | 源码 MIT，发行包中的 exe 为预编译产物（非闭源），不随本仓库分发；仓库只含 `chatlocal` 源码，不含其捆绑的第三方依赖 |
+| PySide6 | LGPL-3.0（Qt for Python） | mortis-pet 的 GUI 运行时依赖；mortis-pet 源码随仓库，依赖由用户 `pip install`（见 `mortis-pet/requirements.txt`），本仓库不随附其二进制 |
 | VB-CABLE | 捐赠版（Donationware） | 用户自行安装的虚拟声卡 |
 
 ---
 
 ## 文件头规范
 
-- 本仓库自有 `.py` 文件统一带：
+- 本仓库自有 `.py` 文件统一带（`mortis-pet/` 下自有 `.py` 同样适用，已前置）：
   ```text
   # Copyright 2026 persona-os contributors
   # SPDX-License-Identifier: MIT
@@ -199,13 +202,16 @@
 
 ## 许可证兼容性结论
 
-- 本仓库**自有代码**以 MIT 发布。
+- 本仓库**自有代码**以 MIT 发布（含 `mortis-pet/` 下的 mortis-pet 源码）。
 - 第三方组件构成：**AstrBot 为 AGPL-3.0，NapCatQQ 为 GPL-3.0**；whale-pod、Tulpa（chatlocal）、
   ohwhale-deploy、dsh-pet、GPT-SoVITS、DSH 核心包、dsh-our-free-model 等为 MIT；SnowLuma 为专有软件（未再分发）；
   IndexTTS2 代码为 Apache-2.0，其**模型权重为 bilibili Model Use License**（非 OSI 许可证，
-  使用受该条款约束，权重由用户自备、不入库）。
+  使用受该条款约束，权重由用户自备、不入库）；mortis-pet 的运行时依赖 **PySide6 为 LGPL-3.0**（Qt for Python）。
 - AGPL/GPL 组件以**独立进程 / 标准协议**方式集成，本仓库未并入或修改其源码，因此自有代码仍可按 MIT 发布；
   但使用者对外提供服务或再分发时，需自行遵守 AstrBot（AGPL-3.0）与 NapCatQQ（GPL-3.0）的条款。
+- PySide6（LGPL-3.0）由用户自行 `pip install`、以动态链接方式被 mortis-pet 调用，本仓库未分发其二进制，
+  不影响自有代码按 MIT 发布；若后续改为随仓库分发 PySide6 二进制或含其的打包产物，需另行履行
+  LGPL 义务（提供对应源码获取途径、允许用户替换库版本）。
 - 上述为技术事实与许可文本的对应关系，不构成法律意见；商用或再分发前建议咨询专业意见。
 
 ## 许可文本位置
@@ -213,6 +219,7 @@
 | 组件 | 许可文件 |
 |---|---|
 | 本仓库 | `LICENSE` |
+| mortis-pet | 本仓库自有代码，适用根目录 `LICENSE`（MIT），无独立许可文件 |
 | ohwhale-deploy | `ohwhale-deploy/LICENSE`、`ohwhale-deploy/NOTICE` |
 | whale-pod | `whale-pod/LICENSE` |
 | Tulpa chatlocal | `Tulpa/Tulpa/LICENSE` |
