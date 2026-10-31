@@ -87,9 +87,9 @@
 > **mortis（若叶睦）形象素材说明**：mortis 桌宠素材（VP9 alpha 透明底，`characters/mortis`）
 > 渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，**素材文件不入库、不再分发**；
 > 相关权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用。
-> mortis-pet 源码（`mortis-pet/`）为本项目自有 MIT 代码。其台词文本**不随仓库分发**：内容整理自《Ave Mujica》
-> 动画台词及部分二创作品，**相关权利归动画制作方与二创作者所有，不适用 MIT**；仓库仅提供 `config.example.json`
-> 模板，用户需自行准备 `config.json`。二创台词的使用需自行取得相应授权。
+> mortis-pet 源码（`mortis-pet/`）为本项目自有 MIT 代码（纯自有，非衍生作品；此处仅因素材署名需要一并说明）。
+> 其台词文本**不随仓库分发**：仓库仅提供纯占位模板 `config.example.json`（不含任何原作/二创台词），用户需
+> 自行准备 `config.json`；台词来源与权利边界见本节末「台词与二创素材边界」。
 >
 > **可裁剪说明**：dsh-pet 为**可选组件**，不下装不影响本项目其他任何服务。（项目自建的 mortis-pet 同为可选：源码以 MIT 随仓库提供（`mortis-pet/`），视频素材属第三方权利、自备不入库；它不是第三方组件。）
 >
