@@ -59,3 +59,6 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# ===== 角色形象素材（不入库）=====
+dsh-pet/_internal/assets/

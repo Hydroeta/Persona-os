@@ -139,8 +139,8 @@ def transcribe_av(path: Path, model_size: str = "small") -> tuple[str, list[dict
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-# 参考音频存放目录（GPT-SoVITS 用 ref_audio_path 做 few-shot 音色克隆）
-VOICE_REF_DIR = ROOT / "ohwhale-deploy" / "models" / "sovits" / "refs"
+# 参考音频存放目录（IndexTTS2 零样本克隆：ref_audio_path 指向参考 wav）
+VOICE_REF_DIR = ROOT / "ohwhale-deploy" / "models" / "indextts2" / "refs"
 
 # 配置人格正本（call_loop.py 读 config/persona.json 物化视图，由 persona_switch 生成）
 PERSONAS_DIR = ROOT / "config" / "personas"
@@ -148,18 +148,41 @@ ACTIVE_FILE = PERSONAS_DIR / "active.json"
 VIEW_PERSONA = ROOT / "config" / "persona.json"
 
 
-def sync_voice_to_config(voice_ref: dict) -> str | None:
-    """把蒸馏抽取的音色参考同步到当前激活的配置人格正本，
+def _persona_for_card(card_name: str) -> str | None:
+    """按人格卡名反查配置人格 id：匹配各人格 canonical_text.persona_md 的文件名
+    （如 mortis.personality.json → mortis）。匹配不到返回 None（调用方回退激活人格）。"""
+    want = (card_name or "").lower()
+    if not want or not PERSONAS_DIR.is_dir():
+        return None
+    for d in PERSONAS_DIR.iterdir():
+        src = d / "persona.json"
+        if not src.is_file():
+            continue
+        try:
+            md = (json.loads(src.read_text("utf-8")).get("canonical_text") or {}).get("persona_md", "")
+        except Exception:
+            continue
+        base = os.path.basename(str(md))
+        if base.endswith(".personality.json") and base[:-len(".personality.json")].lower() == want:
+            return d.name
+    return None
+
+
+def sync_voice_to_config(voice_ref: dict, card_name: str = "") -> str | None:
+    """把蒸馏抽取的音色参考同步到对应配置人格正本：
+    优先按人格卡名反查（--card mortis → 写入 mortis 正本），匹配不到回退当前激活人格。
     让 call_loop.py（读 config/persona.json 物化视图）自动用上新音色。
-    只更新 voice.ref_audio / prompt_text / prompt_lang，不动 states 等人工配置。
+    只更新 voice.engine / ref_audio，不动 states 等人工配置。
+    仅当目标就是激活人格时才重生物化视图（避免覆盖别的角色视图）。
     返回更新的人格 id，失败返回 None。"""
     try:
         active_id = json.loads(ACTIVE_FILE.read_text("utf-8")).get("active_id")
     except Exception:
+        active_id = None
+    target_id = _persona_for_card(card_name) or active_id
+    if not target_id:
         return None
-    if not active_id:
-        return None
-    src = PERSONAS_DIR / active_id / "persona.json"
+    src = PERSONAS_DIR / target_id / "persona.json"
     if not src.is_file():
         return None
     try:
@@ -168,22 +191,24 @@ def sync_voice_to_config(voice_ref: dict) -> str | None:
         return None
     voice = p.setdefault("voice", {})
     # 人格卡用 ref_audio_path，配置正本用 ref_audio，统一映射
+    # IndexTTS2 零样本克隆只需参考音频，清掉 GPT-SoVITS 时代的 prompt 字段
+    voice["engine"] = voice_ref.get("engine", "indextts2")
     voice["ref_audio"] = voice_ref["ref_audio_path"]
-    voice["prompt_text"] = voice_ref["prompt_text"]
-    voice["prompt_lang"] = voice_ref.get("prompt_lang", "zh")
+    voice.pop("prompt_text", None)
+    voice.pop("prompt_lang", None)
     src.write_text(json.dumps(p, ensure_ascii=False, indent=2) + "\n", "utf-8")
-    # 重生物化视图，call_loop.py 下次调用 voice_extra() 就拿到新参考音
-    p["_view_of"] = active_id
-    p["_view_note"] = ("物化视图，由 persona_switch 自动生成；"
-                       "改人设请编辑 config/personas/%s/persona.json" % active_id)
-    VIEW_PERSONA.write_text(json.dumps(p, ensure_ascii=False, indent=2) + "\n", "utf-8")
-    return active_id
+    # 仅激活人格重生物化视图，call_loop.py 下次调用 voice_extra() 就拿到新参考音
+    if target_id == active_id:
+        p["_view_of"] = active_id
+        p["_view_note"] = ("物化视图，由 persona_switch 自动生成；"
+                           "改人设请编辑 config/personas/%s/persona.json" % active_id)
+        VIEW_PERSONA.write_text(json.dumps(p, ensure_ascii=False, indent=2) + "\n", "utf-8")
+    return target_id
 
 
-def extract_voice_ref(source: Path, segments: list[dict], card_name: str,
-                      lang: str = "zh") -> dict | None:
+def extract_voice_ref(source: Path, segments: list[dict], card_name: str) -> dict | None:
     """从转写分段里挑一段干净人声（5~12 秒），切出来做音色参考。
-    返回 {"ref_audio_path": ..., "prompt_text": ...}，失败返回 None。"""
+    返回 {"engine": "indextts2", "ref_audio_path": ...}，失败返回 None。"""
     if not segments:
         return None
     # 挑时长在 5~12s 之间、文本最长的一段（信息量足、克隆效果好）
@@ -214,8 +239,7 @@ def extract_voice_ref(source: Path, segments: list[dict], card_name: str,
             return None
     except Exception:
         return None
-    return {"ref_audio_path": str(out), "prompt_text": best["text"],
-            "prompt_lang": lang if lang in ("zh", "ja", "en") else "zh"}
+    return {"engine": "indextts2", "ref_audio_path": str(out)}
 
 
 def _download(url: str, max_bytes: int) -> bytes:
@@ -718,10 +742,10 @@ def run(source: str | Path, card_name: str = "little_whale",
     card = load_card(card_name)
     distilled = distill(text, card_name=card_name, max_chars=max_chars)
     merged, stats = merge(card, distilled)
-    # 音视频源：抽取参考音色（GPT-SoVITS few-shot 克隆用）
+    # 音视频源：抽取参考音色（IndexTTS2 零样本克隆用）
     voice_ref = None
     if segments and av_path is not None:
-        voice_ref = extract_voice_ref(av_path, segments, card_name, lang or "zh")
+        voice_ref = extract_voice_ref(av_path, segments, card_name)
         if voice_ref:
             merged["voice"] = voice_ref
     report = {"source": str(source), "card": card_name,
@@ -734,7 +758,7 @@ def run(source: str | Path, card_name: str = "little_whale",
         report.update(apply_card(card_name, merged))
         # 音色参考同步到配置人格正本，call_loop.py 自动用上新克隆音色
         if voice_ref:
-            synced = sync_voice_to_config(voice_ref)
+            synced = sync_voice_to_config(voice_ref, card_name)
             report["voice_synced_to"] = synced
     return report
 
@@ -763,7 +787,7 @@ def main(argv: list[str]) -> int:
     print("合并统计（新增条数）：%s" % json.dumps(r["added"], ensure_ascii=False))
     if r.get("voice_ref"):
         vr = r["voice_ref"]
-        print("音色参考：%s（prompt: %s）" % (vr["ref_audio_path"], vr["prompt_text"][:40]))
+        print("音色参考：%s" % vr["ref_audio_path"])
         if r.get("voice_synced_to"):
             print("音色已同步到配置人格：%s（通话链路自动生效）" % r["voice_synced_to"])
     else:

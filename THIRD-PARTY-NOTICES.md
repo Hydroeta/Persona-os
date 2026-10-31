@@ -37,7 +37,7 @@
 > 需按 AGPL 第 13 条向使用者提供修改后的源码；NapCatQQ 以 GPL-3.0 发布，本项目仅通过
 > OneBot 协议与之通信，不构成衍生作品。上述结论为事实描述，不构成法律意见。
 
-> 在线 API 服务（DeepSeek 对话、阿里云百炼·千问兜底、智谱 CogView 梦境配图、心知天气）均为
+> 在线 API 服务（DeepSeek 对话、阿里云百炼·千问兜底、智谱 CogView 梦境配图）均为
 > 用户自备账号的远程调用，服务条款由各提供商决定；本仓库不含其 SDK 或代码，密钥仅存于本机
 > DPAPI 保险库。
 
@@ -83,6 +83,10 @@
 > 上述形象素材**不适用 MIT 许可**；本仓库未再分发这些素材文件，仅在人设/菜单配置中引用其名称或标识。
 > 使用者将本项目用于商业目的时，需自行评估上述 CC BY-NC-SA 4.0 素材的合规性；
 > 本仓库仅以 MIT 分发自有代码，不对第三方素材的商业使用授予额外许可。
+>
+> **mortis（若叶睦）形象素材说明**：mortis 桌宠素材（VP9 alpha 透明底，`characters/mortis`）
+> 渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，**素材文件不入库、不再分发**；
+> 相关权利归原作方所有，仅限个人非商业使用。
 >
 > 上游发行渠道：Windows 版可通过作者提供的夸克网盘获取；macOS 版请从
 > `https://github.com/MerZlin/dsh-pet-indesktop/releases` 下载（网盘会吞 macOS 版 zip）。
@@ -169,6 +173,7 @@
 | 组件 | 许可证 | 说明 |
 |---|---|---|
 | GPT-SoVITS | MIT（`Copyright (c) 2024 RVC-Boss`） | 由 ohwhale-deploy 的钉版脚本下载源码与权重（约 1.24 GB），不入库；模型与素材另有各自条款 |
+| IndexTTS2 | 代码 Apache-2.0；模型权重为 bilibili Model Use License | 用户自备独立环境（`index-tts/`）与权重（默认 `C:\idx_models`），不入库；mortis 语音链路经 `ohwhale-deploy/scripts/indextts_server.py` 提供本地 HTTP 合成，与 GPT-SoVITS 按 `services.tts_engine` 配置切换 |
 | SnowLuma | 专有软件 | 仅由安装脚本下载官方原包并校验 SHA256，不修改、不代跑；EULA 对自动化部署有限制 |
 | Tulpa 可执行程序 | MIT（源码）/ 官方发行包 | 源码 MIT，发行包中的 exe 为预编译产物（非闭源），不随本仓库分发；仓库只含 `chatlocal` 源码，不含其捆绑的第三方依赖 |
 | VB-CABLE | 捐赠版（Donationware） | 用户自行安装的虚拟声卡 |

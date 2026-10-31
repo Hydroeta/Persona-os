@@ -431,7 +431,9 @@ class TestStateEnginePersonaPath(unittest.TestCase):
         d = persona_switch.PERSONAS_DIR / "ohwhale"
         d.mkdir(parents=True)
         (d / "state.json").write_text(json.dumps(
-            {"updated": time.time(), "energy": 0.8, "mood": 0.6,
+            # updated 回拨 1 小时：Windows 上 time.time() 只有 ~3ms 粒度，
+            # 用 time.time() 本体会因 ts==last 跳过衰减，测试间歇性失败
+            {"updated": time.time() - 3600, "energy": 0.8, "mood": 0.6,
              "sleep": {"start": "23:30", "end": "08:00"}}), "utf-8")
         persona_switch.ACTIVE_FILE.write_text(json.dumps(
             {"active_id": "ohwhale"}), "utf-8")
@@ -848,14 +850,13 @@ class TestCloudFallback(unittest.TestCase):
 
 
 class TestContextEngine(unittest.TestCase):
-    """环境快照：时段/节假日覆盖/天气缓存/每日一条记忆。"""
+    """环境快照：时段/节假日覆盖/每日一条记忆。"""
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
-        self.old = (context_engine.CACHE_FILE, context_engine.STAMP_FILE,
+        self.old = (context_engine.STAMP_FILE,
                     context_engine.CONFIG_FILE, memory_bus.write,
                     timeline.emit)
-        context_engine.CACHE_FILE = root / "w.json"
         context_engine.STAMP_FILE = root / "stamp.json"
         context_engine.CONFIG_FILE = root / "env.json"
         self.mem, self.tl = [], []
@@ -863,7 +864,7 @@ class TestContextEngine(unittest.TestCase):
         timeline.emit = lambda *a, **k: self.tl.append((a, k)) or True
 
     def tearDown(self):
-        (context_engine.CACHE_FILE, context_engine.STAMP_FILE,
+        (context_engine.STAMP_FILE,
          context_engine.CONFIG_FILE, memory_bus.write,
          timeline.emit) = self.old
         self.tmp.cleanup()
@@ -883,34 +884,13 @@ class TestContextEngine(unittest.TestCase):
         snap = context_engine.snapshot(now=sat)
         self.assertEqual(snap["holiday"], "万圣节前夕")
 
-    def test_weather_cache_and_note(self):
-        import urllib.request
-        real = urllib.request.urlopen
-
-        class R:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-            def read(self):
-                return json.dumps({"current_condition": [
-                    {"temp_C": "18", "lang_zh": [{"value": "阴"}]}]}).encode()
-        urllib.request.urlopen = lambda *a, **k: R()
-        try:
-            r1 = context_engine.note()
-            self.assertIn("阴", r1["line"])
-            self.assertEqual(len(self.mem), 1)          # soul 写入一条
-            urllib.request.urlopen = lambda *a, **k: (_ for _ in ()
-                                                     ).throw(OSError("断网"))
-            w = context_engine.weather(fetch=True)      # 断网回落旧缓存
-            self.assertEqual(w.get("text"), "阴")
-            r2 = context_engine.note()                  # 当天不重复写记忆
-            self.assertTrue(r2["skipped"])
-            self.assertEqual(len(self.mem), 1)
-        finally:
-            urllib.request.urlopen = real
+    def test_note_once_a_day(self):
+        r1 = context_engine.note()
+        self.assertIn("今天是", r1["line"])
+        self.assertEqual(len(self.mem), 1)              # soul 写入一条
+        r2 = context_engine.note()                      # 当天不重复写记忆
+        self.assertTrue(r2["skipped"])
+        self.assertEqual(len(self.mem), 1)
 
 
 class TestDreamIllustrator(unittest.TestCase):
@@ -968,14 +948,12 @@ class TestSubconscious(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.old = (subconscious.THOUGHTS_FILE, subconscious.CURSOR_FILE,
-                    timeline.day, state_engine.status, memory_bus.write,
-                    context_engine.weather)
+                    timeline.day, state_engine.status, memory_bus.write)
         subconscious.THOUGHTS_FILE = root / "thoughts.jsonl"
         subconscious.CURSOR_FILE = root / "cursor.json"
         self.written = []
         memory_bus.write = lambda *a, **k: self.written.append((a, k)) or "id"
         state_engine.status = lambda: {"energy": 0.9}
-        context_engine.weather = lambda *a, **k: {}
         now = time.time()
         self.events = [
             {"ts": now - 3 * 3600, "type": "activity", "source": "screen_buddy",
@@ -990,8 +968,7 @@ class TestSubconscious(unittest.TestCase):
 
     def tearDown(self):
         (subconscious.THOUGHTS_FILE, subconscious.CURSOR_FILE,
-         timeline.day, state_engine.status, memory_bus.write,
-         context_engine.weather) = self.old
+         timeline.day, state_engine.status, memory_bus.write) = self.old
         self.tmp.cleanup()
 
     def test_rules_fire(self):

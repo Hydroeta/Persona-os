@@ -25,10 +25,6 @@ try:
 except Exception:
     state_engine = None
 try:
-    import context_engine
-except Exception:
-    context_engine = None
-try:
     import daily_report
 except Exception:
     daily_report = None
@@ -86,8 +82,68 @@ OHWHALE = ROOT / "ohwhale-deploy"
 DSH = ROOT / "dsh"
 TULPA = ROOT / "Tulpa" / "Tulpa"
 SNOWLUMA = ROOT / "SnowLuma"
-PET = ROOT / "dsh-pet"
+
+
+def _resolve_pet_dir():
+    """桌宠安装目录探测：环境变量 DSH_PET_DIR > 本仓库 dsh-pet > 桌面下的 dsh-pet。
+
+    本仓库的 dsh-pet 可能只有 _internal（未带 exe），这时应回退到桌面真正安装的那份，
+    否则形象总控会误报「桌宠未安装」且列不出 characters 里的模型。
+    """
+    exe_name = "dsh-pet-standalone-webm-chat.exe"
+    cands = []
+    env = os.environ.get("DSH_PET_DIR")
+    if env:
+        cands.append(Path(env))
+    cands.append(ROOT / "dsh-pet")
+    desk = Path(os.environ.get("USERPROFILE") or "C:") / "Desktop"
+    if desk.is_dir():
+        cands.append(desk / "dsh-pet")
+        try:
+            for top in desk.iterdir():
+                if top.is_dir():
+                    cands.append(top / "dsh-pet")
+        except OSError:
+            pass
+    for c in cands:
+        try:
+            if (c / exe_name).is_file():
+                return c
+        except OSError:
+            pass
+    return ROOT / "dsh-pet"
+
+
+
+def _resolve_mortis_pet_exe():
+    """新独立桌宠 mortis-pet.exe（mortis-pet/dist/mortis-pet/ 下，桌面子目录里找）。"""
+    name = "mortis-pet.exe"
+    cands = []
+    env = os.environ.get("MORTIS_PET_DIR")
+    if env:
+        cands.append(Path(env) / name)
+    cands.append(ROOT / "mortis-pet" / "dist" / "mortis-pet" / name)
+    desk = Path(os.environ.get("USERPROFILE") or "C:") / "Desktop"
+    if desk.is_dir():
+        try:
+            for top in desk.iterdir():
+                if top.is_dir():
+                    cands.append(top / "mortis-pet" / "dist" / "mortis-pet" / name)
+        except OSError:
+            pass
+    for c in cands:
+        try:
+            if c.is_file():
+                return c
+        except OSError:
+            pass
+    return cands[0] if cands else ROOT / name
+
+
+PET = _resolve_pet_dir()
 PET_EXE = PET / "dsh-pet-standalone-webm-chat.exe"
+# 墨提斯已换成独立 exe：新桌宠与老 dsh-pet（鲸鲸）并存，按模型切换启停
+MORTIS_PET_EXE = _resolve_mortis_pet_exe()
 PET_CFG = Path(os.environ.get("APPDATA") or str(ROOT)) / "dsh-pet-standalone-webm-chat" / "config.json"
 PET_MODELS_DIR = PET / "_internal" / "assets" / "characters"
 
@@ -139,11 +195,13 @@ def process_list():
     """带 3 秒缓存的进程清单（仅关心的几个）。"""
     if time.time() - _proc_cache["t"] < 3:
         return _proc_cache["data"]
-    names = "','".join(["Tulpa.exe", "node.exe", "NapCatWinBootMain.exe",
-                        "dsh-pet-standalone-webm-chat.exe"])
-    cmd = ("Get-CimInstance Win32_Process -Filter \"Name in ('%s')\" "
+    names = ["Tulpa.exe", "node.exe", "NapCatWinBootMain.exe",
+             "dsh-pet-standalone-webm-chat.exe", "mortis-pet.exe"]
+    # WQL 不支持 IN，用 OR 串起来（之前用 IN 会让整个查询失败、进程一律判为未运行）
+    flt = " OR ".join("Name='%s'" % n for n in names)
+    cmd = ("Get-CimInstance Win32_Process -Filter \"%s\" "
            "| Select-Object ProcessId,Name,ExecutablePath "
-           "| ConvertTo-Json -Compress" % names)
+           "| ConvertTo-Json -Compress" % flt)
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-Command", cmd],
                              capture_output=True, encoding="gbk", errors="replace",
@@ -211,14 +269,20 @@ def svc_status():
     svcs.append({"id": "snowluma", "name": "SnowLuma 桥接", "running": pid is not None,
                  "detail": ("PID %d" % pid) if pid else "未运行", "panel": "http://127.0.0.1:5099"})
 
-    pid = find_proc("dsh-pet-standalone-webm-chat.exe")
-    installed = PET_EXE.is_file()
-    cur_model = pet_current_model()
-    model_name = {m["id"]: m["name"] for m in pet_models()}.get(cur_model, cur_model)
-    svcs.append({"id": "pet", "name": "桌宠（%s）" % (model_name or "未配置"), "running": pid is not None,
+    pid_new = find_proc("mortis-pet.exe")
+    pid_old = find_proc("dsh-pet-standalone-webm-chat.exe")
+    installed = MORTIS_PET_EXE.is_file() or PET_EXE.is_file()
+    if pid_new:
+        model_name = "墨提斯"
+    else:
+        cur_model = pet_current_model()
+        model_name = {m["id"]: m["name"] for m in pet_models()}.get(cur_model, cur_model)
+    svcs.append({"id": "pet", "name": "桌宠（%s）" % (model_name or "未配置"),
+                 "running": (pid_new or pid_old) is not None,
                  "optional": True, "installed": installed,
                  "detail": ("未安装（可选）" if not installed else
-                            ("PID %d" % pid if pid else "未运行")), "panel": ""})
+                            ("PID %d" % (pid_new or pid_old) if (pid_new or pid_old) else "未运行")),
+                 "panel": ""})
     for s in svcs:
         s["ready"] = svc_ready(s["id"])
         s["restarts"] = _restart_count(s["id"])
@@ -280,16 +344,16 @@ def svc_action(sid, action):
         return False, "SnowLuma 未在运行"
 
     if sid == "pet":
-        exe = PET / "dsh-pet-standalone-webm-chat.exe"
+        # 墨提斯用独立的新 exe；老 dsh-pet 只留给鲸鲸（shenshen）等旧模型
         if action == "start":
-            pid = find_proc("dsh-pet-standalone-webm-chat.exe")
+            pid = find_proc("mortis-pet.exe")
             if pid:
                 return True, "桌宠已在运行（PID %d），跳过重复启动" % pid
-            if not exe.is_file():
+            if not MORTIS_PET_EXE.is_file():
                 return False, "桌宠未安装（可选组件，不影响其他服务）"
-            spawn([str(exe)], PET)
-            return True, "桌宠启动中"
-        pid = find_proc("dsh-pet-standalone-webm-chat.exe")
+            spawn([str(MORTIS_PET_EXE)], MORTIS_PET_EXE.parent)
+            return True, "墨提斯桌宠启动中"
+        pid = find_proc("mortis-pet.exe") or find_proc("dsh-pet-standalone-webm-chat.exe")
         if pid:
             kill_pid(pid)
             return True, "桌宠已停止"
@@ -308,30 +372,68 @@ def pet_current_model():
 
 
 def pet_models():
-    """可用桌宠模型：characters/ 下的子目录，显示名取桌宠配置的 character_aliases。"""
+    """可用桌宠模型：mortis 由独立新 exe 提供，其余来自老 dsh-pet 的 characters/。"""
     cur = pet_current_model()
     aliases = {}
     try:
         aliases = json.loads(PET_CFG.read_text("utf-8")).get("character_aliases") or {}
     except Exception:
         pass
-    out = []
+    new_running = find_proc("mortis-pet.exe") is not None
+    old_running = find_proc("dsh-pet-standalone-webm-chat.exe") is not None
+    out = [{"id": "mortis", "name": aliases.get("mortis") or "墨提斯",
+            "is_active": new_running}]
     if PET_MODELS_DIR.is_dir():
         for d in sorted(PET_MODELS_DIR.iterdir()):
-            if d.is_dir():
+            if d.is_dir() and d.name != "mortis" and not d.name.startswith("_"):
                 out.append({"id": d.name, "name": aliases.get(d.name) or d.name,
-                            "is_active": d.name == cur})
+                            "is_active": old_running and d.name == cur})
     return out
 
 
 def pet_set_model(model):
-    """改桌宠配置的 character 字段（其余字段原样保留）。返回是否有改动。"""
-    cfg = json.loads(PET_CFG.read_text("utf-8"))
-    if cfg.get("character") == model:
-        return False
-    cfg["character"] = model
-    PET_CFG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), "utf-8")
-    return True
+    """改桌宠配置的 character 字段（其余字段原样保留）。返回是否有改动。
+    桌宠启动/退出瞬间会用 tmp+rename 重写 config.json，带短重试骑过锁窗。"""
+    last = None
+    for _ in range(4):
+        try:
+            cfg = json.loads(PET_CFG.read_text("utf-8"))
+            if cfg.get("character") == model:
+                return False
+            cfg["character"] = model
+            PET_CFG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), "utf-8")
+            return True
+        except OSError as e:
+            last = e
+            time.sleep(0.8)
+    raise last
+
+
+def pet_clean_stale_slots():
+    """清掉桌宠 slots/ 下 PID 已死的槽位锁。taskkill 强杀桌宠会留锁，
+    残留锁会导致下次启动弹「前 128 个槽位中未找到可用空闲槽位」并退出。"""
+    d = PET_CFG.parent / "slots"
+    if not d.is_dir():
+        return
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    for f in d.glob("slot-*.lock"):
+        try:
+            pid = int((f.read_text("utf-8") or "").strip() or 0)
+        except Exception:
+            pid = 0
+        alive = False
+        if pid:
+            h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if h:
+                k32.CloseHandle(h)
+                alive = True
+        if alive:
+            continue
+        try:
+            f.unlink()
+        except OSError:
+            pass
 
 
 def persona_pet_map(char_id):
@@ -1337,6 +1439,19 @@ body{display:block}
 
 </div>
 <div class="span2">
+<h2>🎭 形象总控（人格卡 × 桌宠模型）</h2>
+<div class="card" style="font-size:13px">
+<div class="row" style="align-items:flex-start">
+<div style="flex:1"><div style="color:var(--dim);margin-bottom:6px">人格卡</div><div id="avPersonas">加载中…</div></div>
+<div style="flex:1"><div style="color:var(--dim);margin-bottom:6px">桌宠模型</div><div id="avModels">加载中…</div></div>
+</div>
+<div class="row" style="margin-top:10px"><button onclick="avatarApply()">✨ 一键切换</button>
+<span id="avMsg" style="color:var(--dim);font-size:12px"></span></div>
+<div style="margin-top:6px;font-size:12px;color:var(--dim)">点人格卡会自动带上它登记的桌宠模型；桌宠事件仅推送给 ohwhale 角色，切到其他角色后桌宠只换皮</div>
+</div>
+
+</div>
+<div class="span2">
 <h2>指标</h2><div class="card" id="metrics" style="font-size:13px">加载中…</div>
 </div>
 <div>
@@ -1519,6 +1634,16 @@ ${s.restarts?`<span class="badge" style="color:var(--warn)">重启×${s.restarts
 ${s.panel?`<a href="${s.panel}" target="_blank">面板</a>`:''}
 <button onclick="act('${s.id}','${s.running?'stop':'start'}')">${s.running?'停止':'启动'}</button></div>`).join('')}
 async function act(id,a){const d=await api('/api/service','POST',{id,action:a});toast(d.msg);setTimeout(loadSvcs,2500)}
+
+/* --- 形象总控 --- */
+const avSel={persona:'',model:''};
+async function loadAvatar(){const d=await api('/api/avatar');if(!d.ok)return;
+if(!document.querySelector('input[name=avp]:checked'))avSel.persona=d.active_persona||'';
+if(!document.querySelector('input[name=avm]:checked'))avSel.model=d.active_model||'';
+document.getElementById('avPersonas').innerHTML=(d.personas||[]).map(p=>`<div style="margin-bottom:4px"><label style="cursor:pointer"><input type="radio" name="avp" value="${p.id}" ${p.id===avSel.persona?'checked':''} onchange="avPickPersona('${p.id}','${p.pet_model||''}')"> ${p.name}（${p.id}）${p.is_active?' <span class="badge on">当前</span>':''}${p.pet_model?` <span style="color:var(--dim);font-size:11px">→ ${p.pet_model}</span>`:''}</label></div>`).join('')||'<span style="color:var(--dim)">无角色</span>';
+document.getElementById('avModels').innerHTML=(d.pet_models||[]).map(m=>`<div style="margin-bottom:4px"><label style="cursor:pointer"><input type="radio" name="avm" value="${m.id}" ${m.id===avSel.model?'checked':''} onchange="avSel.model='${m.id}'"> ${m.name}（${m.id}）${m.is_active?' <span class="badge on">当前</span>':''}</label></div>`).join('')||(d.pet_installed?'<span style="color:var(--dim)">无模型</span>':'<span style="color:var(--dim)">桌宠未安装</span>')}
+function avPickPersona(id,pm){avSel.persona=id;if(pm){avSel.model=pm;const r=document.querySelector(`input[name=avm][value="${pm}"]`);if(r)r.checked=true}}
+async function avatarApply(){const d=await api('/api/avatar-switch','POST',{persona:avSel.persona,model:avSel.model});toast(d.msg);document.getElementById('avMsg').textContent=d.msg;loadAvatar();setTimeout(loadSvcs,2500)}
 async function startAll(dry){const d=await api('/api/start-all','POST',{dry});toast(d.msg);setTimeout(loadSvcs,2000)}
 async function stopAll(){const d=await api('/api/stop-all','POST',{});toast(d.msg);setTimeout(loadSvcs,2000)}
 async function toggleWd(on){const d=await api('/api/watchdog','POST',{enabled:on});toast(d.msg)}
@@ -1649,7 +1774,7 @@ const card=document.getElementById('distillcard').value.trim()||'little_whale';
 const el=document.getElementById('distillout');el.style.display='block';el.textContent=apply?'蒸馏并写卡中…（LLM 调用，稍等）':'蒸馏中…（LLM 调用，稍等）';
 const d=await api('/api/persona-distill','POST',{path:p,card,apply});
 if(!d.ok){el.textContent='失败：'+(d.msg||'');return}
-let t=(d.new_card?'【将新建人格卡：'+d.card+'】\n':'')+'台词 '+d.transcript_chars+' 字\n新增：'+JSON.stringify(d.added)+(d.voice_ref?'\n音色参考：'+d.voice_ref.ref_audio_path+'\n  prompt: '+d.voice_ref.prompt_text:'\n音色参考：无（文本素材无音频）')+'\n\n蒸馏结果：\n'+JSON.stringify(d.distilled,null,2);
+let t=(d.new_card?'【将新建人格卡：'+d.card+'】\n':'')+'台词 '+d.transcript_chars+' 字\n新增：'+JSON.stringify(d.added)+(d.voice_ref?'\n音色参考：'+d.voice_ref.ref_audio_path:'\n音色参考：无（文本素材无音频）')+'\n\n蒸馏结果：\n'+JSON.stringify(d.distilled,null,2);
 if(d.applied)t+='\n\n'+(d.new?'已新建人格卡':'已写卡（备份 '+d.backup+'）')+'；重启 Tulpa 会话后生效';
 else t+='\n\n（预览，未写卡）';
 el.textContent=t;if(apply)toast(d.new_card?'人格卡已新建':'人格卡已更新')}
@@ -1684,7 +1809,6 @@ const cs=d.consistency||{};if((cs.conflicts||[]).length)h+=`⚡ 人格裂缝 ${c
 const dk=d.desk||{};if(dk.ok&&(dk.suggestions||[]).length)h+=`🗂 桌面：${dk.suggestions.join('；')}<br>`;
 const gr=(d.growth||[]);const un=gr.filter(x=>x.unlocked);if(un.length)h+=`🌱 技能树：已解锁 ${un.length}/${gr.length}（${un.slice(-3).map(x=>x.name).join('、')}）<br>`;
 if((d.mails||[]).length)h+=`📮 语音留言 ${d.mails.length} 条（最近：${(d.mails[0].text||'').slice(0,20)}）<br>`;
-if(d.env&&d.env.line)h+='🌐 '+d.env.line+'<br>';
 document.getElementById('p2sum').innerHTML=h||'暂无动态';
 document.getElementById('sdbtn').textContent=(d.silent_day&&d.silent_day.silent)?'解除静默日':'一键静默日'}
 async function goalGen(){await api('/api/goals','POST',{action:'gen'});loadP2()}
@@ -1702,7 +1826,7 @@ async function loadRunbook(){const d=await api('/api/runbook');document.getEleme
 async function showRb(id){const d=await api('/api/runbook?id='+id);if(!d.found)return;document.getElementById('rbsteps').innerHTML='<b>'+d.title+'</b><ol>'+d.steps.map(s=>`<li>${s}</li>`).join('')+'</ol>'}
 
 /* --- Hash 路由：按需加载，刷新/前进后退保持当前页 --- */
-const PAGE_LOADS={dashboard:[loadSvcs,loadMetrics],ops:[loadDeploy,loadCron,loadKeys,loadQqMaster,loadLogs,loadRunbook],ai:[loadSandbox,loadContent,loadSnaps,loadTimeline],companion:[loadRelations,loadPrivacy,loadP2,loadSilent]};
+const PAGE_LOADS={dashboard:[loadSvcs,loadMetrics,loadAvatar],ops:[loadDeploy,loadCron,loadKeys,loadQqMaster,loadLogs,loadRunbook],ai:[loadSandbox,loadContent,loadSnaps,loadTimeline],companion:[loadRelations,loadPrivacy,loadP2,loadSilent]};
 function navigate(id){if(!PAGE_LOADS[id])id='dashboard';
 document.querySelectorAll('.page-view').forEach(e=>e.classList.remove('active'));
 document.querySelectorAll('.nav-btn').forEach(e=>e.classList.toggle('active',e.dataset.page===id));
@@ -1745,7 +1869,6 @@ ${balLine?`<div class="c">💳 API 资金<br>${balLine}</div>`:''}
 }).catch(e=>{document.getElementById('m').textContent='加载失败：'+e});
 fetch('/api/dream-latest',{headers:{'X-Console-Token':T}}).then(r=>r.json()).then(d=>{
 if(d.text)document.getElementById('dream').innerHTML='🌙 梦 · '+d.date+'<br><span style="color:#9fb3c8">'+d.text.replace(/\n+/g,'<br>')+'</span>'});
-fetch('/api/p2',{headers:{'X-Console-Token':T}}).then(r=>r.json()).then(d=>{if(d.env&&d.env.line)document.getElementById('dream').insertAdjacentHTML('beforebegin','<div class="c">🌐 '+d.env.line+'</div>')});
 async function stopAll(){if(!confirm('确认停止全部服务？'))return;
 const r=await fetch('/api/stop-all',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':T},body:'{}'});
 const d=await r.json();document.getElementById('sr').textContent=' '+d.msg}
@@ -1792,7 +1915,6 @@ def p2_summary() -> dict:
     _safe("care", care.status if care else None, {})
     _safe("observe", care.observe_day if care else None, "")
     _safe("allowance", allowance.status if allowance else None, {})
-    _safe("env", context_engine.snapshot if context_engine else None, {})
     _safe("silent_day", silent_day.status if silent_day else None, {})
     _safe("growth", growth.list_all if growth else None, [])
     _safe("consistency", consistency.check if consistency else None, {})
@@ -1944,8 +2066,9 @@ class H(BaseHTTPRequestHandler):
                         "active_persona": persona_switch.active_id()
                         if persona_switch else None,
                         "pet_models": pet_models(),
-                        "active_model": pet_current_model(),
-                        "pet_installed": PET_EXE.is_file()})
+                        "active_model": ("mortis" if find_proc("mortis-pet.exe")
+                                         else pet_current_model()),
+                        "pet_installed": MORTIS_PET_EXE.is_file() or PET_EXE.is_file()})
         elif u.path == "/api/call-mode":
             p = ROOT / "config" / "call_mode.json"
             try:
@@ -2105,6 +2228,64 @@ class H(BaseHTTPRequestHandler):
                         str(body.get("id", ""))))
                 except Exception as e:
                     self._json({"ok": False, "msg": str(e)})
+        elif u.path == "/api/avatar-switch":
+            # 形象总控：人格卡 + 桌宠模型 一键联动（各自按需，变了才动）
+            persona_id = str(body.get("persona", "") or "")
+            model = str(body.get("model", "") or "")
+            msgs, ok = [], True
+            if persona_id:
+                if not persona_switch:
+                    ok = False
+                    msgs.append("角色切换模块不可用")
+                else:
+                    try:
+                        r = persona_switch.switch_character(persona_id)
+                        msgs.append(("人格卡已切到 %s" if r.get("changed")
+                                     else "人格卡已是 %s") % persona_id)
+                    except Exception as e:
+                        ok = False
+                        msgs.append("人格卡切换失败：%s" % e)
+            if model:
+                if model not in [m["id"] for m in pet_models()]:
+                    ok = False
+                    msgs.append("桌宠模型 %s 不存在" % model)
+                elif model == "mortis":
+                    # 墨提斯走独立新 exe：先停老桌宠，再拉起 mortis-pet
+                    try:
+                        if find_proc("dsh-pet-standalone-webm-chat.exe"):
+                            kill_pid(find_proc("dsh-pet-standalone-webm-chat.exe"))
+                            time.sleep(1.2)
+                        if not MORTIS_PET_EXE.is_file():
+                            ok = False
+                            msgs.append("找不到 mortis-pet.exe")
+                        elif find_proc("mortis-pet.exe"):
+                            msgs.append("桌宠已是墨提斯（独立版运行中）")
+                        else:
+                            spawn([str(MORTIS_PET_EXE)], MORTIS_PET_EXE.parent)
+                            msgs.append("桌宠已切到墨提斯（独立版已启动）")
+                    except Exception as e:
+                        ok = False
+                        msgs.append("桌宠切换失败：%s" % e)
+                else:
+                    # 其余模型仍用老 dsh-pet（如鲸鲸 shenshen）
+                    try:
+                        if find_proc("mortis-pet.exe"):
+                            kill_pid(find_proc("mortis-pet.exe"))
+                            time.sleep(1.2)
+                        changed = pet_set_model(model)
+                        if not PET_EXE.is_file():
+                            ok = False
+                            msgs.append("桌宠未安装（可选组件）")
+                        elif find_proc("dsh-pet-standalone-webm-chat.exe"):
+                            msgs.append("桌宠模型已切到 %s（老桌宠运行中）" % model)
+                        else:
+                            pet_clean_stale_slots()
+                            spawn([str(PET_EXE)], PET)
+                            msgs.append("桌宠模型已切到 %s 并启动" % model)
+                    except Exception as e:
+                        ok = False
+                        msgs.append("桌宠模型切换失败：%s" % e)
+            self._json({"ok": ok, "msg": "；".join(msgs) or "没有要切换的内容"})
         elif u.path == "/api/call-mode":
             p = ROOT / "config" / "call_mode.json"
             try:
@@ -2288,6 +2469,12 @@ def main():
     srv = ThreadingHTTPServer((bind, port), H)
     print("控制台已启动（复制下面整行到浏览器，token 每次启动都会变）:")
     print("  http://127.0.0.1:%d/?token=%s" % (port, TOKEN))
+    try:  # 落一份带 token 的入口地址，供 mortis-pet 等本机客户端读取
+        (ROOT / "data").mkdir(exist_ok=True)
+        (ROOT / "data" / "console.url").write_text(
+            "http://127.0.0.1:%d/?token=%s" % (port, TOKEN), "utf-8")
+    except OSError:
+        pass
     if lip:
         print("手机面板（同一 Wi-Fi 下手机浏览器打开，可加主屏幕）:")
         print("  http://%s:%d/mobile?token=%s" % (lip, port, TOKEN))

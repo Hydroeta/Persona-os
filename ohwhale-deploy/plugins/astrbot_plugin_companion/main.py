@@ -1,4 +1,4 @@
-"""黏人模式：对方太久不说话，就主动去找他。
+﻿"""黏人模式：对方太久不说话，就主动去找他。
 
 规则（时间可在下面常量里调）：
 - 30 分钟没说话 → 轻声问一句「在干嘛呢」
@@ -86,6 +86,52 @@ class Companion(Star):
         self._load()
         self._task: asyncio.Task | None = None
         self._patcher = None
+        self._env_line_cache = ""
+        self._env_line_ts = 0.0
+
+    # ---------------- 环境感知注入（时间/节假日，一条轻量行） ----------------
+    ENV_SNAPSHOT_TTL = 600  # 进程内快照缓存秒数
+
+    @filter.on_llm_request()
+    async def inject_environment(self, event: AstrMessageEvent, req) -> None:
+        """每次请求 LLM 前，把「今天几号+节假日」一行顶到 system prompt 最前。
+
+        快照由 tools/context_engine.py 纯本地计算（零成本、无外部调用），
+        这里只做 10 分钟进程内防抖；任何失败都静默跳过，绝不阻塞聊天。
+        """
+        try:
+            line = await self._env_line()
+            if line and getattr(req, "system_prompt", None) is not None:
+                req.system_prompt = "【当前环境】%s\n%s" % (line, req.system_prompt)
+        except Exception:
+            pass
+
+    async def _env_line(self) -> str:
+        now = time.time()
+        if self._env_line_cache and now - self._env_line_ts < self.ENV_SNAPSHOT_TTL:
+            return self._env_line_cache
+        line = await asyncio.to_thread(self._env_line_sync)
+        if line:
+            self._env_line_cache, self._env_line_ts = line, now
+        return self._env_line_cache
+
+    def _env_line_sync(self) -> str:
+        import subprocess
+        deploy = os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))))
+        root = os.path.dirname(deploy)
+        py = os.path.join(deploy, ".venv", "Scripts", "python.exe")
+        engine = os.path.join(root, "tools", "context_engine.py")
+        if not (os.path.exists(py) and os.path.exists(engine)):
+            return ""
+        try:
+            out = subprocess.run(
+                [py, engine, "snapshot"], capture_output=True, text=True,
+                timeout=20, creationflags=0x08000000)  # CREATE_NO_WINDOW
+            data = json.loads(out.stdout or "{}")
+            return str(data.get("line") or "").strip()
+        except Exception:
+            return ""
 
     # ---------------- 状态 ----------------
     def _load(self):

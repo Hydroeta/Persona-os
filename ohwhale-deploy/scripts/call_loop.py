@@ -112,15 +112,22 @@ INTERRUPT_RATIO = 3.0   # 打断判定：能量超过阈值这么多倍（2.0 �
 # 谁在往哪个端点送声音 —— 不能靠"默认扬声器"猜（他改过音频设备）
 PROBE_PY = config_path("probe_python")
 PROBE_SCRIPT = project_path("scripts/which_endpoint.py")
-TTS_API = setting("services.tts_url")
-TTS_PARAMS = {
-    "text_lang": "zh",
-    "ref_audio_path": config_path("voice_ref"),
-    "prompt_text": setting("voice.prompt_text"),
-    "prompt_lang": "zh",
-    "text_split_method": "cut0",
-    "media_type": "wav",
-}
+# TTS 引擎：indextts2 走 scripts/indextts_server.py（零样本克隆，只需参考音频）；
+# 其他值维持 GPT-SoVITS api_v2。两边都返回 s16le 单声道 PCM，播放逻辑一致。
+TTS_ENGINE = setting("services.tts_engine", "gpt_sovits")
+if TTS_ENGINE == "indextts2":
+    TTS_API = setting("services.indextts_url", "http://127.0.0.1:9881/tts")
+    TTS_PARAMS = {"ref_audio_path": config_path("voice_ref")}
+else:
+    TTS_API = setting("services.tts_url")
+    TTS_PARAMS = {
+        "text_lang": "zh",
+        "ref_audio_path": config_path("voice_ref"),
+        "prompt_text": setting("voice.prompt_text"),
+        "prompt_lang": "zh",
+        "text_split_method": "cut0",
+        "media_type": "wav",
+    }
 
 PHONE_MODE = """
 
@@ -271,10 +278,12 @@ def voice_extra() -> dict:
         p = ref if os.path.isabs(ref) else os.path.join(ROOT_DIR, ref)
         if os.path.isfile(p):
             extra["ref_audio_path"] = p
-            # 换参考音必须同步换提示文本，否则音素对不上、克隆音跑偏
-            prompt = pick.get("prompt_text") or default_prompt
-            if prompt:
-                extra["prompt_text"] = str(prompt)
+            # GPT-SoVITS 换参考音必须同步换提示文本，否则音素对不上、克隆音跑偏；
+            # IndexTTS2 不需要提示文本
+            if TTS_ENGINE != "indextts2":
+                prompt = pick.get("prompt_text") or default_prompt
+                if prompt:
+                    extra["prompt_text"] = str(prompt)
     return extra
 
 

@@ -111,16 +111,6 @@ def _rules(events: list[dict], recent: list[dict]) -> list[dict]:
             add("llm_fallback", day,
                 "云端脑子今天不太顺，主人给我切了备用脑子，转得有点慢。",
                 1, e["ts"])
-    # 恶劣天气 + 宅家活动 → 一条安心
-    try:
-        import context_engine
-        wtext = (context_engine.weather() or {}).get("text", "")
-    except Exception:
-        wtext = ""
-    if acts and any(k in wtext for k in ("雨", "雪", "霾", "沙")):
-        day = time.strftime("%Y-%m-%d", time.localtime(acts[-1][0]))
-        add("bad_weather_care", day + wtext,
-            "外面有%s，主人宅在屋里，挺好。" % wtext, 1, acts[-1][0])
     return thoughts
 
 
