@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """dsh_pet 适配器：把总线事件翻译成桌宠能吃的事件外壳（只写本地 jsonl）
 

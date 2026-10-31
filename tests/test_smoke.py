@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 冒烟/单元测试（P2-1）
 跑法：python -m pytest tests/ -q   或   python tests/test_smoke.py

@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · LLM 客户端（工具侧统一入口：provider 路由 + 闸门 + 记账 + 密钥注入）
 

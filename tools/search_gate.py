@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · DeepSeek Search/Fetch 统一网关（P0-3 计费闸门 + P1-5 缓存/限流/权威过滤/隐私）
 

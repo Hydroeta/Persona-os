@@ -15,9 +15,9 @@
 |---|---|
 | 控制台 `console.py` | 服务拓扑启动、就绪探针、健康守护、密钥保险库、指标面板、自检（纯标准库） |
 | 多角色 | `config/personas/` 多角色正本 + 激活指针，静默热切换（零 LLM 调用），状态/记忆按角色隔离 |
-| 语音通话 | 本地 ASR + GPT-SoVITS 音色克隆，按情绪/精力切换参考音（`config/persona.json` 的 `voice.states`）|
+| 语音通话 | 本地 ASR + GPT-SoVITS 音色克隆（可选切 IndexTTS2，`services.tts_engine` 一键切换），按情绪/精力切换参考音（`config/persona.json` 的 `voice.states`）|
 | 聊天接入 | QQ 双协议端（Tulpa←SnowLuma 注入桌面 QQ；哦鲸鲸←NapCat 便携 QQ）、AstrBot 插件、B 站与抖音弹幕回复 |
-| 桌宠 | 桌面角色（基于 dsh-pet 的定制人设与菜单） |
+| 桌宠 | 桌面角色（基于 dsh-pet 的定制人设与菜单 + 自建 mortis-pet；**可选**，缺失不影响其他服务） |
 | 记忆与关系 | 目标、时间胶囊、日记回顾、日历提醒、关心心跳、记忆总线 |
 | 成本与资源 | LLM token 闸门、场景配额、端云路由（Ollama 本地免费 / DeepSeek 主用 / 千问兜底）、GPU 互斥租约、搜索网关、日报 |
 | 工具集 | `tools/` 40+ 个纯标准库模块；`tests/` 117 项冒烟测试 |
@@ -54,10 +54,11 @@ python tests/test_smoke.py  # 117 项冒烟测试
 | 组件 | 用途 | 获取方式 |
 |---|---|---|
 | GPT-SoVITS 运行时 + 模型 | 本地语音合成与音色克隆 | 按 `ohwhale-deploy` 的脚本自行下载，约 4 GB |
+| IndexTTS2 环境 + 模型（可选） | 第二 TTS 引擎（mortis 链路，本地 HTTP 合成 :9881） | 官方仓库自建 `index-tts/` 环境（Python 3.11 + CPU torch），权重默认放 `C:\idx_models`（纯 ASCII 路径），见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) C4 |
 | Tulpa | QQ 客户端集成 | 官方 Releases（源码 MIT，发行包含预编译 exe；`chatlocal` 源码随仓库保留） |
 | Ollama + Qwen2.5-1.5B（可选） | 本地免费推理 provider（端云路由的 local 端） | `ollama pull qwen2.5:1.5b` |
 | SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
-| dsh-pet | 桌宠可执行程序 | 上游 Releases（本仓库只含人设/菜单） |
+| dsh-pet | 桌宠可执行程序 | 上游 Releases（本仓库只含人设/菜单；mortis 形象素材 `characters/mortis` 与自建 mortis-pet 需自备，见 NOTICES B2） |
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
 | API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
 | AstrBot（AGPL-3.0） | 消息框架与面板 | 由 ohwhale-deploy 安装，源码从上游获取 |
@@ -77,6 +78,10 @@ python tests/test_smoke.py  # 117 项冒烟测试
   动画素材作者 B站 @浩瀚星空2005，余额部分参考 B站 @月匠 的项目；
   贡献者 B站 @快乐小咸鱼a（灵动岛改动与优化）、B站 @咕噜千鹤子（语音功能）。
   本仓库仅包含人设与菜单定制（JSON），**未重新分发素材或二进制**，素材不适用 MIT 许可。
+  另含第二形象 **mortis（若叶睦）**：素材渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，
+  权利归原作方所有，仅限个人非商业使用，**自备不入库**；其桌宠载体为项目自建的
+  mortis-pet（PySide6，未随仓库分发）。mortis 同时是第二个 persona（`config/personas/mortis/`，
+  语音链路走 IndexTTS2），详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) B2。
 - 语音/聊天部署包来自 `https://github.com/chauko0423/ohwhale-deploy`（MIT）。
 - SurfCore（MIT，`https://github.com/Mieksido/surfcore`）的 B站插件
   灵感来源于 B站 @凌羽clover，特此致谢；其本地语音模型不随本仓库分发。

@@ -1,3 +1,9 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
+#
+# 修改自 ohwhale-deploy 上游（MIT，Copyright (c) 2026 四季）：
+# 接入 voice.states 状态化参考音；voice_extra() 同步切换 ref_audio_path 与 prompt_text；
+# 修正 ROOT_DIR 计算；若干配置项本地化。上游版权与许可文本见 ohwhale-deploy/LICENSE 与 NOTICE。
 """QQ 通话闭环 v2：听 → 识别 → 思考 → 说话（支持打断 / 分句流式）
 
 相对 v1 的四处改动：

@@ -88,6 +88,8 @@
 > 渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，**素材文件不入库、不再分发**；
 > 相关权利归原作方所有，仅限个人非商业使用。
 >
+> **可裁剪说明**：dsh-pet 与自建 mortis-pet 均为**可选组件**，不下装不影响本项目其他任何服务。
+>
 > 上游发行渠道：Windows 版可通过作者提供的夸克网盘获取；macOS 版请从
 > `https://github.com/MerZlin/dsh-pet-indesktop/releases` 下载（网盘会吞 macOS 版 zip）。
 > 素材生成教学参考 `https://github.com/PC2005-cloud/dsh-pet`；
@@ -195,7 +197,9 @@
 
 - 本仓库**自有代码**以 MIT 发布。
 - 第三方组件构成：**AstrBot 为 AGPL-3.0，NapCatQQ 为 GPL-3.0**；whale-pod、Tulpa（chatlocal）、
-  ohwhale-deploy、dsh-pet、GPT-SoVITS、DSH 核心包、dsh-our-free-model 等为 MIT；SnowLuma 为专有软件（未再分发）。
+  ohwhale-deploy、dsh-pet、GPT-SoVITS、DSH 核心包、dsh-our-free-model 等为 MIT；SnowLuma 为专有软件（未再分发）；
+  IndexTTS2 代码为 Apache-2.0，其**模型权重为 bilibili Model Use License**（非 OSI 许可证，
+  使用受该条款约束，权重由用户自备、不入库）。
 - AGPL/GPL 组件以**独立进程 / 标准协议**方式集成，本仓库未并入或修改其源码，因此自有代码仍可按 MIT 发布；
   但使用者对外提供服务或再分发时，需自行遵守 AstrBot（AGPL-3.0）与 NapCatQQ（GPL-3.0）的条款。
 - 上述为技术事实与许可文本的对应关系，不构成法律意见；商用或再分发前建议咨询专业意见。

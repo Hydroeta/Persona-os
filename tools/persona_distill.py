@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 人格蒸馏管线（视频/字幕素材 → Tulpa 人格卡增量更新）
 
