@@ -364,18 +364,27 @@ def merge_prompt(platform_label: str, msgs: list) -> str:
 
 
 # ---------- TTS ----------
-_TTS_URL = cfg("services.tts_url", "http://127.0.0.1:9880/tts")
+# 引擎：indextts2 走 scripts/indextts_server.py（零样本克隆，只需参考音频）；
+# 其他值维持 GPT-SoVITS api_v2。两边都返回 s16le 单声道 PCM，播放逻辑一致。
+_TTS_ENGINE = cfg("services.tts_engine", "gpt_sovits")
+if _TTS_ENGINE == "indextts2":
+    _TTS_URL = cfg("services.indextts_url", "http://127.0.0.1:9881/tts")
+else:
+    _TTS_URL = cfg("services.tts_url", "http://127.0.0.1:9880/tts")
 _ref_rel = cfg("paths.voice_ref", "assets/voice/default.wav")
 _REF_AUDIO = str(_PROJECT_ROOT / _ref_rel) if _ref_rel else ""
 _PROMPT_TEXT = cfg("voice.prompt_text", "")
 _TTS_RAW_RATE = int(cfg("audio.tts_raw_rate", 32000))
 _TTS_CHUNK = 1024
-_TTS_BASE = {
-    "text_lang": "zh", "ref_audio_path": _REF_AUDIO,
-    "prompt_text": _PROMPT_TEXT, "prompt_lang": "zh",
-    "text_split_method": "cut0", "media_type": "raw",
-    "streaming_mode": 3, "batch_size": 1,
-}
+if _TTS_ENGINE == "indextts2":
+    _TTS_BASE = {"ref_audio_path": _REF_AUDIO}
+else:
+    _TTS_BASE = {
+        "text_lang": "zh", "ref_audio_path": _REF_AUDIO,
+        "prompt_text": _PROMPT_TEXT, "prompt_lang": "zh",
+        "text_split_method": "cut0", "media_type": "raw",
+        "streaming_mode": 3, "batch_size": 1,
+    }
 
 
 def stream_tts(text: str) -> None:
@@ -439,7 +448,7 @@ def run(platform: str, platform_id_override: str | None = None) -> int:
     print("✓ AstrBot 就绪")
 
     # --- 等 TTS ---
-    print(f"⏳ 等本地 TTS 在线（http://127.0.0.1:9880）...")
+    print(f"⏳ 等本地 TTS 在线（{_TTS_URL}，引擎 {_TTS_ENGINE}）...")
     tts_probe = httpx.Client(timeout=3, trust_env=False)
     for _ in range(60):
         try:
@@ -449,7 +458,7 @@ def run(platform: str, platform_id_override: str | None = None) -> int:
             pass
         time.sleep(1)
     else:
-        print("✗ 本地 TTS 没起来（9880 端口），先启动 GPT-SoVITS")
+        print(f"✗ 本地 TTS 没起来（{_TTS_URL}），先启动对应引擎服务")
         return 5
     print("✓ TTS 就绪")
 

@@ -8,7 +8,7 @@
     alert          alert（P1 预留）
 
 链路：publish → data/pet_events.jsonl（永远落盘） → PetAdapter（可选，失败静默）
-配置：config/pet.json（enabled / adapter / bridge_dir）
+配置：config/pet.json（enabled / adapter / bridge_dir / persona）
 
 CLI：
     python tools/pet_bus.py status
@@ -37,6 +37,19 @@ def config() -> dict:
         return {}
 
 
+def _persona_allows(cfg: dict) -> bool:
+    """桌宠只对应固定角色：cfg.persona 非空时，仅该角色激活才推送；
+    读不到激活角色视为不匹配（不推送）。空 persona 表示不做角色门控。"""
+    want = str(cfg.get("persona") or "").strip()
+    if not want:
+        return True
+    try:
+        import persona_switch
+        return persona_switch.active_id() == want
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def publish(kind: str, **payload) -> None:
     """写一条事件并转发给适配器。永不抛错：观测组件不能反过来弄崩业务。"""
     try:
@@ -49,7 +62,8 @@ def publish(kind: str, **payload) -> None:
     except OSError:
         pass
 
-    if not config().get("enabled", True):
+    cfg = config()
+    if not cfg.get("enabled", True) or not _persona_allows(cfg):
         return
     try:
         import pet_adapter
@@ -93,6 +107,15 @@ def main() -> None:
     import pet_adapter
     st = pet_adapter.status()
     print("enabled: %s" % st["enabled"])
+    want = str(config().get("persona") or "").strip()
+    if want:
+        try:
+            import persona_switch
+            act = persona_switch.active_id()
+        except Exception:  # noqa: BLE001
+            act = None
+        print("persona: %s (active=%s, push=%s)" % (want, act or "-",
+                                                    "on" if act == want else "off"))
     print("adapter: %s (available=%s)" % (st["adapter"], st["available"]))
     print("bridge_dir: %s" % (st["bridge_dir"] or "-"))
     print("bus_file: %s" % EVENT_FILE)

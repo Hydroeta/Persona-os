@@ -1,9 +1,10 @@
 {
-  "$comment": "桌宠通道：enabled=false 只落盘不推送；adapter=null 强制关闭；bridge_dir 留空按平台推导（Win=%APPDATA%\\dsh-pet-bridge）",
+  "$comment": "桌宠通道：enabled=false 只落盘不推送；adapter=null 强制关闭；bridge_dir 留空按平台推导（Win=%APPDATA%\\dsh-pet-bridge）；persona=桌宠唯一对应的角色，仅该角色激活时推送，其余角色激活时只落盘",
   "enabled": true,
   "adapter": "dsh_pet",
   "degrade": "silent",
   "bridge_dir": "",
+  "persona": "ohwhale",
   "agent": "小鲸鱼",
   "session": "pet-bus"
 }
