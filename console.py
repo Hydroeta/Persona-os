@@ -253,14 +253,15 @@ def svc_status():
                  "detail": "端口 3080" + (" (PID %d)" % pid if pid else " 未监听"),
                  "panel": "http://127.0.0.1:3080"})
 
-    tts = port_pid(9880) is not None
+    _tn, _tp, _ = _tts_probe()
+    tts = port_pid(_tp) is not None
     ab = port_pid(6185) is not None
     ll = find_proc("NapCatWinBootMain.exe") is not None
     up = sum([tts, ab, ll])
     svcs.append({"id": "ohwhale", "name": "哦鲸鲸全家桶",
                  "running": up == 3, "partial": 0 < up < 3,
-                 "detail": "TTS:9880 %s · AstrBot:6185 %s · QQ(NapCat) %s" % (
-                     "✓" if tts else "✗", "✓" if ab else "✗", "✓" if ll else "✗"),
+                 "detail": "TTS:%d(%s) %s · AstrBot:6185 %s · QQ(NapCat) %s" % (
+                     _tp, _tn, "✓" if tts else "✗", "✓" if ab else "✗", "✓" if ll else "✗"),
                  "panel": "http://127.0.0.1:6185"})
 
     pid = find_proc("Tulpa.exe", "Tulpa")
@@ -498,7 +499,7 @@ def svc_ready(sid):
         _ready_cache["t"] = now
         _ready_cache["data"] = {
             "dsh": port_pid(3080) is not None and http_ok("http://127.0.0.1:3080/"),
-            "ohwhale": (http_ok("http://127.0.0.1:9880/docs") and
+            "ohwhale": (http_ok(_tts_probe()[2] + "/docs") and
                         http_ok("http://127.0.0.1:6185/") and
                         find_proc("NapCatWinBootMain.exe") is not None),
             "tulpa": find_proc("Tulpa.exe", "Tulpa") is not None,
@@ -1201,8 +1202,9 @@ def todo_hints():
                 hints.append("发现明文密钥残留：%s（重启控制台自动迁移，或手动 python tools/key_vault.py migrate）" % "、".join(plain))
         except Exception:
             pass
-    if port_pid(9880) is None:
-        hints.append("GPT-SoVITS 语音服务未运行")
+    _tn, _tp, _ = _tts_probe()
+    if port_pid(_tp) is None:
+        hints.append("%s 语音服务未运行" % _tn)
     # 失败告警：cron 上次失败 / 服务反复重启 / 通话 P95 超标 / Search 费用逼近上限
     try:
         for j in json.loads(CRON_FILE.read_text("utf-8")):
@@ -1248,14 +1250,28 @@ def todo_hints():
 
 # ---------- 一键自检（P2-3） ----------
 
+def _tts_probe():
+    """当前 TTS 服务（引擎名, 端口, base_url）。从 ohwhale config.json 读引擎配置。"""
+    try:
+        cfg = json.loads((OHWHALE / "config.json").read_text("utf-8"))
+        svcs = cfg.get("services", {})
+        if svcs.get("tts_engine") == "indextts2":
+            u = urlparse(svcs.get("indextts_url", "http://127.0.0.1:9881/tts"))
+            return "IndexTTS2", (u.port or 80), "%s://%s" % (u.scheme, u.netloc)
+    except Exception:
+        pass
+    return "GPT-SoVITS", 9880, "http://127.0.0.1:9880"
+
+
 def self_check():
     """把 FAQ 排障产品化：一次点完，逐项给结果。"""
     items = []
 
     import shutil
     # 端口占用
+    _tn, _tp, _ = _tts_probe()
     for label, port in (("控制台", 8900), ("DSH", 3080), ("AstrBot", 6185),
-                        ("GPT-SoVITS", 9880), ("NapCat WS", 6199)):
+                        (_tn, _tp), ("NapCat WS", 6199)):
         pid = port_pid(port)
         items.append({"name": "端口 %d（%s）" % (port, label),
                       "ok": True,
@@ -1297,8 +1313,9 @@ def self_check():
     items.append({"name": "QQ（NapCat）在线", "ok": ll,
                   "detail": "进程在" if ll else "未运行（控制台「QQ 登录」启动）"})
     # TTS 试合成（业务探测，不真合成以免占显存）
-    tts = http_ok("http://127.0.0.1:9880/docs")
-    items.append({"name": "GPT-SoVITS 服务", "ok": tts,
+    _tn, _tp, _tb = _tts_probe()
+    tts = http_ok(_tb + "/docs")
+    items.append({"name": "%s 服务" % _tn, "ok": tts,
                   "detail": "API 有响应" if tts else "无响应（未启动则忽略）"})
     # 磁盘余量
     try:
@@ -1320,19 +1337,27 @@ def self_check_deep():
         ws = False
     items.append({"name": "OneBot 反向 WS（6199）", "ok": ws,
                   "detail": "端口可连接" if ws else "连不上（检查 NapCat 反向连接配置）"})
-    # TTS 闭环：真合成一句，验证产物是非空 wav
+    # TTS 闭环：真合成一句，验证产物是非空音频
     try:
         cfg = json.loads((OHWHALE / "config.json").read_text("utf-8"))
         ref = OHWHALE / cfg["paths"]["voice_ref"]
-        body = json.dumps({"text": "自检试音，听个响", "text_lang": "zh",
-                           "ref_audio_path": str(ref),
-                           "prompt_text": cfg["voice"]["prompt_text"],
-                           "prompt_lang": "zh", "media_type": "wav",
-                           "streaming_mode": False}).encode()
-        req = urllib.request.Request("http://127.0.0.1:9880/tts", data=body,
-                                     headers={"Content-Type": "application/json"})
+        services = cfg.get("services", {})
+        if services.get("tts_engine") == "indextts2":
+            url = services.get("indextts_url", "http://127.0.0.1:9881/tts") + "?" + urllib.parse.urlencode(
+                {"text": "自检试音，听个响", "ref_audio_path": str(ref)})
+            req = urllib.request.Request(url)
+            timeout = 180   # 首调含模型加载
+        else:
+            body = json.dumps({"text": "自检试音，听个响", "text_lang": "zh",
+                               "ref_audio_path": str(ref),
+                               "prompt_text": cfg["voice"]["prompt_text"],
+                               "prompt_lang": "zh", "media_type": "wav",
+                               "streaming_mode": False}).encode()
+            req = urllib.request.Request("http://127.0.0.1:9880/tts", data=body,
+                                         headers={"Content-Type": "application/json"})
+            timeout = 30
         t0 = time.time()
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             data = r.read()
         ok = len(data) > 10240
         items.append({"name": "TTS 闭环试合成", "ok": ok,

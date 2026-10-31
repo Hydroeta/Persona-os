@@ -47,22 +47,25 @@ MAX_TTS_CHARS = 150
 TTS_TIMEOUT = 20.0
 
 # ---------------- 双线路由 ----------------
-# 本地 GPT-SoVITS 优先（音色是"大肥鱼"本人），GPU 忙或失败时自动切云端。
+# 本地 TTS 优先，GPU 忙或失败时自动切云端。
+TTS_ENGINE = setting("services.tts_engine", "gpt_sovits")   # indextts2 / gpt_sovits
 LOCAL_TTS_ID = setting("voice.local_provider_id", "gpt_sovits")
 # 云端用阿里云百炼 CosyVoice（复刻的大肥鱼音色），和本地音色一致，
 # 切换时不会有"换人"感。edge_tts 留作最后兜底。
 CLOUD_TTS_ID = setting("voice.cloud_provider_id", "")
 GPU_FREE_MIN_MB = 2600        # 本地推理大约要这么多空闲显存
-LOCAL_TIMEOUT = 25.0          # 本地超过这个时间没出音频，就当它不可用
-                             # 2026-10-21 从 8s 放宽：多行长句（79 字）8 秒根本不够，
-                             # 一超时就把本地标停 60 秒，接着兜底到 edge_tts，音色直接换人
-LOCAL_COOLDOWN_S = 60         # 本地失败后 60s 内不再尝试（本地模型冷启要约 45s）
+# 本地超过这个时间没出音频，就当它不可用。
+# IndexTTS2 给 100s：模型惰性加载在首个请求上，冷启动远超 GPT-SoVITS 的 45s；
+# 超时被标停 60s 后会自愈（服务器后台继续加载，冷却结束再试就热了）。
+LOCAL_TIMEOUT = 25.0 if TTS_ENGINE == "gpt_sovits" else 100.0
+LOCAL_COOLDOWN_S = 60         # 本地失败后 60s 内不再尝试
 GPU_CACHE_S = 15.0            # 显存查询缓存
 
 # GPT-SoVITS v2Pro 的老毛病：目标文本太短（实测 ≤16 字）时 AR 会提前吐 EOS，
 # 合成出来只有 0.34s 白噪声（t2s_model.py 里 idx<11 那段就是硬下限 0.4s）。
 # 短句交给云端 CosyVoice——同一个人的复刻音色，切换听不出换人。
-LOCAL_MIN_CHARS = 18
+# IndexTTS2 没这个毛病（零样本克隆短句正常），本地全量接管。
+LOCAL_MIN_CHARS = 18 if TTS_ENGINE == "gpt_sovits" else 2
 
 
 def audio_duration(path: str) -> float:

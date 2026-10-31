@@ -52,10 +52,10 @@
 | 上游 | https://github.com/chauko0423/ohwhale-deploy（0.1.0a1 Alpha） |
 | 许可证 | MIT |
 | 版权行 | `Copyright (c) 2026 四季`（见 `ohwhale-deploy/LICENSE`，已原样保留；上游 `NOTICE` 亦原样保留在 `ohwhale-deploy/NOTICE`） |
-| 修改性质 | 接入 `voice.states` 状态化参考音（`config/persona.json`）；在 `scripts/call_loop.py` 中让 `voice_extra()` 同步切换 `ref_audio_path` 与 `prompt_text`，并修正 `ROOT_DIR` 计算；若干配置项本地化 |
+| 修改性质 | 接入 `voice.states` 状态化参考音（`config/persona.json`）；在 `scripts/call_loop.py` 中让 `voice_extra()` 同步切换 `ref_audio_path` 与 `prompt_text`，并修正 `ROOT_DIR` 计算；TTS 引擎可切换：`scripts/call_loop.py` / `scripts/live_bot.py` 按 `services.tts_engine` 选择 GPT-SoVITS 或 IndexTTS2；新增自有脚本 `scripts/indextts_server.py`（IndexTTS2 本地 HTTP 合成服务，自有代码）；`plugins/astrbot_plugin_voice_picker/main.py` 引擎感知适配（按 `services.tts_engine` 调整超时与最小字数阈值，IndexTTS2 下短句本地全量接管）；若干配置项本地化 |
 | 修改开始年份 | 2026 |
-| 文件头处理 | `scripts/call_loop.py` 已前置本仓库版权行 + 修改说明；其余为 JSON/YAML 配置，按规范无法写入注释，修改事实统一记录于本清单 |
-| 未改动部分 | `plugins/` 下 5 个 AstrBot 插件（bili_scroll、companion、qq_power、stickers、voice_picker）为上游原样代码，随 ohwhale 的 MIT 许可分发 |
+| 文件头处理 | `scripts/call_loop.py` 已前置本仓库版权行 + 修改说明；新增自有脚本 `scripts/indextts_server.py` 按自有代码前置本仓库版权行；`voice_picker/main.py` 为上游插件代码的适配修改，保留上游原样、未加仓库头；其余为 JSON/YAML 配置，按规范无法写入注释，修改事实统一记录于本清单 |
+| 未改动部分 | `plugins/` 下 4 个 AstrBot 插件（bili_scroll、companion、qq_power、stickers）为上游原样代码，随 ohwhale 的 MIT 许可分发；voice_picker 已做引擎感知适配，修改事实见上「修改性质」 |
 | 上游已披露的 copyleft | 上游 `NOTICE` 已列明 AstrBot（AGPL-3.0，已核对原文一致）、GPT-SoVITS（MIT，`Copyright RVC-Boss`）、CameraEmulator（MIT，`Copyright 2026 Jean-Noël Haas (FinalAnalytics)`）、NapCatQQ（**GPL-3.0**，见上游 LICENSE）、FFmpeg（依构建配置）、python-build-standalone（CPython 3.12.15，PSF 等）、VB-CABLE（厂商条款），本清单与之保持一致 |
 
 ### B2. dsh-pet（桌宠）
@@ -174,8 +174,8 @@
 
 | 组件 | 许可证 | 说明 |
 |---|---|---|
-| GPT-SoVITS | MIT（`Copyright (c) 2024 RVC-Boss`） | 由 ohwhale-deploy 的钉版脚本下载源码与权重（约 1.24 GB），不入库；模型与素材另有各自条款 |
-| IndexTTS2 | 代码 Apache-2.0；模型权重为 bilibili Model Use License | 用户自备独立环境（`index-tts/`）与权重（默认 `C:\idx_models`），不入库；mortis 语音链路经 `ohwhale-deploy/scripts/indextts_server.py` 提供本地 HTTP 合成，与 GPT-SoVITS 按 `services.tts_engine` 配置切换 |
+| GPT-SoVITS | MIT（`Copyright (c) 2024 RVC-Boss`） | **遗留可选，不再默认**（TTS 主链路已迁 IndexTTS2）；钉版脚本仍可拉取其源码与权重（约 1.24 GB），不入库；模型与素材另有各自条款 |
+| IndexTTS2 | 代码 Apache-2.0；模型权重为 bilibili Model Use License | **默认 TTS 引擎**（本地 HTTP `:9881`，`services.tts_engine` 默认 `indextts2`，可切回遗留 `gpt_sovits`）；用户自备独立环境（`index-tts/`）与权重（默认 `C:\idx_models`），不入库；经 `ohwhale-deploy/scripts/indextts_server.py` 提供本地 HTTP 合成（零样本克隆；`media_type=wav` 输出供 AstrBot 语音消息链直接落盘为 .wav） |
 | SnowLuma | 专有软件 | 仅由安装脚本下载官方原包并校验 SHA256，不修改、不代跑；EULA 对自动化部署有限制 |
 | Tulpa 可执行程序 | MIT（源码）/ 官方发行包 | 源码 MIT，发行包中的 exe 为预编译产物（非闭源），不随本仓库分发；仓库只含 `chatlocal` 源码，不含其捆绑的第三方依赖 |
 | VB-CABLE | 捐赠版（Donationware） | 用户自行安装的虚拟声卡 |

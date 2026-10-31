@@ -16,13 +16,9 @@
     "probe_python": ".venv/Scripts/python.exe",
     "video_python": ".venv-video/Scripts/python.exe",
     "llbot_exe": "runtime/LL/NapCat.52230.Shell/启动NapCat.bat",
-    "gpt_sovits": "runtime/GPT-SoVITS",
-    "tts_python": ".venv-tts/Scripts/python.exe",
-    "tts_config": "config/tts.local.yaml",
-    "gpt_weights": "runtime/GPT-SoVITS/GPT_SoVITS/pretrained_models/s1v3.ckpt",
-    "sovits_weights": "models/sovits/dafeiyu_e14_s280.pth",
-    "pretrained_dir": "runtime/GPT-SoVITS/GPT_SoVITS/pretrained_models",
-    "voice_ref": "assets/voice/ref_190.wav",
+    "indextts_python": "../index-tts/.venv/Scripts/python.exe",
+    "indextts_server": "scripts/indextts_server.py",
+    "voice_ref": "models/indextts2/refs/ref.wav",
     "persona": "persona/default.md",
     "stickers": "assets/stickers",
     "sticker_index": "assets/stickers/index.json",
@@ -37,7 +33,8 @@
   "services": {
     "astrbot_url": "http://127.0.0.1:6185",
     "dashboard_username": "astrbot",
-    "tts_url": "http://127.0.0.1:9880/tts",
+    "tts_engine": "indextts2",
+    "indextts_url": "http://127.0.0.1:9881/tts",
     "onebot_port": 6199,
     "avatar_udp_port": 9999,
     "avatar_web_port": 8899
@@ -71,7 +68,7 @@
     "prompt_text": "那我以后还是干慢点吧",
     "prompt_lang": "zh",
     "text_lang": "zh",
-    "local_provider_id": "gpt_sovits",
+    "local_provider_id": "indextts2",
     "cloud_provider_id": ""
   },
   "features": {

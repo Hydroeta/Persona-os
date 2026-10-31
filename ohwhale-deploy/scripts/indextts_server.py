@@ -4,9 +4,10 @@
 """IndexTTS2 本地 HTTP 服务（零新依赖，stdlib http.server + torch/torchaudio）。
 
 给 call_loop.py / live_bot.py 当 GPT-SoVITS /tts 的平替：
-  GET /tts?text=...&ref_audio_path=...  → 原始 PCM（s16le 单声道 32kHz，octet-stream）
-  GET /health                           → {"ok": true, "model_loaded": bool}
-  GET /docs                             → 200（兼容 live_bot 的在线探测）
+  GET /tts?text=...&ref_audio_path=...                 → 原始 PCM（s16le 单声道 32kHz，octet-stream）
+  GET /tts?text=...&ref_audio_path=...&media_type=wav  → RIFF wav（audio/wav，AstrBot gsv_tts_selfhost 链用）
+  GET /health                                          → {"ok": true, "model_loaded": bool}
+  GET /docs                                            → 200（兼容 live_bot 的在线探测）
 
 必须用 index-tts 的 venv 跑（indextts 包在那里）：
   C:\\...\\index-tts\\.venv\\Scripts\\python.exe indextts_server.py
@@ -27,6 +28,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 MODEL_DIR = os.environ.get("INDEXTTS_MODEL_DIR", r"C:\idx_models")
 PORT = int(os.environ.get("INDEXTTS_PORT", "9881"))
 HOST = os.environ.get("INDEXTTS_HOST", "127.0.0.1")
+# 设备：cuda/cpu/auto。GPU 加载需要足够空闲物理内存（锁页缓冲），
+# 内存紧张报 os error 1455 时可设 INDEXTTS_DEVICE=cpu 兜底（慢，约 30 倍实时）。
+DEVICE = os.environ.get("INDEXTTS_DEVICE", "auto")
 
 SRC_SR = 22050      # IndexTTS2 输出采样率（infer_v2.py 固定）
 TARGET_SR = 32000   # 与 ohwhale config.json audio.tts_raw_rate 对齐
@@ -44,7 +48,7 @@ def _load_model():
             return _tts
         import torch
         from indextts.infer_v2 import IndexTTS2
-        cuda = torch.cuda.is_available()
+        cuda = torch.cuda.is_available() if DEVICE == "auto" else DEVICE == "cuda"
         print("[indextts] loading model from %s (cuda=%s) ..." % (MODEL_DIR, cuda), flush=True)
         _tts = IndexTTS2(
             cfg_path=os.path.join(MODEL_DIR, "config.yaml"),
@@ -78,6 +82,20 @@ def _synthesize(text: str, ref_audio: str) -> bytes:
     return np.ascontiguousarray(pcm).tobytes()
 
 
+def _wrap_wav(pcm: bytes) -> bytes:
+    """裸 PCM 套上 RIFF wav 头。AstrBot 把响应字节直接存成 .wav 文件，
+    没有容器头的话 NapCat/ffmpeg 转码会失败。"""
+    import io
+    import wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(TARGET_SR)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str = "application/json"):
         self.send_response(code)
@@ -109,7 +127,12 @@ class Handler(BaseHTTPRequestHandler):
             print("[indextts] synthesize failed: %r" % e, flush=True)
             self._send(500, json.dumps({"error": "%s: %s" % (type(e).__name__, e)}).encode())
             return
-        self._send(200, pcm, "application/octet-stream")
+        # AstrBot gsv_tts_selfhost 会带 media_type=wav（GPT-SoVITS api_v2 形状），
+        # 此时必须给 RIFF 容器；call_loop/live_bot 不带该参数，仍走裸 PCM。
+        if (q.get("media_type") or [""])[0].strip().lower() == "wav":
+            self._send(200, _wrap_wav(pcm), "audio/wav")
+        else:
+            self._send(200, pcm, "application/octet-stream")
 
     def log_message(self, fmt, *args):   # 安静一点，合成错误已单独打
         pass
