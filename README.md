@@ -28,7 +28,7 @@
 console.py / 控制台.cmd      控制台入口
 一键安装.cmd                安装入口（调用 install/安装.ps1）
 config/                     配置单一事实源（密钥只进本机 DPAPI，不落盘明文）
-tools/                      工具模块
+tools/                      工具模块（含 pet_adapters/ 桌宠适配器子目录）
 tests/                      冒烟测试
 ohwhale-deploy/             语音/聊天部署包（第三方，含本人改动）
 whale-pod/                  DSH 插件宿主（MIT）
