@@ -4,7 +4,9 @@
 import os as _os
 
 _ffmpeg = _os.path.join(_os.path.expanduser('~'), '.local', 'bin', 'ffmpeg.exe')
-_datas = [('videos', 'videos'), ('config.json', '.')]
+# 台词文件 config.json 用户自备、不入库：存在则捆绑，否则捆绑占位模板
+_cfg = 'config.json' if _os.path.exists('config.json') else 'config.example.json'
+_datas = [('videos', 'videos'), (_cfg, '.')]
 if _os.path.exists(_ffmpeg):
     _datas.append((_ffmpeg, 'bin'))
 

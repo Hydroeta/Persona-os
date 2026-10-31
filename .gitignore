@@ -63,6 +63,8 @@ desktop.ini
 # ===== 角色形象素材（不入库）=====
 dsh-pet/_internal/assets/
 mortis-pet/videos/
+# mortis-pet 台词文件（动画/二创来源，不适用 MIT，用户自备）
+mortis-pet/config.json
 
 # ===== PyInstaller 构建产物 =====
 mortis-pet/build/

@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """mortis-pet：墨提斯桌宠（全新独立应用）。
-角色视频素材整理自原 dsh-pet 的 mortis 角色包（其包内仅含视频素材与元数据、无台词文件）；
-人格台词为本项目编写（部分化用原作角色台词）。本应用为独立实现。"""
+角色视频素材整理自原 dsh-pet 的 mortis 角色包（渲染自游戏 Live2D 资源，权利归原作方，不入库）；
+人格台词整理自《Ave Mujica》动画及部分二创作品（权利归各权利方、不适用 MIT，不随源码分发，
+需用户自备 config.json，缺失时回退 config.example.json 占位模板）。本应用为独立实现。"""
 
 import json
 import os
@@ -32,6 +33,7 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 VIDEO_DIR = os.path.join(APP_DIR, "videos")
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
+CONFIG_EXAMPLE_PATH = os.path.join(APP_DIR, "config.example.json")
 
 # ffmpeg 查找顺序：exe 捆绑的 bin\ffmpeg.exe -> 用户目录 .local\bin -> PATH
 _FFMPEG_CANDIDATES = [
@@ -94,7 +96,10 @@ CLICK_MOVES = 6                               # 点击/拖拽判定阈值（逻�
 
 
 def load_config():
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    # 台词文本不随源码分发（动画/二创来源，不适用 MIT）：用户自备 config.json，
+    # 缺失时回退仓库内置占位模板，保证可启动；设置变更仍写回 config.json
+    path = CONFIG_PATH if os.path.exists(CONFIG_PATH) else CONFIG_EXAMPLE_PATH
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
