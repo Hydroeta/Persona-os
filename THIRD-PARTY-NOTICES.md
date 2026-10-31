@@ -86,7 +86,7 @@
 >
 > **mortis（若叶睦）形象素材说明**：mortis 桌宠素材（VP9 alpha 透明底，`characters/mortis`）
 > 渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，**素材文件不入库、不再分发**；
-> 相关权利归原作方所有，仅限个人非商业使用。
+> 相关权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用。
 >
 > **可裁剪说明**：dsh-pet 与自建 mortis-pet 均为**可选组件**，不下装不影响本项目其他任何服务。
 >
