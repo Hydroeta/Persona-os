@@ -1,0 +1,23 @@
+{
+  "_note": "台词文本整理自《Ave Mujica》动画及部分二创作品，权利归各权利方、不适用 MIT、不随仓库分发：请复制本文件为 config.json 并填入自行准备的台词（需自行评估授权，不得商用，见 THIRD-PARTY-NOTICES B2）。click_talk_bindings 的键需与 videos/click/ 下动作文件名（去 .webm）一致。",
+  "scale": 1.0,
+  "leg_out_px": 400,
+  "on_top": true,
+  "follow_mouse": true,
+  "entry_lines": ["（入场台词自备：复制本文件为 config.json 后填写）"],
+  "self_talk_enabled": true,
+  "self_talk_min_interval": 20.0,
+  "self_talk_max_interval": 60.0,
+  "self_talk_duration_seconds": 3.2,
+  "random_action_min_interval": 25.0,
+  "random_action_max_interval": 50.0,
+  "self_talk_texts": ["（自说话台词自备）"],
+  "click_talk_bindings": {
+    "点击回应-微笑": ["（点击回应台词自备）"],
+    "点击回应-开心": ["（点击回应台词自备）"],
+    "点击回应-惊讶": ["（点击回应台词自备）"],
+    "点击回应-生气": ["（点击回应台词自备）"],
+    "点击回应-害羞": ["（点击回应台词自备）"],
+    "点击回应-不要不要": ["（点击回应台词自备）"]
+  }
+}

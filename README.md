@@ -34,7 +34,7 @@ ohwhale-deploy/             语音/聊天部署包（第三方，含本人改动
 whale-pod/                  DSH 插件宿主（MIT）
 dsh/                        DSH 定时任务与工作区配置
 dsh-pet/                    桌宠人设与菜单定制（JSON）
-mortis-pet/                 自建第二桌宠源码（PySide6；素材 videos/ 自备不入库）
+mortis-pet/                 自建第二桌宠源码（PySide6；素材 videos/ 与台词 config.json 自备不入库，附 config.example.json 模板）
 Tulpa/Tulpa/chatlocal/      Tulpa 本地聊天模块
 install/                    安装脚本（基础环境 + 组件依赖）
 使用说明.md / 项目介绍.md     详细文档
@@ -60,7 +60,7 @@ python tests/test_smoke.py  # 117 项冒烟测试
 | Ollama + Qwen2.5-1.5B（可选） | 本地免费推理 provider（端云路由的 local 端） | `ollama pull qwen2.5:1.5b` |
 | SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
 | dsh-pet | 桌宠可执行程序（老桌宠，含事件播报通道） | 上游 Releases（本仓库只含人设/菜单，见 NOTICES B2） |
-| mortis-pet 源码 + mortis 素材 | 第二桌宠（独立展示型，无事件通道） | 源码随仓库提供（`mortis-pet/`，PySide6）：先 `pip install -r mortis-pet/requirements.txt`（打包另需 `pip install pyinstaller`），再用 PyInstaller 按 `mortis-pet.spec` 打包；运行另需 ffmpeg（放 `~/.local/bin/ffmpeg.exe` 或入 PATH）；视频素材（`mortis-pet/videos/`，VP9 透明底）自备不入库（见 NOTICES B2） |
+| mortis-pet 源码 + mortis 素材 | 第二桌宠（独立展示型，无事件通道） | 源码随仓库提供（`mortis-pet/`，PySide6）：先 `pip install -r mortis-pet/requirements.txt`（打包另需 `pip install pyinstaller`），再用 PyInstaller 按 `mortis-pet.spec` 打包；运行另需 ffmpeg（放 `~/.local/bin/ffmpeg.exe` 或入 PATH）；视频素材（`mortis-pet/videos/`，VP9 透明底）与台词文件（`mortis-pet/config.json`，整理自 Ave Mujica 动画及二创，不适用 MIT）均自备不入库，仓库只含 `config.example.json` 模板（见 NOTICES B2） |
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
 | API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
 | AstrBot（AGPL-3.0） | 消息框架与面板 | 由 ohwhale-deploy 安装，源码从上游获取 |
@@ -82,7 +82,8 @@ python tests/test_smoke.py  # 117 项冒烟测试
   本仓库仅包含人设与菜单定制（JSON），**未重新分发素材或二进制**，素材不适用 MIT 许可。
   另含第二形象 **mortis（若叶睦）**：素材渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，
   权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用，**自备不入库**；其桌宠载体为项目自建的
-  mortis-pet（PySide6，源码随仓库 `mortis-pet/`）。mortis 同时是第二个 persona（`config/personas/mortis/`，
+  mortis-pet（PySide6，源码随仓库 `mortis-pet/`）。**mortis-pet 的台词文本整理自《Ave Mujica》动画及部分二创，
+  不适用 MIT、不随仓库分发**（见 NOTICES B2）。mortis 同时是第二个 persona（`config/personas/mortis/`，
   语音链路走 IndexTTS2），详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) B2。
 - 语音/聊天部署包来自 `https://github.com/chauko0423/ohwhale-deploy`（MIT）。
 - SurfCore（MIT，`https://github.com/Mieksido/surfcore`）的 B站插件
