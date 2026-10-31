@@ -97,7 +97,7 @@
 
 > MIT 只要求保留版权与许可声明，不要求公开修改源码；修改事实仍在此显式声明，避免「原样引用」的误导。
 
-### B3. dsh-pet 桥接事实契约（本地文件通道）
+### B3. 桌宠桥接事实契约（dsh-pet 本地文件通道）
 
 本项目通过 `tools/pet_adapter.py` 以本地 jsonl / 菜单 / 进程方式与 dsh-pet 交互，未修改其二进制，也未依赖其内部事件协议；上游格式变化仅影响适配器实现（`tools/pet_adapters/dsh_pet.py`）。
 
@@ -113,6 +113,8 @@
 
 > 上述为实测事实契约，可能随上游版本变更；变更只影响 `tools/pet_adapters/dsh_pet.py` 一个文件，事件源不受牵连。
 > 桌宠通道只传状态与摘要，不承载密钥、读屏画面、通话音频与聊天原文。
+>
+> **mortis-pet 通道说明**：自建的 mortis-pet 为独立展示型桌宠（PySide6），**不消费**上述桥通道事件（无 DSH 状态播报）；`pet_bus` / `pet_adapter` 体系与 `config/pet.json` 的 persona 门控仅服务老 dsh-pet。激活 mortis 期间若 `persona` 键仍为 `ohwhale`，事件按门控规则只落盘不推送。
 
 ---
 
@@ -174,7 +176,7 @@
 
 | 组件 | 许可证 | 说明 |
 |---|---|---|
-| GPT-SoVITS | MIT（`Copyright (c) 2024 RVC-Boss`） | **遗留可选，不再默认**（TTS 主链路已迁 IndexTTS2）；钉版脚本仍可拉取其源码与权重（约 1.24 GB），不入库；模型与素材另有各自条款 |
+| GPT-SoVITS | MIT（`Copyright (c) 2024 RVC-Boss`） | **遗留可选，不再默认**（TTS 主链路已迁 IndexTTS2）；钉版脚本仍可拉取其源码与权重（权重约 1.24 GB，含源码与运行时约 4 GB），不入库；模型与素材另有各自条款 |
 | IndexTTS2 | 代码 Apache-2.0；模型权重为 bilibili Model Use License | **默认 TTS 引擎**（本地 HTTP `:9881`，`services.tts_engine` 默认 `indextts2`，可切回遗留 `gpt_sovits`）；用户自备独立环境（`index-tts/`）与权重（默认 `C:\idx_models`），不入库；经 `ohwhale-deploy/scripts/indextts_server.py` 提供本地 HTTP 合成（零样本克隆；`media_type=wav` 输出供 AstrBot 语音消息链直接落盘为 .wav） |
 | SnowLuma | 专有软件 | 仅由安装脚本下载官方原包并校验 SHA256，不修改、不代跑；EULA 对自动化部署有限制 |
 | Tulpa 可执行程序 | MIT（源码）/ 官方发行包 | 源码 MIT，发行包中的 exe 为预编译产物（非闭源），不随本仓库分发；仓库只含 `chatlocal` 源码，不含其捆绑的第三方依赖 |
@@ -189,8 +191,9 @@
   # Copyright 2026 persona-os contributors
   # SPDX-License-Identifier: MIT
   ```
-- 修改自第三方的文件（当前为 `ohwhale-deploy/scripts/call_loop.py`）采用「前置自有声明 + 保留上游信息」，
-  不删除上游版权/许可文本。
+- 修改自第三方的文件采用「前置自有声明 + 保留上游信息」，不删除上游版权/许可文本
+  （当前已加仓库头的为 `ohwhale-deploy/scripts/call_loop.py`；`plugins/astrbot_plugin_voice_picker/main.py`
+  保留上游原样、未加仓库头，修改事实见 B1）。
 - JSON / YAML 无法承载注释，其修改事实统一登记在 B 节。
 
 ## 许可证兼容性结论
