@@ -1,0 +1,2 @@
+# mortis-pet 运行依赖（打包 exe 另需：pip install pyinstaller）
+PySide6>=6.5

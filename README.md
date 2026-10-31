@@ -17,7 +17,7 @@
 | 多角色 | `config/personas/` 多角色正本 + 激活指针，静默热切换（零 LLM 调用），状态/记忆按角色隔离 |
 | 语音通话 | 本地 ASR + IndexTTS2 零样本音色克隆（默认引擎，可切回遗留 GPT-SoVITS，`services.tts_engine` 一键切换），按情绪/精力切换参考音（`config/persona.json` 的 `voice.states`）|
 | 聊天接入 | QQ 双协议端（Tulpa←SnowLuma 注入桌面 QQ；哦鲸鲸←NapCat 便携 QQ）、AstrBot 插件、B 站与抖音弹幕回复 |
-| 桌宠 | 桌面角色（基于 dsh-pet 的定制人设与菜单 + 自建 mortis-pet；**可选**，缺失不影响其他服务） |
+| 桌宠 | 桌面角色（基于 dsh-pet 的定制人设与菜单 + 自建 mortis-pet（源码随仓库）；均**可选**，缺失不影响其他服务） |
 | 记忆与关系 | 目标、时间胶囊、日记回顾、日历提醒、关心心跳、记忆总线 |
 | 成本与资源 | LLM token 闸门、场景配额、端云路由（Ollama 本地免费 / DeepSeek 主用 / 千问兜底）、GPU 互斥租约、搜索网关、日报 |
 | 工具集 | `tools/` 40+ 个纯标准库模块；`tests/` 117 项冒烟测试 |
@@ -55,12 +55,12 @@ python tests/test_smoke.py  # 117 项冒烟测试
 | 组件 | 用途 | 获取方式 |
 |---|---|---|
 | IndexTTS2 环境 + 模型 | 默认 TTS 引擎（本地 HTTP 合成 :9881，零样本克隆） | 官方仓库自建 `index-tts/` 环境（Python 3.11 + torch），权重默认放 `C:\idx_models`（纯 ASCII 路径），见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) C4 |
-| GPT-SoVITS 运行时 + 模型（遗留可选） | 旧版 TTS 引擎（主链路已迁 IndexTTS2，保留作可切换备选） | 按 `ohwhale-deploy` 的脚本自行下载，约 4 GB |
+| GPT-SoVITS 运行时 + 模型（遗留可选） | 旧版 TTS 引擎（主链路已迁 IndexTTS2，保留作可切换备选） | 按 `ohwhale-deploy` 的脚本自行下载，下载约 4 GB（安装后含独立 venv 与 PyTorch 共约 9.8 GB） |
 | Tulpa | QQ 客户端集成 | 官方 Releases（源码 MIT，发行包含预编译 exe；`chatlocal` 源码随仓库保留） |
 | Ollama + Qwen2.5-1.5B（可选） | 本地免费推理 provider（端云路由的 local 端） | `ollama pull qwen2.5:1.5b` |
 | SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
 | dsh-pet | 桌宠可执行程序（老桌宠，含事件播报通道） | 上游 Releases（本仓库只含人设/菜单，见 NOTICES B2） |
-| mortis-pet 源码 + mortis 素材 | 第二桌宠（独立展示型，无事件通道） | 源码随仓库提供（`mortis-pet/`，PySide6），自行用 PyInstaller 按 `mortis-pet.spec` 打包；视频素材（`mortis-pet/videos/`，VP9 透明底）自备不入库（见 NOTICES B2） |
+| mortis-pet 源码 + mortis 素材 | 第二桌宠（独立展示型，无事件通道） | 源码随仓库提供（`mortis-pet/`，PySide6）：先 `pip install -r mortis-pet/requirements.txt`（打包另需 `pip install pyinstaller`），再用 PyInstaller 按 `mortis-pet.spec` 打包；运行另需 ffmpeg（放 `~/.local/bin/ffmpeg.exe` 或入 PATH）；视频素材（`mortis-pet/videos/`，VP9 透明底）自备不入库（见 NOTICES B2） |
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
 | API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
 | AstrBot（AGPL-3.0） | 消息框架与面板 | 由 ohwhale-deploy 安装，源码从上游获取 |
@@ -82,7 +82,7 @@ python tests/test_smoke.py  # 117 项冒烟测试
   本仓库仅包含人设与菜单定制（JSON），**未重新分发素材或二进制**，素材不适用 MIT 许可。
   另含第二形象 **mortis（若叶睦）**：素材渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，
   权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用，**自备不入库**；其桌宠载体为项目自建的
-  mortis-pet（PySide6，未随仓库分发）。mortis 同时是第二个 persona（`config/personas/mortis/`，
+  mortis-pet（PySide6，源码随仓库 `mortis-pet/`）。mortis 同时是第二个 persona（`config/personas/mortis/`，
   语音链路走 IndexTTS2），详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) B2。
 - 语音/聊天部署包来自 `https://github.com/chauko0423/ohwhale-deploy`（MIT）。
 - SurfCore（MIT，`https://github.com/Mieksido/surfcore`）的 B站插件

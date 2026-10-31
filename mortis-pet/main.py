@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """mortis-pet：墨提斯桌宠（全新独立应用）。
-角色视频素材与人格台词整理自原 dsh-pet 的 mortis 角色包，本应用为独立实现。"""
+角色视频素材整理自原 dsh-pet 的 mortis 角色包（其包内仅含视频素材与元数据、无台词文件）；
+人格台词为本项目编写（部分化用原作角色台词）。本应用为独立实现。"""
 
 import json
 import os
