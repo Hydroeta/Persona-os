@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 记忆总线（一个入口：检索 / 写入 / 遗忘）
 

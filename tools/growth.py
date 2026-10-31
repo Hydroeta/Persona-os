@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 角色成长 / 技能树（P3）
 

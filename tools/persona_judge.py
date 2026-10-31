@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 人格保真度裁判（防漂移的回归测试）
 

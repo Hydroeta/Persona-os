@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 资源闸门（P1-3）：通话/直播进行时，重任务让路；显存峰值记录
 

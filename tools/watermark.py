@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 语音水印 / 防滥用（P2）
 

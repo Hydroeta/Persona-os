@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · LLM Token 闸门（成本主战场：通话/搭话/直播/定时任务全是 LLM 消耗）
 

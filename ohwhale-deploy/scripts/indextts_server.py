@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """IndexTTS2 本地 HTTP 服务（零新依赖，stdlib http.server + torch/torchaudio）。
 

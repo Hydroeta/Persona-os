@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """空适配器：未安装 / 主动关闭时使用，零副作用。"""
 from __future__ import annotations

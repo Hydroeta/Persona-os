@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼生态 · 统一控制台
 双击「控制台.cmd」启动，浏览器打开 http://127.0.0.1:8900

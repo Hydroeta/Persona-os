@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 读屏陪伴模式（默认关闭 · 本地处理 · 可见指示 · 一键全停）
 

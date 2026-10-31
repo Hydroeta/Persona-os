@@ -1,3 +1,5 @@
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """persona-os · 多厂商 API 资金看板（一厂一策：真实直查 + 本地 Token 账本精算）
 
