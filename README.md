@@ -59,7 +59,7 @@ python tests/test_smoke.py  # 117 项冒烟测试
 | Ollama + Qwen2.5-1.5B（可选） | 本地免费推理 provider（端云路由的 local 端） | `ollama pull qwen2.5:1.5b` |
 | SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
 | dsh-pet | 桌宠可执行程序（老桌宠，含事件播报通道） | 上游 Releases（本仓库只含人设/菜单，见 NOTICES B2） |
-| mortis-pet + mortis 素材 | 第二桌宠（独立展示型，无事件通道） | 项目自建，需连同形象素材 `characters/mortis` 自备，不入库（见 NOTICES B2） |
+| mortis-pet + mortis 素材（**不可获取，可跳过**） | 第二桌宠（独立展示型，无事件通道） | 项目自建，源码与 exe 均未随仓库提供（仅作者本地可用）；形象素材 `characters/mortis` 自备不入库（见 NOTICES B2） |
 | DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
 | API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
 | AstrBot（AGPL-3.0） | 消息框架与面板 | 由 ohwhale-deploy 安装，源码从上游获取 |

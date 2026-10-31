@@ -88,7 +88,7 @@
 > 渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，**素材文件不入库、不再分发**；
 > 相关权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用。
 >
-> **可裁剪说明**：dsh-pet 与自建 mortis-pet 均为**可选组件**，不下装不影响本项目其他任何服务。
+> **可裁剪说明**：dsh-pet 为**可选组件**，不下装不影响本项目其他任何服务。（项目自建的 mortis-pet 同为可选，且其源码与 exe 均未随仓库提供，仅作者本地可用；它不是第三方组件，详见 README「需要自行准备」。）
 >
 > 上游发行渠道：Windows 版可通过作者提供的夸克网盘获取；macOS 版请从
 > `https://github.com/MerZlin/dsh-pet-indesktop/releases` 下载（网盘会吞 macOS 版 zip）。
