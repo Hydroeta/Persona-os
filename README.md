@@ -70,6 +70,7 @@ python tests/test_smoke.py  # 117 项冒烟测试
 
 仓库内所有路径、账号、密钥字段均已替换为占位符；`.env`、数据库、会话记录、参考音、
 日志与缓存一律不入库（见 `.gitignore`）。控制台的密钥写入本机 DPAPI 保险库。
+安装脚本生成的 `部署待办清单.md` 同样自动脱敏本机路径（`%PROJECT_ROOT%` / `%USERPROFILE%` / `C:\Users\%USERNAME%`），并已加入 `.gitignore`。
 
 ## 来源与致谢
 
