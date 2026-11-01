@@ -69,8 +69,8 @@ function Invoke-Detection {
     if (Has-Cmd "python") { try { & python -c "import PySide6" 2>$null; $mPySide = ($LASTEXITCODE -eq 0) } catch {} }
     Add-Item "mortis-pet 运行形态（exe 或 PySide6）" ($mExe -or $mPySide) "pip install -r mortis-pet\requirements.txt（源码运行）；打包另 pip install pyinstaller 后按 mortis-pet.spec"
     $mIdle = @(Get-ChildItem (Join-Path $Root "mortis-pet\videos\idle") -Filter *.webm -ErrorAction SilentlyContinue).Count
-    Add-Item "mortis-pet 视频素材（videos\idle）" ($mIdle -gt 0) "自备 VP9 透明底素材放入 mortis-pet\videos\（不入库），至少含 idle\ 一个 .webm"
-    Add-Item "mortis-pet 台词（config.json，本机自有）" (Test-Path (Join-Path $Root "mortis-pet\config.json")) "复制 config.example.json 为 config.json 并填入台词（动画/二创来源，自备不入库）"
+    Add-Item "mortis-pet 视频素材（与台词同属自备项）" ($mIdle -gt 0) "自备 VP9 透明底素材放入 mortis-pet\videos\（不入库），至少含 idle\ 一个 .webm"
+    Add-Item "mortis-pet 台词（config.json，用户本机文件，非仓库自带）" (Test-Path (Join-Path $Root "mortis-pet\config.json")) "复制 config.example.json 为 config.json 并填入台词（动画/二创来源，自备不入库）"
     $mFfmpeg = (Has-Cmd "ffmpeg") -or (Test-Path (Join-Path $env:USERPROFILE ".local\bin\ffmpeg.exe")) -or (Test-Path (Join-Path $Root "mortis-pet\bin\ffmpeg.exe"))
     Add-Item "mortis-pet 依赖 ffmpeg（VP9 alpha 解码）" $mFfmpeg "放 ~\.local\bin\ffmpeg.exe 或加入 PATH"
 
