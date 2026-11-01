@@ -18,11 +18,20 @@ function Write-Step($t) { Write-Host "`n==== $t ====" -ForegroundColor Cyan }
 function Has-Cmd($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
 
 # ---------- 检测结果收集（供报告落盘） ----------
+# 报告可能被截图外发，所有落到报告里的路径先脱敏：项目根 -> %PROJECT_ROOT%，用户目录 -> %USERPROFILE%，C:\Users\<名> -> C:\Users\%USERNAME%
+function Mask-Path([string]$s) {
+    if (-not $s) { return $s }
+    $s = $s -replace [regex]::Escape($Root), '%PROJECT_ROOT%'
+    $s = $s -replace [regex]::Escape($env:USERPROFILE), '%USERPROFILE%'
+    if ($env:APPDATA) { $s = $s -replace [regex]::Escape($env:APPDATA), '%APPDATA%' }
+    $s = $s -replace '[A-Za-z]:\\Users\\[^\\\s]+', 'C:\Users\%USERNAME%'
+    return $s
+}
 $script:Results = @()
-function Add-Item($name, $ok, $hint, $auto = $false) {
-    $script:Results += [pscustomobject]@{ Name = $name; Ok = [bool]$ok; Hint = $hint; Auto = [bool]$auto }
+function Add-Item($name, $ok, $hint, $auto = $false, $optional = $false) {
+    $script:Results += [pscustomobject]@{ Name = $name; Ok = [bool]$ok; Hint = (Mask-Path $hint); Auto = [bool]$auto; Optional = [bool]$optional }
     if ($ok) { Write-Host ("  [OK]   " + $name) -ForegroundColor Green }
-    else { Write-Host ("  [缺失] " + $name + "  ->  " + $hint) -ForegroundColor Yellow }
+    else { Write-Host ("  [缺失] " + $name + "  ->  " + (Mask-Path $hint)) -ForegroundColor Yellow }
 }
 
 # ---------- ohwhale 配置解析（检测路径以 config.json 为准，缺失时回退默认值） ----------
@@ -61,7 +70,7 @@ function Invoke-Detection {
     Add-Item "mortis-pet 运行形态（exe 或 PySide6）" ($mExe -or $mPySide) "pip install -r mortis-pet\requirements.txt（源码运行）；打包另 pip install pyinstaller 后按 mortis-pet.spec"
     $mIdle = @(Get-ChildItem (Join-Path $Root "mortis-pet\videos\idle") -Filter *.webm -ErrorAction SilentlyContinue).Count
     Add-Item "mortis-pet 视频素材（videos\idle）" ($mIdle -gt 0) "自备 VP9 透明底素材放入 mortis-pet\videos\（不入库），至少含 idle\ 一个 .webm"
-    Add-Item "mortis-pet 台词（config.json）" (Test-Path (Join-Path $Root "mortis-pet\config.json")) "复制 config.example.json 为 config.json 并填入台词（动画/二创来源，自备不入库）"
+    Add-Item "mortis-pet 台词（config.json，本机自有）" (Test-Path (Join-Path $Root "mortis-pet\config.json")) "复制 config.example.json 为 config.json 并填入台词（动画/二创来源，自备不入库）"
     $mFfmpeg = (Has-Cmd "ffmpeg") -or (Test-Path (Join-Path $env:USERPROFILE ".local\bin\ffmpeg.exe")) -or (Test-Path (Join-Path $Root "mortis-pet\bin\ffmpeg.exe"))
     Add-Item "mortis-pet 依赖 ffmpeg（VP9 alpha 解码）" $mFfmpeg "放 ~\.local\bin\ffmpeg.exe 或加入 PATH"
 
@@ -78,7 +87,7 @@ function Invoke-Detection {
         Add-Item "IndexTTS2 权重（C:\idx_models）" $idxWeightsOk "从 IndexTTS2 官方 Releases 下载权重到 C:\idx_models（不入库；GPU 锁页失败时 INDEXTTS_DEVICE=cpu 兜底）"
         Add-Item "参考音（voice_ref）" $refOk "自备授权音源放入 $refWav（个人生物特征，不入库）"
         $gsOk = (Test-Path (Join-Path $OwDir "runtime\GPT-SoVITS")) -and (Test-Path (Join-Path $OwDir "models\sovits"))
-        Add-Item "GPT-SoVITS（遗留可选，未启用）" $gsOk "当前 tts_engine=$TtsEngine；需要时运行 install\补齐组件.ps1 -Tts（约 4 GB，需 NVIDIA GPU）"
+        Add-Item "GPT-SoVITS（遗留可选，未启用）" $gsOk "当前 tts_engine=$TtsEngine；启用时运行 install\补齐组件.ps1 -Tts 自动补齐（约 4 GB，需 NVIDIA GPU）" $true $true
     } else {
         Add-Item "GPT-SoVITS 运行时（当前引擎）" (Test-Path (Join-Path $OwDir "runtime\GPT-SoVITS")) "当前 tts_engine=$TtsEngine：第 6 步可自动下载（源码钉版 + SHA256 校验）" $true
         Add-Item "SoVITS 模型权重（当前引擎）" (Test-Path (Join-Path $OwDir "models\sovits")) "第 6 步可自动下载预训练模型（约 1.25 GB）" $true
@@ -90,7 +99,7 @@ function Invoke-Detection {
     Add-Item "QQ 协议端 NapCat" (Test-Path (Join-Path $OwDir "runtime\LL")) "第 6 步可自动下载（约 66 MB，含便携 QQ）" $true
     $ollamaOk = $false
     try { $c = New-Object Net.Sockets.TcpClient; $c.Connect("127.0.0.1", 11434); $c.Close(); $ollamaOk = $true } catch {}
-    Add-Item "Ollama 本地推理（可选，:11434）" $ollamaOk "用户自装（https://ollama.com）；不装则全部走云端模型"
+    Add-Item "Ollama 本地推理（可选，:11434）" $ollamaOk "用户自装（https://ollama.com）；不装则全部走云端模型" $false $true
 
     # --- 音频 ---
     $cableOk = $false
@@ -99,7 +108,7 @@ function Invoke-Detection {
 }
 
 Write-Host "persona-os · 总部署" -ForegroundColor Green
-Write-Host "包目录：$Root    TTS 引擎：$TtsEngine"
+Write-Host ("包目录：" + (Mask-Path $Root) + "    TTS 引擎：$TtsEngine")
 
 # ---------- 1/7 基础环境 ----------
 Write-Step "1/7 基础环境"
@@ -236,11 +245,13 @@ if ($SelfTest) {
 # ---------- 检测报告落盘 ----------
 if ($OutFile) {
     $out = if ([System.IO.Path]::IsPathRooted($OutFile)) { $OutFile } else { Join-Path $Root $OutFile }
-    $L = @("# persona-os 部署报告", "", "- 生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')", "- TTS 引擎：$TtsEngine", "- 包目录：$Root", "")
+    $L = @("# persona-os 部署报告", "", "- 生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')", "- TTS 引擎：$TtsEngine", "- 包目录：$(Mask-Path $Root)", "- 说明：本报告中的本机路径已自动脱敏（%PROJECT_ROOT% / %USERPROFILE% / C:\Users\%USERNAME%）；已加入 .gitignore，请勿手动提交或截图外发。", "")
     $okItems = @($script:Results | Where-Object { $_.Ok })
-    $autoItems = @($script:Results | Where-Object { -not $_.Ok -and $_.Auto })
-    $manualItems = @($script:Results | Where-Object { -not $_.Ok -and -not $_.Auto })
+    $autoItems = @($script:Results | Where-Object { -not $_.Ok -and $_.Auto -and -not $_.Optional })
+    $optItems = @($script:Results | Where-Object { -not $_.Ok -and $_.Optional })
+    $manualItems = @($script:Results | Where-Object { -not $_.Ok -and -not $_.Auto -and -not $_.Optional })
     $L += "## 已就绪（$($okItems.Count)）"
+    if ($okItems.Count -eq 0) { $L += "-（无）" }
     foreach ($i in $okItems) { $L += "- [x] $($i.Name)" }
     $L += ""; $L += "## 缺失——可自动补齐（$($autoItems.Count)）"
     if ($autoItems.Count -eq 0) { $L += "-（无）" }
@@ -252,6 +263,9 @@ if ($OutFile) {
         elseif ($i.Name -like "GPT-SoVITS*") { $cmd = "install\补齐组件.ps1 -Tts   # 需 NVIDIA GPU" }
         $L += "- [ ] $($i.Name) —— ``$cmd``"
     }
+    $L += ""; $L += "## 可选（按需，不装不影响主流程）（$($optItems.Count)）"
+    if ($optItems.Count -eq 0) { $L += "-（无）" }
+    foreach ($i in $optItems) { $L += "- [ ] $($i.Name) —— $($i.Hint)" }
     $L += ""; $L += "## 缺失——必须人工（$($manualItems.Count)）"
     if ($manualItems.Count -eq 0) { $L += "-（无）" }
     foreach ($i in $manualItems) { $L += "- [ ] $($i.Name) —— $($i.Hint)" }
@@ -259,13 +273,14 @@ if ($OutFile) {
     $L += "## 脚本永远无法代劳的事项"
     $L += "- [ ] API 密钥（DeepSeek / 阿里云百炼 / 智谱）：控制台「密钥与配置」录入（DPAPI 保险库）"
     $L += "- [ ] NapCat 首次启动扫码登录 QQ；B 站 / 抖音 cookie 按需配置"
-    $L += "- [ ] mortis-pet 台词（config.json）与视频素材：自备（权利限制，不入库）"
+    $L += "- [ ] mortis-pet 台词（config.json）与视频素材：需用户自备，脚本不会生成（权利限制，不入库）"
     $L += "- [ ] dsh-pet 角色形象素材：自备（上游渠道获取）"
     $L += "- [ ] 参考音（个人生物特征）：自备授权音源"
     $L += ""; $L += "## 下一步"
-    $L += "1. 补齐上面清单后，双击 ``控制台.cmd``"
-    $L += "2. 浏览器打开 http://127.0.0.1:8900 统一管理服务拓扑"
-    $L += "3. 详见 使用说明.md（安装 / 运维 / 常见问题）"
+    $L += "1. 按上面清单补齐缺项（可自动补齐的直接跑报告里的命令）"
+    $L += "2. 补齐后重新跑 ``install\安装.ps1 -DetectOnly``，确认清单全绿"
+    $L += "3. 双击 ``控制台.cmd``，浏览器打开 http://127.0.0.1:8900 统一管理服务拓扑"
+    $L += "4. 详见 使用说明.md（安装 / 运维 / 常见问题）"
     [System.IO.File]::WriteAllLines($out, $L, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "`n检测报告已写入：$out" -ForegroundColor Green
 }
