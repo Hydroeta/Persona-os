@@ -16,6 +16,32 @@ $ErrorActionPreference = "Continue"
 $Root = Split-Path -Parent $PSScriptRoot
 function Write-Step($t) { Write-Host "`n==== $t ====" -ForegroundColor Cyan }
 function Has-Cmd($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
+# winget 装完 Node/Python 后当前会话的 PATH 还没刷新，会导致第 6 步误判「缺 Node.js」；这里把注册表里的 PATH 补进来
+function Update-SessionPath {
+    $cur = $env:Path
+    $add = @()
+    foreach ($p in @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User'))) {
+        if (-not $p) { continue }
+        foreach ($seg in $p.Split(';')) {
+            if ($seg -and ($cur.Split(';') -notcontains $seg) -and ($add -notcontains $seg)) { $add += $seg }
+        }
+    }
+    if ($add.Count -gt 0) { $env:Path = $cur + ';' + ($add -join ';') }
+}
+# 找可用的 Python 3.12 x64（含 py -3.12、常见安装路径），找到返回 exe 路径
+function Find-Py312 {
+    $c = @()
+    if ($env:OHWHALE_PYTHON) { $c += $env:OHWHALE_PYTHON }
+    $c += @(Get-Command python, python3 -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
+    $c += @((Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"), (Join-Path $env:ProgramFiles "Python312\python.exe"), "C:\Python312\python.exe")
+    if (Has-Cmd "py") { try { $c += (& py -3.12 -c "import sys;print(sys.executable)" 2>$null) } catch {} }
+    foreach ($p in ($c | Where-Object { $_ } | Select-Object -Unique)) {
+        if ($p -match '\\WindowsApps\\' -or -not (Test-Path -LiteralPath $p)) { continue }
+        & $p -c "import sys;sys.exit(0 if sys.version_info[:2]==(3,12) and sys.maxsize>2**32 else 1)" 2>$null
+        if ($LASTEXITCODE -eq 0) { return $p }
+    }
+    return $null
+}
 
 # ---------- 检测结果收集（供报告落盘） ----------
 # 报告可能被截图外发，所有落到报告里的路径先脱敏：项目根 -> %PROJECT_ROOT%，用户目录 -> %USERPROFILE%，C:\Users\<名> -> C:\Users\%USERNAME%
@@ -112,9 +138,10 @@ Write-Host ("包目录：" + (Mask-Path $Root) + "    TTS 引擎：$TtsEngine")
 
 # ---------- 1/7 基础环境 ----------
 Write-Step "1/7 基础环境"
+$Py312 = $null
 if ($DetectOnly) {
     Add-Item "Node.js（>=22）" ((Has-Cmd "node") -and ([int](((& node -v) 2>$null) -replace '^v','').Split('.')[0]) -ge 22) "https://nodejs.org 下载 LTS，或 winget install OpenJS.NodeJS.LTS"
-    Add-Item "Python 3.12" (Has-Cmd "python") "https://www.python.org/downloads/（3.12）"
+    Add-Item "Python 3.12 x64" ([bool](Find-Py312)) "https://www.python.org/downloads/（3.12 x64），或 winget install Python.Python.3.12；已装别处可设 OHWHALE_PYTHON 指向 python.exe"
     Add-Item "pnpm" (Has-Cmd "pnpm") "npm install -g pnpm"
     Add-Item "ffmpeg（PATH）" (Has-Cmd "ffmpeg") "winget install Gyan.FFmpeg，或放 ~\.local\bin 并加 PATH"
 }
@@ -133,11 +160,19 @@ else {
         if (Has-Cmd "winget") { winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements }
         else { Write-Warning "请到 https://nodejs.org 下载 LTS 安装" }
     }
-    if (Has-Cmd "python") { Write-Host "Python 已安装：$((& python --version) 2>&1)" }
+    # winget 刚装完，当前会话 PATH 还是旧的：补进注册表 PATH 再判定，否则第 6 步会误报「缺 Node.js」
+    Update-SessionPath
+    if (-not (Has-Cmd "node")) { Write-Warning "Node.js 仍不可用：装完请重开终端再跑；第 6 步的 DSH 会因此跳过" }
+    $Py312 = Find-Py312
+    if ($Py312) { Write-Host "Python 3.12 x64 已就绪：$Py312" }
     else {
-        Write-Host "安装 Python 3.12 ..."
+        Write-Host "安装 Python 3.12 x64 ..."
         if (Has-Cmd "winget") { winget install --id Python.Python.3.12 -e --accept-source-agreements --accept-package-agreements }
-        else { Write-Warning "请到 https://www.python.org/downloads 下载 3.12" }
+        else { Write-Warning "请到 https://www.python.org/downloads 下载 3.12 x64（勾选 Add to PATH）" }
+        Update-SessionPath
+        $Py312 = Find-Py312
+        if ($Py312) { Write-Host "Python 3.12 x64 已就绪：$Py312" }
+        else { Write-Warning "Python 3.12 x64 仍不可用：装完请重开终端再跑；若装在非默认目录，请设 OHWHALE_PYTHON 指向其 python.exe（Windows Store 的 python 别名会被跳过）" }
     }
     if (Has-Cmd "pnpm") { Write-Host "pnpm 已安装：$((& pnpm -v) 2>&1)" }
     elseif (Has-Cmd "npm") { Write-Host "安装 pnpm ..."; npm install -g pnpm }
@@ -145,8 +180,9 @@ else {
     if (Has-Cmd "ffmpeg") { Write-Host "ffmpeg 已安装" }
     else {
         Write-Host "安装 ffmpeg ..."
-        if (Has-Cmd "winget") { winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements }
+        if (Has-Cmd "winget") { winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements; Update-SessionPath }
         else { Write-Warning "请到 https://ffmpeg.org 下载并加入 PATH" }
+        if (-not (Has-Cmd "ffmpeg")) { Write-Warning "ffmpeg 仍不在 PATH：重开终端，或手动把 bin 目录加入 PATH" }
     }
 }
 
@@ -163,8 +199,10 @@ if (-not $DetectOnly) {
     Write-Step "3/7 哦鲸鲸（ohwhale-deploy）依赖"
     if (Test-Path (Join-Path $OwDir "requirements.txt")) {
         Write-Host "安装 Python 依赖（requirements.txt）..."
-        python -m pip install --upgrade pip
-        python -m pip install -r (Join-Path $OwDir "requirements.txt")
+        $pipPy = if ($Py312) { $Py312 } else { "python" }
+        if (-not $Py312) { Write-Warning "未检出 Python 3.12 x64，改用 PATH 里的 python；版本不符时装依赖会失败" }
+        & $pipPy -m pip install --upgrade pip
+        & $pipPy -m pip install -r (Join-Path $OwDir "requirements.txt")
         Write-Host "提示：默认 TTS 为 IndexTTS2（环境与权重需自备，见第 5/7 步）；GPT-SoVITS 为遗留可选"
     } else { Write-Host "本包未附带 ohwhale 依赖清单，跳过" }
 
@@ -198,13 +236,24 @@ else {
         $fillArgs = @("-Dsh", "-DshChannels", "-Qq", "-SnowLuma")
     }
     $doFill = $false
-    if ($NonInteractive) {
+    $missNode = -not (Has-Cmd "node")
+    $missPy = -not (Find-Py312)
+    if ($missNode -or $missPy) {
+        Write-Host "前置未就绪，自动补齐会半途失败（DSH 需要 Node.js，NapCat 需要 Python 3.12 x64）。先补齐：" -ForegroundColor Yellow
+        if ($missNode) { Write-Host "  · Node.js（>=22）：winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements" }
+        if ($missPy) { Write-Host "  · Python 3.12 x64：winget install --id Python.Python.3.12 -e --accept-source-agreements --accept-package-agreements" }
+        Write-Host "  装完重开终端，再跑 install\安装.ps1；或直接 install\补齐组件.ps1 $($fillArgs -join ' ')"
+        if ($missPy) { Write-Host "  （Python 装在非默认目录时，先设 OHWHALE_PYTHON 指向其 python.exe）" }
+    }
+    elseif ($NonInteractive) {
         Write-Host "NonInteractive 模式：跳过自动补齐（可稍后运行 install\补齐组件.ps1 $($fillArgs -join ' ')）"
     }
     else { $doFill = (Read-Host "现在自动补齐吗？(Y/N，默认 N)") -match '^[Yy]' }
     if ($doFill) {
         $extra = Join-Path $PSScriptRoot "补齐组件.ps1"
         if (Test-Path $extra) {
+            $found = Find-Py312
+            if ($found -and -not $env:OHWHALE_PYTHON) { $env:OHWHALE_PYTHON = $found }
             & powershell -NoProfile -ExecutionPolicy Bypass -File $extra @fillArgs -Quiet
             $filled = $true
         } else { Write-Warning "未找到 install\补齐组件.ps1" }

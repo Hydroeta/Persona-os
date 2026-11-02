@@ -13,6 +13,41 @@ $ErrorActionPreference = "Continue"
 $Root = Split-Path -Parent $PSScriptRoot
 if ($All) { $Dsh = $true; $DshChannels = $true; $Tts = $true; $Qq = $true; $SnowLuma = $true }
 function Step($t) { Write-Host "`n==== $t ====" -ForegroundColor Cyan }
+function Has-Cmd($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
+# winget 装完 Node/Python 后当前会话的 PATH 还是旧的，这里把注册表里的 PATH 补进来
+function Update-SessionPath {
+    $cur = $env:Path
+    $add = @()
+    foreach ($p in @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User'))) {
+        if (-not $p) { continue }
+        foreach ($seg in $p.Split(';')) {
+            if ($seg -and ($cur.Split(';') -notcontains $seg) -and ($add -notcontains $seg)) { $add += $seg }
+        }
+    }
+    if ($add.Count -gt 0) { $env:Path = $cur + ';' + ($add -join ';') }
+}
+# 找可用的 Python 3.12 x64（与 ohwhale-deploy\install\common.ps1 的候选顺序基本一致），找到返回 exe 路径
+function Find-Py312 {
+    $c = @()
+    if ($env:OHWHALE_PYTHON) { $c += $env:OHWHALE_PYTHON }
+    $c += @(Get-Command python, python3 -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
+    $c += @((Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"), (Join-Path $env:ProgramFiles "Python312\python.exe"), "C:\Python312\python.exe")
+    if (Has-Cmd "py") { try { $c += (& py -3.12 -c "import sys;print(sys.executable)" 2>$null) } catch {} }
+    foreach ($p in ($c | Where-Object { $_ } | Select-Object -Unique)) {
+        if ($p -match '\\WindowsApps\\' -or -not (Test-Path -LiteralPath $p)) { continue }
+        & $p -c "import sys;sys.exit(0 if sys.version_info[:2]==(3,12) and sys.maxsize>2**32 else 1)" 2>$null
+        if ($LASTEXITCODE -eq 0) { return $p }
+    }
+    return $null
+}
+if (-not $DryRun) { Update-SessionPath }
+# 16_qq_client.ps1 会 dot-source ohwhale-deploy\install\common.ps1，它优先用包内 .venv / runtime\Python312，再找系统 Python 3.12 x64
+function Find-ProjectPy {
+    foreach ($p in @((Join-Path $Root "ohwhale-deploy\.venv\Scripts\python.exe"), (Join-Path $Root "ohwhale-deploy\runtime\Python312\python\python.exe"))) {
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+    return (Find-Py312)
+}
 
 # ---------- DSH 核心包（@deepseek-ai/* 在 npm 公开） ----------
 if ($Dsh) {
@@ -27,7 +62,7 @@ if ($Dsh) {
         Write-Host ("[计划] npm install " + ($pkgs -join " ") + "  ->  " + $dshDir)
     }
     elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-        Write-Warning "缺 Node.js，跳过 DSH（先跑一键安装第 1 步）"
+        Write-Warning "缺 Node.js（>=22），跳过 DSH。先执行：winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements，装完重开终端再重跑本脚本"
     }
     else {
         New-Item -ItemType Directory -Force -Path $dshDir | Out-Null
@@ -71,12 +106,17 @@ if ($Tts) {
 if ($Qq) {
     Step "NapCat QQ 协议端（约 40 MB）"
     $p = Join-Path $Root "ohwhale-deploy\install\16_qq_client.ps1"
+    $py = Find-ProjectPy
     if ($DryRun) { Write-Host "[计划] powershell -File ohwhale-deploy\install\16_qq_client.ps1" }
-    elseif (Test-Path $p) {
+    elseif (-not (Test-Path $p)) { Write-Warning "包内无 16_qq_client.ps1，跳过" }
+    elseif (-not $py) {
+        Write-Warning "NapCat 需要 Python 3.12 x64（本机未检出），已跳过。先执行：winget install --id Python.Python.3.12 -e --accept-source-agreements --accept-package-agreements；装完重开终端；若装在非默认目录，设 OHWHALE_PYTHON 指向其 python.exe"
+    }
+    else {
+        if (-not $env:OHWHALE_PYTHON) { $env:OHWHALE_PYTHON = $py }
         & powershell -NoProfile -ExecutionPolicy Bypass -File $p
         if ($LASTEXITCODE -ne 0) { Write-Warning "协议端下载失败，检查网络后重跑 -Qq" }
     }
-    else { Write-Warning "包内无 16_qq_client.ps1，跳过" }
 }
 
 # ---------- SnowLuma：只拉官方原始发行包，不改、不代跑 ----------
@@ -144,7 +184,7 @@ if ($DshChannels) {
         Write-Host "[计划] 从 GitHub Releases 下载 dsh-our-free-model-<ver>.tgz（约 35 MB）并校验 SHA256"
         Write-Host "[计划] dsh plugin --profile web add <tgz>"
     }
-    elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Warning "缺 Node.js，跳过 DSH 渠道" }
+    elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Warning "缺 Node.js（>=22），跳过 DSH 渠道。先执行：winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements，装完重开终端再重跑本脚本" }
     else {
         New-Item -ItemType Directory -Force -Path $dshDir | Out-Null
         if (-not (Test-Path $dshBin)) {
