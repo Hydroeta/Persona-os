@@ -295,6 +295,10 @@ def svc_status():
 def svc_action(sid, action):
     if sid == "dsh":
         if action == "start":
+            _ensure_dsh_runtime()
+            bin_js = DSH / "node_modules" / "@deepseek-ai" / "dsh" / "lib" / "bin.js"
+            if not bin_js.is_file():
+                return False, "DSH 依赖还没装，请到「一键部署」先执行 DSH 依赖"
             spawn(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                    "-File", str(DSH / "start-dsh.ps1")], DSH)
             return True, "DSH 启动中（约 10 秒后刷新看状态）"
@@ -907,6 +911,31 @@ DSH_PKG = {
     "main": "index.js", "license": "ISC", "type": "commonjs",
     "dependencies": {"@deepseek-ai/dsh": "^0.2.1-rc.2"},
 }
+
+
+# start-dsh.ps1 的可移植模板：用 $PSScriptRoot 定位，盘符强制大写是关键。
+DSH_START_PS1 = r'''# DeepSeek Harness 启动脚本
+# 用法：在 dsh 目录右键"使用 PowerShell 运行"，或在此目录执行 .\start-dsh.ps1
+$dshRoot = $PSScriptRoot
+# 盘符必须用大写（C:\），否则 Node 会把 dsh-app-boot 加载成两份模块，导致"暂时无法保存确认状态"
+$dshRoot = $dshRoot.Substring(0,1).ToUpper() + $dshRoot.Substring(1)
+$env:DSH_HOME = Join-Path $dshRoot 'home'
+Set-Location (Join-Path $dshRoot 'workspace')
+node --env-file="$dshRoot/connection.env" "$dshRoot/node_modules/@deepseek-ai/dsh/lib/bin.js" web --host 127.0.0.1 --port 3080 --no-open
+'''
+
+
+def _ensure_dsh_runtime():
+    """启动前补建 start-dsh.ps1 / workspace 目录。
+
+    新仓库已带 start-dsh.ps1，这里兜底：旧副本（更新前下载的）缺它时
+    自动写出，避免点启动后进程静默起不来。
+    """
+    (DSH / "workspace").mkdir(parents=True, exist_ok=True)
+    (DSH / "home").mkdir(parents=True, exist_ok=True)
+    ps1 = DSH / "start-dsh.ps1"
+    if not ps1.is_file():
+        ps1.write_text(DSH_START_PS1, encoding="utf-8-sig")  # BOM 让 PowerShell 5 正确读中文
 
 
 def _dsh_steps():
