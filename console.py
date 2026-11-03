@@ -1,5 +1,7 @@
 # Copyright 2026 persona-os contributors
 # SPDX-License-Identifier: MIT
+# Copyright 2026 persona-os contributors
+# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼生态 · 统一控制台
 双击「控制台.cmd」启动，浏览器打开 http://127.0.0.1:8900
@@ -895,7 +897,31 @@ def _ck_pnpm():
 
 def _ck_dsh():
     ok = (DSH / "node_modules" / ".bin" / "dsh.cmd").is_file()
-    return ok, "依赖已安装" if ok else "node_modules 缺失"
+    if ok:
+        return True, "依赖已安装"
+    if not (DSH / "package.json").is_file():
+        return False, "package.json 缺失（点执行自动补建）"
+    return False, "node_modules 缺失"
+
+
+DSH_PKG = {
+    "name": "dsh", "version": "1.0.0", "private": True,
+    "main": "index.js", "license": "ISC", "type": "commonjs",
+    "dependencies": {"@deepseek-ai/dsh": "^0.2.1-rc.2"},
+}
+
+
+def _dsh_steps():
+    """全新下载的仓库 dsh/ 里没有 package.json，npm install 会直接 ENOENT。
+
+    这里先补建目录与最小依赖清单，再装依赖。
+    """
+    DSH.mkdir(parents=True, exist_ok=True)
+    pj = DSH / "package.json"
+    if not pj.is_file():
+        pj.write_text(json.dumps(DSH_PKG, ensure_ascii=False, indent=2) + "\n", "utf-8")
+    return [(["cmd", "/c", "npm", "install",
+              "--registry=https://registry.npmmirror.com"], DSH, False)]
 
 
 def _ck_surfcore():
@@ -999,9 +1025,8 @@ DEPLOY_TASKS = [
      "steps": lambda: [(["cmd", "/c", "npm", "i", "-g", "pnpm",
                          "--registry=https://registry.npmmirror.com"], None, False)]},
     {"id": "dsh", "name": "DSH 依赖", "check": _ck_dsh,
-     "desc": "在 dsh/ 执行 npm install（@deepseek-ai/dsh）",
-     "steps": lambda: [(["cmd", "/c", "npm", "install",
-                         "--registry=https://registry.npmmirror.com"], DSH, False)]},
+     "desc": "在 dsh/ 执行 npm install（@deepseek-ai/dsh，缺 package.json 自动补建）",
+     "steps": _dsh_steps},
     {"id": "surfcore", "name": "SurfCore 安装+注册", "check": _ck_surfcore,
      "desc": "npm install + setup-dsh.mjs 自动写入 DSH profile",
      "steps": lambda: [(["cmd", "/c", "npm", "install",
@@ -1050,6 +1075,8 @@ def _run_bg(tid, steps):
                         log.append(line.decode("gbk", "replace").rstrip())
                         st["output"] = "\n".join(log[-400:])
                     code = p.wait()
+                if code > 2**31:  # Windows 返回无符号 32 位码，转成可读的负数
+                    code -= 2**32
                 if code != 0:
                     log.append("[退出码 %d，已中止后续步骤]" % code)
                     break
