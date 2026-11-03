@@ -1027,7 +1027,7 @@ DEPLOY_TASKS = [
 
 def _run_bg(tid, steps):
     st = _deploy.setdefault(tid, {})
-    st.update(running=True, output="", code=None)
+    st.update(running=True, output="", code=None, t0=time.time())
 
     def work():
         log, code = [], 0
@@ -1035,9 +1035,12 @@ def _run_bg(tid, steps):
             log.append("$ " + " ".join(str(a) for a in argv))
             try:
                 if visible:
-                    subprocess.Popen(argv, cwd=str(cwd) if cwd else None,
-                                     creationflags=CREATE_NEW_CONSOLE)
-                    log.append("（已在新窗口执行，完成后回到这里看状态）")
+                    p = subprocess.Popen(argv, cwd=str(cwd) if cwd else None,
+                                         creationflags=CREATE_NEW_CONSOLE)
+                    log.append("（已在新窗口执行，等待窗口内安装完成…）")
+                    st["output"] = "\n".join(log[-400:])
+                    code = p.wait()
+                    log.append("[新窗口已结束，退出码 %d]" % code)
                 else:
                     p = subprocess.Popen(argv, cwd=str(cwd) if cwd else None,
                                          stdout=subprocess.PIPE,
@@ -1047,9 +1050,9 @@ def _run_bg(tid, steps):
                         log.append(line.decode("gbk", "replace").rstrip())
                         st["output"] = "\n".join(log[-400:])
                     code = p.wait()
-                    if code != 0:
-                        log.append("[退出码 %d，已中止后续步骤]" % code)
-                        break
+                if code != 0:
+                    log.append("[退出码 %d，已中止后续步骤]" % code)
+                    break
             except Exception as e:
                 log.append("执行失败: %s" % e)
                 code = -1
@@ -1068,9 +1071,13 @@ def deploy_list():
             done, detail = t["check"]()
         except Exception:
             done, detail = False, "检测失败"
+        lines = [x for x in st.get("output", "").splitlines() if x.strip()]
+        running = bool(st.get("running"))
         out.append({"id": t["id"], "name": t["name"], "desc": t["desc"],
                     "done": bool(done), "detail": detail,
-                    "running": bool(st.get("running")), "code": st.get("code")})
+                    "running": running, "code": st.get("code"),
+                    "elapsed": int(time.time() - st["t0"]) if running and st.get("t0") else 0,
+                    "tail": lines[-1] if lines else ""})
     return out
 
 
@@ -1413,6 +1420,8 @@ pre{background:#0d1219;border:1px solid var(--line);border-radius:8px;padding:12
 .hint{background:rgba(42,33,24,.85);border:1px solid #4d3b1e;color:var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:8px}
 .pbar{width:100%;height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:4px}
 .pbar>i{display:block;height:100%;background:var(--acc);border-radius:3px;transition:width .5s}
+.pbar.ind>i{width:40%;animation:indmove 1.2s ease-in-out infinite}
+@keyframes indmove{0%{margin-left:0}50%{margin-left:60%}100%{margin-left:0}}
 #metrics .row>div{background:rgba(13,18,25,.55);border:1px solid var(--line);border-radius:10px;padding:10px 14px;flex:1;min-width:230px}
 tr:hover td{background:rgba(91,157,255,.05)}
 .badge{border:1px solid var(--line)}
@@ -1676,18 +1685,22 @@ async function stopAll(){const d=await api('/api/stop-all','POST',{});toast(d.ms
 async function toggleWd(on){const d=await api('/api/watchdog','POST',{enabled:on});toast(d.msg)}
 
 let deployTimer=null;
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 async function loadDeploy(){const d=await api('/api/deploy');
 document.getElementById('deploy').innerHTML=d.map(t=>`<div class="row" style="margin-bottom:8px">
 <span class="name" style="min-width:170px">${t.name}</span>
 <span class="badge ${t.done?'on':''}">${t.done?'已就绪':(t.running?'执行中…':'待安装')}</span>
-<span class="detail">${t.detail} · ${t.desc}</span>
+<span class="detail">${t.running?('已运行 '+t.elapsed+'s'+(t.tail?' · '+esc(t.tail.slice(0,80)):'')):(esc(t.detail)+' · '+esc(t.desc))}</span>
 <button class="ghost" onclick="showDeploy('${t.id}')">输出</button>
-<button onclick="runDeploy('${t.id}')" ${t.running?'disabled':''}>执行</button></div>`).join('');
-clearTimeout(deployTimer);if(d.some(t=>t.running))deployTimer=setTimeout(loadDeploy,3000)}
-async function runDeploy(id){const d=await api('/api/deploy','POST',{id});toast(d.msg);showDeploy(id);setTimeout(loadDeploy,2000)}
+<button onclick="runDeploy('${t.id}')" ${t.running?'disabled':''}>执行</button></div>
+${t.running?'<div class="pbar ind"><i></i></div>':''}`).join('');
+clearTimeout(deployTimer);if(d.some(t=>t.running))deployTimer=setTimeout(loadDeploy,2000)}
+async function runDeploy(id){const d=await api('/api/deploy','POST',{id});toast(d.msg);showDeploy(id);setTimeout(loadDeploy,1500)}
 async function showDeploy(id){const el=document.getElementById('deployOut');el.style.display='block';
+el.scrollIntoView({behavior:'smooth',block:'nearest'});
 const d=await api('/api/deploy/output?task='+encodeURIComponent(id));el.textContent=d.output||'（还没有输出）';
-if(d.running)setTimeout(()=>showDeploy(id),2000)}
+el.scrollTop=el.scrollHeight;
+if(d.running)setTimeout(()=>showDeploy(id),1500)}
 
 async function loadCron(){const d=await api('/api/cron');const tb=document.querySelector('#cron tbody');
 const row=j=>`<tr><td>${j.label}</td><td>${j.time}</td><td><span class="badge ${j.enabled?'on':''}">${j.enabled?'启用':'停用'}</span></td><td>${j.lastRun}</td><td>${j.runs}</td>
