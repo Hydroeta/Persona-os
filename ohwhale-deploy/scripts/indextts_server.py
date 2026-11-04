@@ -20,10 +20,17 @@
 
 import json
 import os
+import sys
 import tempfile
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# 让仓库根（含 whale/ 包）可导入：与 live_bot.py 的 _REPO_ROOT 惯例一致
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+from whale.tts_sanitize import speakify, split_chunks  # noqa: E402
 
 MODEL_DIR = os.environ.get("INDEXTTS_MODEL_DIR", r"C:\idx_models")
 PORT = int(os.environ.get("INDEXTTS_PORT", "9881"))
@@ -36,6 +43,7 @@ SRC_SR = 22050      # IndexTTS2 输出采样率（infer_v2.py 固定）
 TARGET_SR = 32000   # 与 ohwhale config.json audio.tts_raw_rate 对齐
 
 _lock = threading.Lock()
+_infer_lock = threading.Lock()   # 串行化 tts.infer：IndexTTS2 不支持并发推理
 _tts = None         # IndexTTS2 实例，首次请求时惰性加载（启动快、探测立即可用）
 
 
@@ -60,14 +68,17 @@ def _load_model():
         return _tts
 
 
-def _synthesize(text: str, ref_audio: str) -> bytes:
-    """整句合成 → 22050Hz wav → 重采样 32000Hz 单声道 int16 PCM。"""
+_MAX_CHUNK = 20      # IndexTTS2 超过 ~20 汉字易崩（torch.cat 空列表）
+
+
+def _synth_one(tts, text: str, ref_audio: str) -> bytes:
+    """单块合成 → 22050Hz wav → 重采样 32000Hz 单声道 int16 PCM。"""
     import numpy as np
     import torch
     import torchaudio
-    tts = _load_model()
     out = os.path.join(tempfile.gettempdir(), "indextts_out_%d.wav" % threading.get_ident())
-    tts.infer(spk_audio_prompt=ref_audio, text=text, output_path=out)
+    with _infer_lock:                       # 串行化推理，避免并发 tts.infer 崩溃
+        tts.infer(spk_audio_prompt=ref_audio, text=text, output_path=out)
     wav, sr = torchaudio.load(out)
     try:
         os.remove(out)
@@ -80,6 +91,15 @@ def _synthesize(text: str, ref_audio: str) -> bytes:
     pcm = wav.squeeze(0).clamp(-1.0, 1.0)
     pcm = (pcm * 32767.0).to(torch.int16).numpy()
     return np.ascontiguousarray(pcm).tobytes()
+
+
+def _synthesize(text: str, ref_audio: str) -> bytes:
+    """整句合成（净化 + 切块 → 逐块 PCM 拼接）→ 32000Hz 单声道 int16 PCM。"""
+    tts = _load_model()
+    # 喂给 TTS 前必须净化：英文/符号会崩（0xC0000005）；长文切块防 torch.cat 空列表
+    safe = speakify(text)
+    chunks = split_chunks(safe, _MAX_CHUNK) or [safe or "。"]
+    return b"".join(_synth_one(tts, c, ref_audio) for c in chunks)
 
 
 def _wrap_wav(pcm: bytes) -> bytes:

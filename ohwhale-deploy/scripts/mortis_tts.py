@@ -19,7 +19,14 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+# 让仓库根（含 whale/ 包）可导入：与 live_bot.py 的 _REPO_ROOT 惯例一致
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from whale.tts_sanitize import speakify, split_chunks  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_VOICE = ROOT / "assets" / "voice" / "mortis" / "default.wav"
@@ -30,23 +37,100 @@ INDEXTTS_PY = Path(os.environ.get(
 MODEL_DIR = os.environ.get("INDEXTTS_MODEL_DIR", r"C:\idx_models")
 
 
-def synth(text: str, out_path: str, voice: str = str(DEFAULT_VOICE), device: str = "cpu") -> str:
-    out = Path(out_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
+_MAX_CHUNK = 20          # IndexTTS2 超过 ~20 汉字易崩（torch.cat 空列表）
+_LOCK_FILE = os.path.join(tempfile.gettempdir(), "persona_os_tts.lock")
+
+
+def _acquire_lock(timeout: float = 600.0):
+    """跨进程互斥：IndexTTS2 不支持两个进程同时跑（OOM / GPU 冲突）。
+
+    用 msvcrt.locking 对锁文件第 1 字节加非阻塞独占锁；拿不到就等，超时抛错。
+    进程崩溃时 fd 关闭会自动释放，不会残留死锁。
+    """
+    import time as _time
+    fd = os.open(_LOCK_FILE, os.O_RDWR | os.O_CREAT)
+    deadline = _time.time() + timeout
+    while True:
+        try:
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return fd
+        except OSError:
+            if _time.time() >= deadline:
+                os.close(fd)
+                raise RuntimeError(
+                    "另一个 TTS 合成进程正在运行，请等待结束后再试（IndexTTS2 不支持并发，且必须带 --device cpu --force）")
+            _time.sleep(1.0)
+
+
+def _release_lock(fd) -> None:
+    try:
+        import msvcrt
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    finally:
+        os.close(fd)
+
+
+def _concat_wavs(paths: list[str], out_path: str) -> None:
+    """拼接多个同格式 wav → out_path（取第一个的参数，数据直接串接）。"""
+    import wave
+    with wave.open(paths[0], "rb") as w0:
+        params = w0.getparams()
+        frames = w0.readframes(w0.getnframes())
+    for p in paths[1:]:
+        with wave.open(p, "rb") as w:
+            frames += w.readframes(w.getnframes())
+    with wave.open(out_path, "wb") as w:
+        w.setparams(params)
+        w.writeframes(frames)
+
+
+def _synth_one(text: str, out_path: str, voice: str, device: str) -> None:
+    """单块合成：显式 --device cpu --force（硬性条件，缺了会崩）。"""
     cmd = [
         str(INDEXTTS_PY), "-m", "indextts.cli_v2", "synth",
         "--model-dir", MODEL_DIR,
         "--text", text,
         "--voice", str(voice),
-        "--output", str(out),
+        "--output", out_path,
         "--device", device,
         "--force",
     ]
     env = dict(os.environ)
     env.setdefault("PYTHONUTF8", "1")
     proc = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if not out.exists() or out.stat().st_size == 0:
+    if not Path(out_path).exists() or Path(out_path).stat().st_size == 0:
         raise RuntimeError(f"合成失败: {proc.stderr[-800:]}")
+
+
+def synth(text: str, out_path: str, voice: str = str(DEFAULT_VOICE), device: str = "cpu") -> str:
+    # 喂给 TTS 前必须先净化：英文/符号会让 IndexTTS2 崩（0xC0000005）；长文切块防 torch.cat 空列表
+    safe = speakify(text)
+    chunks = split_chunks(safe, _MAX_CHUNK) or [safe or "。"]
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fd = _acquire_lock()
+    try:
+        if len(chunks) == 1:
+            _synth_one(chunks[0], str(out), voice, device)
+        else:
+            temps: list[str] = []
+            try:
+                for i, c in enumerate(chunks):
+                    tp = os.path.join(tempfile.gettempdir(), "mortis_tts_%d_%d.wav" % (os.getpid(), i))
+                    _synth_one(c, tp, voice, device)
+                    temps.append(tp)
+                _concat_wavs(temps, str(out))
+            finally:
+                for tp in temps:
+                    try:
+                        os.remove(tp)
+                    except OSError:
+                        pass
+    finally:
+        _release_lock(fd)
+    if not out.exists() or out.stat().st_size == 0:
+        raise RuntimeError("合成失败：输出文件为空")
     return str(out)
 
 
