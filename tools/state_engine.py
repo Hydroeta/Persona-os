@@ -1,5 +1,3 @@
-# Copyright 2026 persona-os contributors
-# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · 作息 + 情绪 / 精力引擎
 
@@ -60,6 +58,8 @@ EVENTS = {
     "call_ok": +0.05, "call_fail": -0.05, "praised": +0.10, "scolded": -0.10,
     "error": -0.03, "companion_accepted": +0.03, "companion_ignored": -0.02,
     "screen_praise": +0.04, "screen_complain": -0.06, "task_done": +0.04,
+    # 游戏代理事件（game_context.publish_game_event 触发）：卡死大幅降 mood→破防，打赢回升
+    "game_stuck": -0.12, "game_win": +0.10,
 }
 
 SLEEP_RECOVER_PER_H = 0.10

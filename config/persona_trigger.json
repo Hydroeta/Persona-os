@@ -1,0 +1,17 @@
+{
+  "$comment": "直播人格切换触发器（Task 7）。监听弹幕指令 / 达标礼物 → 联动切换人格卡 + 桌宠形象 + IndexTTS 参考音。改本文件即时生效（按 mtime 热加载），或 POST /api/persona-trigger/reload。",
+  "enabled": true,
+  "cooldown_sec": 15,
+  "rules": [
+    {
+      "name": "弹幕指令切换人格",
+      "match": {"command": "!switch"},
+      "target": {}
+    },
+    {
+      "name": "大额礼物唤醒墨提斯",
+      "match": {"gift_price_min": 100},
+      "target": {"persona_id": "mortis", "avatar_model": "mortis"}
+    }
+  ]
+}

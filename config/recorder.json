@@ -1,0 +1,7 @@
+{
+  "segment_sec": 600,
+  "source": "desktop",
+  "framerate": 15,
+  "preset": "ultrafast",
+  "video_bitrate": "2500k"
+}

@@ -1,0 +1,9 @@
+{
+  "mark_game_stuck": true,
+  "superchat_price_min": 1.0,
+  "gift_price_min": 10.0,
+  "gift_num_min": 0,
+  "before_sec": 5.0,
+  "after_sec": 10.0,
+  "cooldown_sec": 2.0
+}

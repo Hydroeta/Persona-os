@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "confirm_before_write": true,
+  "schedule_weekday": 6,
+  "schedule_hour": 3,
+  "schedule_minute": 0,
+  "note": "confirm_before_write=true 时，每周定时只 dry-run 报告不写 rules（需手动端点触发才写）；手动跑过则本周定时自动跳过。weekday: 0=周一 ... 6=周日。"
+}

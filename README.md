@@ -13,14 +13,15 @@
 
 | 模块 | 能力 |
 |---|---|
-| 控制台 `console.py` | 服务拓扑启动、就绪探针、健康守护、密钥保险库、指标面板、自检（纯标准库） |
+| 控制台 `console.py` | 服务拓扑启动、就绪探针、健康守护、密钥保险库、指标面板、自检、**服务链路拓扑图**（节点随 `/api/status` 实时着色，一眼定位断线环节）、**赛博生命体征**遥测卡片（GPU/CPU/网络，过热语音播报）、**自我对弈**人格自进化（命中 AI 味写规则、写前存快照可回滚）、崩溃**绿色 AI 诊断**卡片（纯标准库） |
 | 多角色 | `config/personas/` 多角色正本 + 激活指针，静默热切换（零 LLM 调用），状态/记忆按角色隔离 |
-| 语音通话 | 本地 ASR + IndexTTS2 零样本音色克隆（默认引擎，可切回遗留 GPT-SoVITS，`services.tts_engine` 一键切换），按情绪/精力切换参考音（`config/persona.json` 的 `voice.states`）|
+| 语音通话 | 本地 ASR + IndexTTS2 零样本音色克隆（默认引擎，可切回遗留 GPT-SoVITS，`services.tts_engine` 一键切换），按情绪/精力切换参考音（`config/persona.json` 的 `voice.states`）；另支持 `local_voice.py` 本地麦克风唤醒（不依赖 QQ：麦→ASR→本地 Ollama→TTS→音箱直连，TTS 挂了降级 SAPI）|
 | 聊天接入 | QQ 双协议端（Tulpa←SnowLuma 注入桌面 QQ；哦鲸鲸←NapCat 便携 QQ）、AstrBot 插件、B 站与抖音弹幕回复 |
 | 桌宠 | 桌面角色（基于 dsh-pet 的定制人设与菜单 + 自建 mortis-pet（源码随仓库）；均**可选**，缺失不影响其他服务） |
-| 记忆与关系 | 目标、时间胶囊、日记回顾、日历提醒、关心心跳、记忆总线 |
+| 记忆与关系 | 目标、时间胶囊、日记回顾、日历提醒、关心心跳、记忆总线、冷门记忆遗忘曲线压缩（本地 Ollama 极度压缩 + 原文软删归档，零 schema） |
+| 作画与游戏 | 统一生图引擎（弹幕点单作画 / 你画我猜 / OBS 图片源联动，带敏感词与计费闸门）；通用游戏代理（看画面 → VLM 决策 → 按键，帧差防卡死）；游戏事件联动让人格实时破防 / 得瑟；游戏代理新增宏观模式（VLM 只挑宏、按键写死、卡死硬脱困，更省 token） |
 | 成本与资源 | LLM token 闸门、场景配额、端云路由（Ollama 本地免费 / DeepSeek 主用 / 千问兜底）、GPU 互斥租约、搜索网关、日报 |
-| 工具集 | `tools/` 40+ 个纯标准库模块；`tests/` 117 项冒烟测试 |
+| 工具集 | `tools/` 40+ 个纯标准库模块（本轮新增 telemetry / self_play / ai_ops / vector_store / knowledge_snapshot，全部懒加载降级、缺依赖不崩）；`tests/` 117 项冒烟测试 |
 
 ## 目录
 

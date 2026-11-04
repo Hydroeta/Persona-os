@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OBS HUD</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: transparent;            /* OBS 浏览器源叠加：透明背景 */
+    font-family: var(--ff);
+  }
+  #stage { position: fixed; inset: 0; pointer-events: none; }
+
+  /* 连接指示（断开时才显眼；OBS 中可裁掉） */
+  #conn {
+    position: fixed; top: 8px; right: 10px; z-index: 9999;
+    font-size: 12px; color: #9fb2c8; background: rgba(15,20,27,.55);
+    padding: 3px 8px; border-radius: 10px; pointer-events: none;
+    transition: color .2s;
+  }
+  #conn.ok { color: #4ade80; }
+  #conn.bad { color: #ef4444; }
+
+  /* 弹幕气泡：左下角向上飘 */
+  .danmu {
+    position: absolute; left: 24px; bottom: 40px;
+    max-width: 46vw; padding: 8px 14px; border-radius: 14px;
+    background: rgba(15,20,27,.72); color: #eaf2fb;
+    font-size: 20px; line-height: 1.35;
+    border-left: 4px solid var(--c);
+    box-shadow: 0 4px 18px rgba(0,0,0,.45);
+    animation: floatUp var(--dur) ease-out forwards;
+    word-break: break-word;
+  }
+  .danmu .nick { color: var(--c); font-weight: 700; margin-right: 6px; }
+  @keyframes floatUp {
+    0%   { opacity: 0; transform: translateY(20px) scale(.9); }
+    10%  { opacity: 1; transform: translateY(0) scale(1); }
+    80%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-60px); }
+  }
+
+  /* SC / 礼物横幅：左侧中部滑入 */
+  .banner {
+    position: absolute; left: 0; top: 38%;
+    min-width: 260px; max-width: 56vw;
+    padding: 14px 22px; padding-left: 18px;
+    background: linear-gradient(90deg, rgba(15,20,27,.86), rgba(15,20,27,.2));
+    color: #fff; font-size: 26px; font-weight: 700;
+    border-left: 6px solid var(--c);
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    animation: slideIn var(--dur) ease-out forwards;
+  }
+  .banner .ic { font-size: 34px; margin-right: 10px; vertical-align: middle; }
+  .banner .amt { color: var(--c); font-size: 30px; }
+  .banner .who { color: #cdd9e8; font-size: 18px; font-weight: 500; display: block; margin-top: 2px; }
+  @keyframes slideIn {
+    0%   { opacity: 0; transform: translateX(-40px); }
+    8%   { opacity: 1; transform: translateX(0); }
+    82%  { opacity: 1; transform: translateX(0); }
+    100% { opacity: 0; transform: translateX(20px); }
+  }
+
+  /* 破防：全屏红闪 + 巨字抖动 */
+  #flash {
+    position: fixed; inset: 0; background: rgba(239,68,68,0);
+    pointer-events: none; z-index: 500;
+  }
+  #flash.on { animation: flashAnim var(--dur) ease-out forwards; }
+  @keyframes flashAnim {
+    0%   { background: rgba(239,68,68,0); }
+    15%  { background: rgba(239,68,68,.42); }
+    100% { background: rgba(239,68,68,0); }
+  }
+  .break {
+    position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%);
+    font-size: 120px; font-weight: 900; color: #ef4444;
+    text-shadow: 0 0 30px rgba(239,68,68,.8), 4px 4px 0 #fff;
+    z-index: 501; animation: shakeText var(--dur) ease-in-out forwards;
+    white-space: nowrap;
+  }
+  @keyframes shakeText {
+    0%   { opacity: 0; transform: translate(-50%,-50%) scale(.3) rotate(-8deg); }
+    12%  { opacity: 1; transform: translate(-50%,-50%) scale(1.2) rotate(4deg); }
+    22%  { transform: translate(-50%,-50%) scale(1) rotate(-3deg); }
+    32%  { transform: translate(-50%,-50%) rotate(3deg); }
+    42%  { transform: translate(-50%,-50%) rotate(-2deg); }
+    70%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%,-50%) scale(1) rotate(0); }
+  }
+
+  /* 飘字（关键词触发）：居中弹出 */
+  .floater {
+    position: absolute; left: 50%; top: 38%; transform: translate(-50%,-50%);
+    font-weight: 900; color: var(--c); z-index: 600;
+    text-shadow: 0 0 24px rgba(255,255,255,.6), 3px 3px 0 rgba(0,0,0,.5);
+    animation: popFade var(--dur) ease-out forwards;
+  }
+  @keyframes popFade {
+    0%   { opacity: 0; transform: translate(-50%,-50%) scale(.2); }
+    20%  { opacity: 1; transform: translate(-50%,-50%) scale(1.25); }
+    35%  { transform: translate(-50%,-50%) scale(1); }
+    75%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%,-50%) scale(1.05); }
+  }
+</style>
+</head>
+<body>
+  <div id="conn">HUD 连接中…</div>
+  <div id="stage"></div>
+  <div id="flash"></div>
+<script>
+(() => {
+  const TOKEN = new URLSearchParams(location.search).get('token') || '';
+  const $stage = document.getElementById('stage');
+  const $conn = document.getElementById('conn');
+  const $flash = document.getElementById('flash');
+  let CFG = null;
+  let danmuCount = 0;
+  const DANMU_STACK = [];
+
+  async function loadConfig() {
+    try {
+      const r = await fetch('/api/obs-hud-config?token=' + encodeURIComponent(TOKEN));
+      CFG = await r.json();
+      document.documentElement.style.setProperty('--ff',
+        (CFG.stage && CFG.stage.font_family) || "'Microsoft YaHei', sans-serif");
+    } catch (e) { CFG = { effects: {}, floaters: [] }; }
+  }
+
+  function eff(type) {
+    return (CFG && CFG.effects && CFG.effects[type]) || {};
+  }
+  function mkEl(cls, dur, color) {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.style.setProperty('--dur', (dur || 3000) + 'ms');
+    el.style.setProperty('--c', color || '#7dd3fc');
+    return el;
+  }
+  function scheduleRemove(el, dur) {
+    setTimeout(() => { el.remove(); }, dur + 200);
+  }
+
+  function showDanmu(ev) {
+    const e = eff('danmu'); if (e && e.enabled === false) return;
+    const max = (e && e.max_on_screen) || 6;
+    if (DANMU_STACK.length >= max) { const old = DANMU_STACK.shift(); old.remove(); }
+    const dur = (e && e.duration_ms) || 3200;
+    const el = mkEl('danmu', dur, (e && e.color) || '#7dd3fc');
+    el.innerHTML = `<span class="nick">${esc(ev.nick_name||'匿名')}</span>${esc(ev.content||'')}`;
+    // 错开纵向位置，避免完全重叠
+    const idx = DANMU_STACK.length;
+    el.style.bottom = (40 + idx * 64) + 'px';
+    $stage.appendChild(el);
+    DANMU_STACK.push(el);
+    scheduleRemove(el, dur);
+    setTimeout(() => { const i = DANMU_STACK.indexOf(el); if (i >= 0) DANMU_STACK.splice(i,1); }, dur + 100);
+    floaters(ev);
+  }
+  function showBanner(kind, ev, line, amt) {
+    const e = eff(kind); if (e && e.enabled === false) return;
+    const dur = (e && e.duration_ms) || 4000;
+    const el = mkEl('banner', dur, (e && e.color) || '#fbbf24');
+    const ic = (e && e.icon) || '';
+    let html = `<span class="ic">${ic}</span>`;
+    if (amt != null) html += `<span class="amt">${esc(amt)}</span> `;
+    html += esc(line);
+    html += `<span class="who">${esc(ev.nick_name||'匿名')}${ev.platform?' · '+esc(ev.platform):''}</span>`;
+    el.innerHTML = html;
+    $stage.appendChild(el);
+    scheduleRemove(el, dur);
+  }
+  function showSuperchat(ev) {
+    const e = eff('superchat');
+    const min = (e && typeof e.min_price === 'number') ? e.min_price : 0;
+    if ((ev.price || 0) < min) { showDanmu(ev); return; }
+    showBanner('superchat', ev, ev.content || 'SC', '¥' + (ev.price||0));
+  }
+  function showGift(ev) {
+    const line = `${ev.gift_name||'礼物'} × ${ev.gift_num||1}` + (ev.price?`（¥${ev.price}）`:'');
+    showBanner('gift', ev, line);
+  }
+  function showBreak(ev) {
+    const e = eff('game_stuck'); if (e && e.enabled === false) return;
+    const dur = (e && e.duration_ms) || 6500;
+    $flash.style.setProperty('--dur', dur + 'ms');
+    $flash.classList.remove('on'); void $flash.offsetWidth; $flash.classList.add('on');
+    const el = mkEl('break', dur, (e && e.color) || '#ef4444');
+    el.style.fontSize = '120px';
+    el.textContent = (e && e.text) || '破防！';
+    $stage.appendChild(el);
+    scheduleRemove(el, dur);
+  }
+  function floaters(ev) {
+    if (!ev.content || !CFG || !Array.isArray(CFG.floaters)) return;
+    for (const f of CFG.floaters) {
+      if (f.match && ev.content.includes(f.match)) {
+        const el = mkEl('floater', f.duration_ms || 2200, f.color || '#fbbf24');
+        el.style.fontSize = (f.size_px || 140) + 'px';
+        el.textContent = f.text || '?';
+        $stage.appendChild(el);
+        scheduleRemove(el, f.duration_ms || 2200);
+      }
+    }
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  function route(ev) {
+    const t = ev && ev.type;
+    if (t === 'superchat') showSuperchat(ev);
+    else if (t === 'gift') showGift(ev);
+    else if (t === 'game_stuck') showBreak(ev);
+    else if (t === 'danmu') showDanmu(ev);
+    else { /* 未知类型忽略 */ }
+  }
+
+  let ws = null, retry = 0;
+  async function connect() {
+    let port = 8901;
+    try {
+      const r = await fetch('/api/event-bus?token=' + encodeURIComponent(TOKEN));
+      const s = await r.json();
+      if (s.ws_port) port = s.ws_port;
+    } catch (e) {}
+    const url = `ws://127.0.0.1:${port}/?token=${encodeURIComponent(TOKEN)}`;
+    try {
+      ws = new WebSocket(url);
+      ws.onopen = () => { $conn.textContent = 'HUD 已连接'; $conn.className = 'ok'; retry = 0; };
+      ws.onmessage = (m) => { try { route(JSON.parse(m.data)); } catch (e) {} };
+      ws.onclose = () => { $conn.textContent = 'HUD 断开，重连中…'; $conn.className = 'bad'; scheduleReconnect(); };
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    } catch (e) { scheduleReconnect(); }
+  }
+  function scheduleReconnect() {
+    retry = Math.min(retry + 1, 8);
+    setTimeout(connect, 1000 * retry);
+  }
+
+  loadConfig().then(connect);
+  // 每 30s 刷新配置（改 config/obs_hud.json 后无需重启 console，刷新页面即生效；也可热刷）
+  setInterval(loadConfig, 30000);
+})();
+</script>
+</body>
+</html>

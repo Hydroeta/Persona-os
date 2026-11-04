@@ -1,0 +1,23 @@
+{
+  "wake_keywords": ["小鲸", "哦鲸", "小鲸鱼"],
+  "wake_then_listen": true,
+  "wake_ack": "在呢",
+  "listen_timeout_s": 8,
+  "input_device": null,
+  "output_device": null,
+  "sample_rate_in": 16000,
+  "sample_rate_out": 48000,
+  "tts_raw_rate": 32000,
+  "frame_s": 0.05,
+  "silence_end_s": 0.9,
+  "min_speech_s": 0.25,
+  "max_utter_s": 18.0,
+  "preroll_s": 0.45,
+  "threshold_floor": 0.009,
+  "scene": "local_voice",
+  "max_tokens": 160,
+  "temperature": 0.7,
+  "llm_system_prompt": "你是小鲸鱼，用户的本地语音助手。用口语化中文简短回答，1~2 句，不要输出 Markdown 或多余符号。",
+  "kws_model_dir": "",
+  "lease_ttl": 1800
+}

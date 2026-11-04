@@ -80,6 +80,30 @@ for _m in ("goals", "time_capsule", "memory_review", "calendar_watch", "care",
         globals()[_m] = __import__(_m)
     except Exception:
         globals()[_m] = None
+try:
+    import event_bus
+except Exception:
+    event_bus = None
+try:
+    import recorder
+except Exception:
+    recorder = None
+try:
+    import highlights
+except Exception:
+    highlights = None
+try:
+    import clipper
+except Exception:
+    clipper = None
+try:
+    import persona_trigger
+except Exception:
+    persona_trigger = None
+try:
+    import video_factory
+except Exception:
+    video_factory = None
 OHWHALE = ROOT / "ohwhale-deploy"
 DSH = ROOT / "dsh"
 TULPA = ROOT / "Tulpa" / "Tulpa"
@@ -260,6 +284,7 @@ def svc_status():
     up = sum([tts, ab, ll])
     svcs.append({"id": "ohwhale", "name": "哦鲸鲸全家桶",
                  "running": up == 3, "partial": 0 < up < 3,
+                 "tts_ok": bool(tts), "astrbot_ok": bool(ab), "napcat_ok": bool(ll),
                  "detail": "TTS:%d(%s) %s · AstrBot:6185 %s · QQ(NapCat) %s" % (
                      _tp, _tn, "✓" if tts else "✗", "✓" if ab else "✗", "✓" if ll else "✗"),
                  "panel": "http://127.0.0.1:6185"})
@@ -452,6 +477,70 @@ def persona_pet_map(char_id):
     except Exception:
         return ""
 
+
+def _do_avatar_switch(persona_id, model):
+    """形象总控：人格卡 + 桌宠模型 一键联动（各自按需，变了才动）。
+
+    供 /api/avatar-switch 路由与 persona_trigger（直播弹幕/礼物触发）共用，
+    避免两处重复维护桌宠切换逻辑。返回 {"ok": bool, "msg": str}。
+    """
+    persona_id = str(persona_id or "")
+    model = str(model or "")
+    msgs, ok = [], True
+    if persona_id:
+        if not persona_switch:
+            ok = False
+            msgs.append("角色切换模块不可用")
+        else:
+            try:
+                r = persona_switch.switch_character(persona_id)
+                msgs.append(("人格卡已切到 %s" if r.get("changed")
+                             else "人格卡已是 %s") % persona_id)
+            except Exception as e:
+                ok = False
+                msgs.append("人格卡切换失败：%s" % e)
+    if model:
+        if model not in [m["id"] for m in pet_models()]:
+            ok = False
+            msgs.append("桌宠模型 %s 不存在" % model)
+        elif model == "mortis":
+            # 墨提斯走独立新 exe：先停老桌宠，再拉起 mortis-pet
+            try:
+                if find_proc("dsh-pet-standalone-webm-chat.exe"):
+                    kill_pid(find_proc("dsh-pet-standalone-webm-chat.exe"))
+                    time.sleep(1.2)
+                if not MORTIS_PET_EXE.is_file():
+                    ok = False
+                    msgs.append("找不到 mortis-pet.exe")
+                elif find_proc("mortis-pet.exe"):
+                    msgs.append("桌宠已是墨提斯（独立版运行中）")
+                else:
+                    spawn([str(MORTIS_PET_EXE)], MORTIS_PET_EXE.parent)
+                    msgs.append("桌宠已切到墨提斯（独立版已启动）")
+            except Exception as e:
+                ok = False
+                msgs.append("桌宠切换失败：%s" % e)
+        else:
+            # 其余模型仍用老 dsh-pet（如鲸鲸 shenshen）
+            try:
+                if find_proc("mortis-pet.exe"):
+                    kill_pid(find_proc("mortis-pet.exe"))
+                    time.sleep(1.2)
+                changed = pet_set_model(model)
+                if not PET_EXE.is_file():
+                    ok = False
+                    msgs.append("桌宠未安装（可选组件）")
+                elif find_proc("dsh-pet-standalone-webm-chat.exe"):
+                    msgs.append("桌宠模型已切到 %s（老桌宠运行中）" % model)
+                else:
+                    pet_clean_stale_slots()
+                    spawn([str(PET_EXE)], PET)
+                    msgs.append("桌宠模型已切到 %s 并启动" % model)
+            except Exception as e:
+                ok = False
+                msgs.append("桌宠模型切换失败：%s" % e)
+    return {"ok": ok, "msg": "；".join(msgs) or "没有要切换的内容"}
+
 # ---------- 就绪探针 / 依赖拓扑 / 健康守护（P0-2） ----------
 
 HEALTH_DIR = ROOT / "logs"
@@ -539,8 +628,13 @@ def health_log(event, **fields):
                                ensure_ascii=False) + "\n")
     except Exception:
         pass
-    HEALTH["events"].insert(0, {"time": time.strftime("%H:%M:%S"),
-                                "event": event, "msg": msg})
+    rec = {"time": time.strftime("%H:%M:%S"), "event": event, "msg": msg}
+    # ai_diagnosis 等事件需要把 summary/suggestion 带给前端绿色卡片；
+    # 普通事件只用 msg，这里零侵入追加可选字段。
+    for k in ("service", "summary", "suggestion", "confidence"):
+        if k in fields:
+            rec[k] = fields[k]
+    HEALTH["events"].insert(0, rec)
     del HEALTH["events"][50:]
     # 无人值守告警外发：崩溃与重启触顶不能只亮红灯
     if event in ("crash", "restart_cap") and alert:
@@ -555,6 +649,62 @@ def _restart_count(sid, window=600):
     now = time.time()
     RESTARTS[sid] = [t for t in RESTARTS.get(sid, []) if now - t < window]
     return len(RESTARTS[sid])
+
+
+def _latest_log_for(sid):
+    """找某受管服务最新修改的 .log 文件路径；找不到返回 None（降级用）。"""
+    if sid == "dsh":
+        dirs = [DSH / "data" / "logs", DSH / "home" / "logs"]
+    elif sid == "ohwhale":
+        dirs = [OHWHALE / "runtime" / "logs", OHWHALE / "data" / "logs", OHWHALE / "logs"]
+    elif sid == "tulpa":
+        dirs = [TULPA / "logs", TULPA / "data" / "logs"]
+    else:
+        dirs = [HEALTH_DIR]
+    best, best_t = None, 0.0
+    for d in dirs:
+        try:
+            if not d.is_dir():
+                continue
+            for f in d.glob("*.log"):
+                try:
+                    t = f.stat().st_mtime
+                    if t > best_t:
+                        best_t, best = t, str(f)
+                except OSError:
+                    pass
+        except Exception:
+            pass
+    return best
+
+
+def _diagnose_async(sid):
+    """崩溃后异步调 ai_ops 诊断，结果以 ai_diagnosis 事件写入 HEALTH（不阻塞重启）。
+    ai_ops / Ollama 不可用时写一条降级事件，明确标注"AI 诊断不可用"，绝不抛。"""
+    def _run():
+        try:
+            import ai_ops  # 懒加载：缺了只是降级
+            log_path = _latest_log_for(sid)
+            if not log_path:
+                health_log("ai_diagnosis", service=sid,
+                           summary="未找到「%s」的日志文件" % sid,
+                           suggestion="请人工检查该服务的日志目录，或确认服务是否产生日志。",
+                           confidence=0.0)
+                return
+            r = ai_ops.diagnose_crash(sid, log_path, lines=50)
+            health_log("ai_diagnosis", service=sid,
+                       summary=r.get("summary") or "",
+                       suggestion=r.get("suggestion") or "",
+                       confidence=r.get("confidence", 0.0))
+        except Exception as e:  # noqa: BLE001  守护线程兜底，绝不让诊断拖垮健康守护
+            try:
+                health_log("ai_diagnosis", service=sid,
+                           summary="AI 诊断异常",
+                           suggestion="诊断过程出错（%s），请人工查看日志。" % type(e).__name__,
+                           confidence=0.0)
+            except Exception:
+                pass
+    threading.Thread(target=_run, daemon=True).start()
 
 
 STARTALL = {"running": False, "log": []}
@@ -639,6 +789,7 @@ def _health_loop():
                 delay = min(80, 10 * (2 ** min(n, 3)))
                 health_log("crash", service=sid,
                            msg="进程消失，%.0f 秒后自动重启（第 %d 次）" % (delay, n + 1))
+                _diagnose_async(sid)  # 异步 AI 诊断：不阻塞重启，结果写 ai_diagnosis 绿色卡片
                 time.sleep(delay)
                 if svc_ready(sid) or sid in MANUAL_STOP:
                     continue
@@ -1384,6 +1535,13 @@ def self_check():
         items.append({"name": "磁盘剩余", "ok": free >= 5, "detail": "%d GB" % free})
     except Exception:
         pass
+    # 硬件遥测（赛博生命体征：GPU 温度 / CPU 负载 / 网络延迟）
+    try:
+        import telemetry
+        items += telemetry.doctor_check()
+    except Exception as e:
+        items.append({"name": "硬件遥测（telemetry）", "ok": False,
+                      "detail": "模块不可用: %s" % type(e).__name__})
     return items
 
 
@@ -1526,6 +1684,9 @@ body{display:block}
 <label style="margin-left:auto;font-size:12px;color:var(--dim)"><input type="checkbox" id="wd" onchange="toggleWd(this.checked)"> 健康守护（崩溃自动重启 + 告警）</label></div>
 <div id="sal"></div>
 <div id="svcs"></div>
+<h2 style="margin-top:16px">服务链路拓扑</h2>
+<div class="card"><svg id="topo" viewBox="0 0 760 360" width="100%" style="display:block"></svg>
+<div style="font-size:11px;color:var(--dim);margin-top:4px">绿=就绪 · 黄=运行中/部分 · 红=未运行 · 灰=外部或未安装；连线随节点状态变色，随服务每 10 秒刷新</div></div>
 
 </div>
 <div class="span2">
@@ -1543,6 +1704,25 @@ body{display:block}
 </div>
 <div class="span2">
 <h2>指标</h2><div class="card" id="metrics" style="font-size:13px">加载中…</div>
+</div>
+<div class="span2">
+<h2>🌡️ 赛博生命体征</h2>
+<div class="card" id="telemetry" style="font-size:13px">加载中…</div>
+<div style="font-size:11px;color:var(--dim);margin-top:4px">GPU 过热会主动说话提醒；网络飙延迟会把游戏破防理由改写成「破网 460」</div>
+</div>
+<div class="span2">
+<h2>🎙️ 本地麦克风唤醒</h2>
+<div class="card" id="localVoice" style="font-size:13px">加载中…</div>
+<div style="font-size:11px;color:var(--dim);margin-top:4px">音频闭环默认关闭；打开后唤醒词直连本机麦/音箱（需控制台运行；依赖见一键自检）</div>
+</div>
+<div class="span2">
+<h2>🧠 人格自训练</h2>
+<div class="card" id="selfPlay" style="font-size:13px">点「跑一轮」让 Ollama 自我对弈，命中 AI 味/客服腔则追加负向规则到人格卡（写前存快照，可回滚）。</div>
+<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+<button class="ghost" style="font-size:12px" onclick="runSelfPlay(false)">跑一轮（写规则）</button>
+<button class="ghost" style="font-size:12px" onclick="runSelfPlay(true)">预览（不写）</button>
+<button class="ghost" style="font-size:12px;color:var(--warn)" onclick="rollbackSelfPlay()">回滚最近快照</button>
+</div>
 </div>
 <div>
 <h2>💳 API 资金看板</h2><div class="card" id="apiBalance" style="font-size:13px">加载中…</div>
@@ -1709,12 +1889,51 @@ body{display:block}
 <div class="toast" id="toast"></div>
 <script>
 const TOKEN=new URLSearchParams(location.search).get('token')||'';
+const _vfJobs={};
 async function api(p, m, body){const r=await fetch(p,{method:m||'GET',headers:{'Content-Type':'application/json','X-Console-Token':TOKEN},body:body?JSON.stringify(body):undefined});return r.json()}
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 
+const TOPO_NODES=[
+ {id:'qq_user',label:'QQ 用户',x:40,y:70,ext:true},
+ {id:'napcat',label:'NapCat',x:180,y:70,src:'ohwhale',flag:'napcat_ok'},
+ {id:'astrbot',label:'AstrBot',x:340,y:70,src:'ohwhale',flag:'astrbot_ok'},
+ {id:'ohwhale',label:'哦鲸鲸',x:510,y:70,src:'ohwhale'},
+ {id:'speaker',label:'扬声器',x:680,y:70,ext:true},
+ {id:'dsh',label:'DSH',x:40,y:210,src:'dsh'},
+ {id:'ollama',label:'本地 Ollama',x:250,y:210,ext:true},
+ {id:'cloud',label:'云端 LLM API',x:460,y:210,ext:true},
+ {id:'tulpa',label:'Tulpa',x:40,y:330,src:'tulpa'},
+ {id:'snowluma',label:'SnowLuma',x:230,y:330,src:'snowluma'},
+ {id:'pet',label:'桌宠',x:430,y:330,src:'pet'},
+];
+const TOPO_EDGES=[['qq_user','napcat'],['napcat','astrbot'],['astrbot','ohwhale'],['ohwhale','speaker'],['dsh','ollama'],['dsh','cloud'],['ollama','ohwhale'],['cloud','ohwhale'],['tulpa','astrbot'],['snowluma','ohwhale'],['pet','ohwhale']];
+function topoState(svcs,n){
+  if(n.ext) return {ok:true,color:'var(--acc)',label:n.label};
+  const s=svcs.find(x=>x.id===n.src);
+  if(!s) return {ok:false,color:'#888',label:n.label};
+  if(s.optional&&s.installed===false) return {ok:false,color:'#6b7280',label:n.label};
+  let c='var(--bad)'; if(s.running)c='var(--warn)'; if(s.ready)c='var(--ok)';
+  if(n.flag){ c = s[n.flag] ? 'var(--ok)' : 'var(--bad)'; }
+  return {ok:c==='var(--ok)',color:c,label:n.label+(s.restarts?(' \u21ba'+s.restarts):'')};
+}
+function renderTopo(svcs){
+  const svg=document.getElementById('topo'); if(!svg) return;
+  const st={}; TOPO_NODES.forEach(n=>st[n.id]=topoState(svcs,n));
+  let h='';
+  TOPO_EDGES.forEach(([a,b])=>{
+    const na=TOPO_NODES.find(n=>n.id===a), nb=TOPO_NODES.find(n=>n.id===b);
+    const ok=st[a].ok&&st[b].ok;
+    h+=`<line x1="${na.x}" y1="${na.y}" x2="${nb.x}" y2="${nb.y}" stroke="${ok?'var(--ok)':'var(--bad)'}" stroke-width="${ok?2:1.5}" ${ok?'':'stroke-dasharray="4 3"'} opacity="0.6"/>`;
+  });
+  TOPO_NODES.forEach(n=>{
+    const s=st[n.id];
+    h+=`<g><circle cx="${n.x}" cy="${n.y}" r="17" fill="${s.color}" opacity="0.22"/><circle cx="${n.x}" cy="${n.y}" r="11" fill="${s.color}"/><text x="${n.x}" y="${n.y+31}" text-anchor="middle" font-size="11" fill="var(--fg)">${s.label}</text></g>`;
+  });
+  svg.innerHTML=h;
+}
 async function loadSvcs(){const d=await api('/api/status');
 document.getElementById('hints').innerHTML=(d.hints||[]).map(h=>`<div class="hint">⚠ ${h}</div>`).join('')
-+((d.health&&d.health.events)||[]).filter(e=>e.event!=='restart').slice(0,5).map(e=>`<div class="hint">🛠 ${e.time} [${e.event}] ${e.msg}</div>`).join('');
++((d.health&&d.health.events)||[]).filter(e=>e.event!=='restart').slice(0,5).map(e=>e.event==='ai_diagnosis'?`<div class="hint" style="background:rgba(62,207,142,.12);border:1px solid var(--ok);border-left:3px solid var(--ok);color:var(--fg)">🧠 ${e.time} [AI诊断·${e.service||''}] <b>${e.summary||''}</b><br><span style="color:var(--dim)">${e.suggestion||''}</span></div>`:`<div class="hint">🛠 ${e.time} [${e.event}] ${e.msg}</div>`).join('');
 document.getElementById('wd').checked=!!(d.health&&d.health.enabled);
 const sa=d.startall||{};document.getElementById('sal').innerHTML=(sa.log&&sa.log.length)?`<div class="card"><pre>${sa.log.join('\n')}</pre></div>`:'';
 document.getElementById('svcs').innerHTML=d.services.map(s=>`<div class="card row ${s.running?'on':(s.partial?'part':'')}"><span class="dot"></span><span class="name">${s.name}</span>
@@ -1722,7 +1941,7 @@ document.getElementById('svcs').innerHTML=d.services.map(s=>`<div class="card ro
 ${s.restarts?`<span class="badge" style="color:var(--warn)">重启×${s.restarts}</span>`:''}
 <span class="detail">${s.detail}</span>
 ${s.panel?`<a href="${s.panel}" target="_blank">面板</a>`:''}
-<button onclick="act('${s.id}','${s.running?'stop':'start'}')">${s.running?'停止':'启动'}</button></div>`).join('')}
+<button onclick="act('${s.id}','${s.running?'stop':'start'}')">${s.running?'停止':'启动'}</button></div>`).join('');renderTopo(d.services)}
 async function act(id,a){const d=await api('/api/service','POST',{id,action:a});toast(d.msg);setTimeout(loadSvcs,2500)}
 
 /* --- 形象总控 --- */
@@ -1799,6 +2018,29 @@ document.getElementById('careReport').innerHTML=`📄 日报 ${rp.date||'今天�
 document.getElementById('careScreen').innerHTML=`👁 读屏陪伴 <b>${sc.enabled?'开启':'关闭（默认）'}</b>｜OCR ${sc.ocr_available?'可用':'不可用'}<br><button onclick="toggleScreen(${sc.enabled?'false':'true'})">${sc.enabled?'关闭':'开启'}</button>
 <span style="color:var(--dim);font-size:12px">开启后屏幕内容只在本机内存处理，Ctrl+Alt+P 暂停</span>`}
 
+async function loadTelemetry(){const el=document.getElementById('telemetry');if(!el)return;
+try{const d=await api('/api/telemetry');if(!d||!d.ok){el.innerHTML='<span style="color:var(--dim)">遥测未就绪（见一键自检）</span>';return}
+const s=d.state||{},g=s.gpu||{},c=s.cpu||{},n=s.net||{},t=s.triggers||{},th=d.thresholds||{};
+const hi=(v,lim)=>v!=null&&lim!=null&&v>=lim?'color:var(--bad);font-weight:700':'';
+let h='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px">';
+h+=`<div>🌡️ GPU 温度 <span style="${hi(g.temp,th.gpu_temp)}">${g.temp!=null?g.temp+'℃':'—'}</span> <span style="color:var(--dim);font-size:11px">/ ${th.gpu_temp}℃</span></div>`;
+h+=`<div>🎮 GPU 显存 <span>${g.mem_used!=null&&g.mem_total!=null?g.mem_used+'/'+g.mem_total+' MiB':'—'}</span></div>`;
+h+=`<div>⚙️ CPU 负载 <span style="${hi(c.percent,th.cpu_percent)}">${c.percent!=null?c.percent+'%':'—'}</span> <span style="color:var(--dim);font-size:11px">/ ${th.cpu_percent}%</span></div>`;
+h+=`<div>📶 网络延迟 <span style="${hi(n.latency_ms,th.ping)}">${n.latency_ms!=null?n.latency_ms+'ms':'—'}</span> <span style="color:var(--dim);font-size:11px">/ ${th.ping}ms</span></div>`;
+h+='</div>';
+const trig=[];
+if(t.gpu_overheat)trig.push('<span style="color:var(--bad)">🔥 GPU 过热提醒中</span>');
+if(t.high_latency)trig.push('<span style="color:var(--warn)">📶 破网 460（破防理由改写中）</span>');
+if(t.cpu_high)trig.push('<span style="color:var(--warn)">⚙️ CPU 满载</span>');
+if(trig.length)h+='<div style="margin-top:6px">'+trig.join(' ｜ ')+'</div>';
+if(!g.available&&!c.available)h+='<div style="color:var(--dim);font-size:11px;margin-top:4px">nvidia-smi / psutil 不可用</div>';
+el.innerHTML=h}catch(e){el.innerHTML='<span style="color:var(--bad)">遥测加载失败</span>'}}
+
+async function runSelfPlay(dry){const el=document.getElementById('selfPlay');if(!el)return;el.innerHTML='<span style="color:var(--dim)">对弈中…（约 5~15 秒，Ollama 不可用会自动跳过）</span>';try{const d=await api('/api/self_play/run','POST',{dry_run:dry});let h=`<div>${d.msg||''}</div>`;if(d.generated!=null)h+=`<div style="color:var(--dim);font-size:11px;margin-top:4px">生成 ${d.generated} 句，命中 ${(d.hits||[]).length} 处</div>`;if(d.added_rules&&d.added_rules.length)h+='<div style="margin-top:4px;color:var(--ok)">新增规则：'+d.added_rules.map(r=>'<br>· '+r).join('')+'</div>';if(d.snapshot)h+='<div style="color:var(--dim);font-size:11px;margin-top:4px">快照已存（可点回滚撤销）</div>';el.innerHTML=h}catch(e){el.innerHTML='<span style="color:var(--bad)">失败：'+e+'</span>'}}
+async function rollbackSelfPlay(){try{const d=await api('/api/self_play/rollback','POST',{});toast(d.ok?'已回滚到最近快照':'回滚失败：'+(d.msg||''))}catch(e){toast('回滚失败')}}
+async function loadLocalVoice(){const el=document.getElementById('localVoice');if(!el)return;try{const d=await api('/api/local_voice');const en=!!(d&&d.enabled);const run=!!(d&&d.running);let h=`<div>开关：<b style="color:${en?'var(--ok)':'var(--dim)'}">${en?'开启':'关闭（默认）'}</b> ｜ 进程：${run?'<span style="color:var(--ok)">运行中</span>':'<span style="color:var(--dim)">未运行</span>'}</div>`;h+=`<div style="margin-top:6px"><button class="ghost" style="font-size:12px" onclick="toggleLocalVoice(${en?'false':'true'})">${en?'关闭':'开启'}</button></div>`;if(en&&!run)h+='<div style="color:var(--warn);font-size:11px;margin-top:4px">已开但进程未运行（可能缺 sherpa/sounddevice，见一键自检）或刚启动</div>';el.innerHTML=h}catch(e){el.innerHTML='<span style="color:var(--bad)">加载失败</span>'}}
+async function toggleLocalVoice(en){try{const d=await api('/api/local_voice','POST',{enabled:en});toast(d.ok?(en?'已开启':'已关闭'):('失败：'+(d.msg||'')));loadLocalVoice()}catch(e){toast('切换失败')}}
+
 async function makeReport(){const d=await api('/api/report','POST',{});toast(d.ok?'日报已生成':'生成失败：'+(d.msg||''));loadMetrics()}
 async function refreshBalance(){const d=await api('/api/balance/refresh','POST',{});toast(d.ok?'资金看板已直查刷新':'刷新失败：'+(d.msg||''));loadMetrics()}
 function renderBalance(bal){
@@ -1861,7 +2103,8 @@ if(!t||!b)return toast('标题和正文都要填');
 const d=await api('/api/content','POST',{action:'create',source:'manual',title:t,body:b});toast(d.ok?'已登记':'失败：'+(d.msg||''));loadContent()}
 async function contentAct(id,action,platform){const d=await api('/api/content','POST',{action,id,platform});toast(d.ok?'完成':'失败：'+(d.msg||''));loadContent()}
 async function loadContent(){const d=await api('/api/content');
-document.getElementById('clist').innerHTML=(d.items||[]).map(it=>`<div style="margin-bottom:8px">· <b>${it.title}</b> <span class="badge">${it.status}</span><br>${['bilibili','douyin','qq'].map(p=>`<span style="margin-right:8px">${p}: ${it.platforms&&it.platforms[p]?(it.approved&&it.approved.includes(p)?'✅已审核':`<button class="ghost" onclick="contentAct('${it.id}','approve','${p}')">审核</button>`):`<button class="ghost" onclick="contentAct('${it.id}','rewrite','${p}')">改写</button>`}</span>`).join('')}</div>`).join('')||'还没有素材'}
+document.getElementById('clist').innerHTML=(d.items||[]).map(it=>{const j=_vfJobs[it.id]||{};const ap=(it.approved||[]).length>0;let btn='';if(ap){if(j.status==='running')btn=`<button disabled class="ghost" style="background:#f5a623;color:#fff;border:0">生成中 ${j.progress||0}%</button>`;else if(j.status==='success')btn=`<span class="badge" style="background:#3ecf8e;color:#0f141b">✅ 已生成</span>`;else if(j.status==='failed')btn=`<button class="ghost" onclick="makeVideo('${it.id}')" style="background:#c0392b;color:#fff;border:0">重试</button>`;else btn=`<button class="ghost" onclick="makeVideo('${it.id}')" style="background:#c0392b;color:#fff;border:0;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:12px">🎬 生成视频</button>`;}return `<div id="citem-${it.id}" style="margin-bottom:8px">· <b>${it.title}</b> <span class="badge">${it.status}</span><br>${['bilibili','douyin','qq'].map(p=>`<span style="margin-right:8px">${p}: ${it.platforms&&it.platforms[p]?(it.approved&&it.approved.includes(p)?'✅已审核':`<button class="ghost" onclick="contentAct('${it.id}','approve','${p}')">审核</button>`):`<button class="ghost" onclick="contentAct('${it.id}','rewrite','${p}')">改写</button>`}</span>`).join('')} ${btn}<div id="vf-${it.id}">${j.preview||''}</div></div>`}).join('')||'还没有素材'}
+async function makeVideo(id){const items=(await api('/api/content')).items||[];const it=items.find(x=>x.id===id);if(!it)return toast('找不到该条目');const text=(it.body||'').trim();if(text.length<20){toast('正文太短（至少20字），无法生成视频');return}_vfJobs[id]={status:'running',progress:0};loadContent();toast('已提交，后台生成视频中…');const r=await api('/api/video-factory','POST',{text});if(!r.ok){_vfJobs[id]={status:'failed',error:r.msg||'提交失败'};loadContent();toast('提交失败：'+(r.msg||''));return}const jid=r.job_id;const tick=async()=>{const j=await api('/api/video-factory/'+jid);_vfJobs[id]={..._vfJobs[id],job_id:jid,status:j.status,progress:j.progress||0,error:j.error};if(j.status==='success'){_vfJobs[id].preview='<video controls style="max-width:100%;border-radius:6px;margin-top:6px" src="/api/video-factory/media/'+jid+'?token='+TOKEN+'"></video><br><a href="/api/video-factory/media/'+jid+'?token='+TOKEN+'" download="'+(it.title||'video').replace(/[^\w\u4e00-\u9fa5]+/g,'_')+'.mp4" style="color:var(--acc)">⬇ 下载视频</a>';loadContent();toast('视频生成完成');return}if(j.status==='failed'){loadContent();toast('生成失败：'+(j.error||''));return}loadContent();setTimeout(tick,2000)};setTimeout(tick,2000)}
 async function snapCreate(){const d=await api('/api/persona-snapshot','POST',{action:'create',note:document.getElementById('snapnote').value});toast(d.ok?'快照已建':'失败：'+(d.msg||''));loadSnaps()}
 async function distillRun(apply){const p=document.getElementById('distillpath').value.trim();if(!p)return toast('先填素材路径');
 const card=document.getElementById('distillcard').value.trim()||'little_whale';
@@ -1920,7 +2163,7 @@ async function loadRunbook(){const d=await api('/api/runbook');document.getEleme
 async function showRb(id){const d=await api('/api/runbook?id='+id);if(!d.found)return;document.getElementById('rbsteps').innerHTML='<b>'+d.title+'</b><ol>'+d.steps.map(s=>`<li>${s}</li>`).join('')+'</ol>'}
 
 /* --- Hash 路由：按需加载，刷新/前进后退保持当前页 --- */
-const PAGE_LOADS={dashboard:[loadSvcs,loadMetrics,loadAvatar],ops:[loadDeploy,loadCron,loadKeys,loadQqMaster,loadLogs,loadRunbook],ai:[loadSandbox,loadContent,loadSnaps,loadTimeline],companion:[loadRelations,loadPrivacy,loadP2,loadSilent]};
+const PAGE_LOADS={dashboard:[loadSvcs,loadMetrics,loadTelemetry,loadLocalVoice,loadAvatar],ops:[loadDeploy,loadCron,loadKeys,loadQqMaster,loadLogs,loadRunbook],ai:[loadSandbox,loadContent,loadSnaps,loadTimeline],companion:[loadRelations,loadPrivacy,loadP2,loadSilent]};
 function navigate(id){if(!PAGE_LOADS[id])id='dashboard';
 document.querySelectorAll('.page-view').forEach(e=>e.classList.remove('active'));
 document.querySelectorAll('.nav-btn').forEach(e=>e.classList.toggle('active',e.dataset.page===id));
@@ -1931,6 +2174,8 @@ window.addEventListener('hashchange',()=>navigate(location.hash.replace('#','')|
 navigate(location.hash.replace('#','')||'dashboard');
 setInterval(()=>{if(document.getElementById('page-dashboard').classList.contains('active'))loadSvcs()},10000);
 setInterval(()=>{if(document.getElementById('page-dashboard').classList.contains('active'))loadMetrics()},30000);
+setInterval(()=>{if(document.getElementById('page-dashboard').classList.contains('active'))loadTelemetry()},15000);
+setInterval(()=>{if(document.getElementById('page-dashboard').classList.contains('active'))loadLocalVoice()},5000);
 </script></body></html>"""
 
 # 手机只读面板（默认关闭，config/console_mobile.json 开启；仅局域网/本机，token 同源）
@@ -2021,6 +2266,30 @@ def p2_summary() -> dict:
 
 # ---------- HTTP ----------
 
+def obs_hud_config():
+    """OBS HUD 特效配置（config/obs_hud.json），缺失时回退默认值。"""
+    base = {
+        "stage": {"font_family": "'Microsoft YaHei','PingFang SC',sans-serif"},
+        "effects": {
+            "danmu": {"enabled": True, "duration_ms": 3200, "color": "#7dd3fc",
+                      "icon": "💬", "max_on_screen": 6},
+            "superchat": {"enabled": True, "duration_ms": 5200, "color": "#fbbf24",
+                          "icon": "💰", "min_price": 0},
+            "gift": {"enabled": True, "duration_ms": 4200, "color": "#f472b6", "icon": "🎁"},
+            "game_stuck": {"enabled": True, "duration_ms": 6500, "color": "#ef4444",
+                           "icon": "💥", "text": "破防了！！"},
+        },
+        "floaters": [],
+    }
+    try:
+        cfg = json.loads((ROOT / "config" / "obs_hud.json").read_text("utf-8"))
+        if isinstance(cfg, dict):
+            base.update(cfg)
+    except Exception:
+        pass
+    return base
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -2032,6 +2301,21 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_video_file(self, path):
+        """流式返回生成的 MP4（供 <video> 预览/下载）。"""
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except Exception:
+            self._json({"ok": False, "msg": "视频文件不存在或不可读"}, 404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Accept-Ranges", "bytes")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _auth(self):
         """Host 白名单（挡 DNS rebinding）+ 一次性 token（挡 CSRF）。
@@ -2085,6 +2369,73 @@ class H(BaseHTTPRequestHandler):
             if parse_qs(u.query).get("deep"):
                 items += self_check_deep()
             self._json(items)
+        elif u.path == "/api/telemetry":
+            try:
+                import telemetry
+                cfg = telemetry.load_config()
+                self._json({"ok": True, "state": telemetry.latest(),
+                            "thresholds": {
+                                "gpu_temp": cfg.get("gpu_temp_threshold"),
+                                "ping": cfg.get("ping_threshold"),
+                                "cpu_percent": cfg.get("cpu_percent_threshold")}})
+            except Exception as e:
+                self._json({"ok": False, "msg": type(e).__name__}, 500)
+        elif u.path == "/api/local_voice":
+            self._json({"ok": True, "enabled": _lv_read().get("enabled", False),
+                        "running": _lv_running()})
+        elif u.path == "/api/event-bus":
+            self._json(event_bus.status() if event_bus
+                       else {"ws_available": False, "msg": "事件总线不可用"})
+        elif u.path == "/api/recorder/status":
+            self._json(recorder.status() if recorder
+                       else {"running": False, "msg": "录制模块不可用"})
+        elif u.path == "/api/highlights":
+            sess = parse_qs(u.query).get("session", [""])[0]
+            if not highlights:
+                self._json({"ok": False, "msg": "高光模块不可用"})
+            elif not sess:
+                self._json({"ok": False, "msg": "缺少 session 参数",
+                            "sessions": highlights.list_sessions()})
+            else:
+                self._json({"ok": True, "session": sess,
+                            "highlights": highlights.query(sess)})
+        elif u.path == "/api/highlights/list":
+            self._json(highlights.status() if highlights
+                       else {"ok": False, "msg": "高光模块不可用"})
+        elif u.path == "/api/clips":
+            sess = parse_qs(u.query).get("session", [""])[0]
+            if not clipper:
+                self._json({"ok": False, "msg": "切片模块不可用"})
+            elif not sess:
+                self._json({"ok": False, "msg": "缺少 session 参数",
+                            "sessions": clipper.list_sessions()})
+            else:
+                self._json(clipper.list_clips(sess))
+        elif u.path == "/api/clips/list":
+            self._json({"ok": True, "sessions": clipper.list_sessions()}
+                       if clipper else {"ok": False, "msg": "切片模块不可用"})
+        elif u.path == "/api/persona-trigger":
+            self._json(persona_trigger.status() if persona_trigger
+                       else {"ok": False, "msg": "人格切换触发器不可用"})
+        elif u.path == "/api/video-factory":
+            self._json(video_factory.status() if video_factory
+                       else {"ok": False, "msg": "视频工厂模块不可用"})
+        elif u.path == "/api/video-factory/list":
+            self._json({"ok": True,
+                        "jobs": (video_factory.list_jobs() if video_factory else [])})
+        elif u.path.startswith("/api/video-factory/media/"):
+            jid = u.path[len("/api/video-factory/media/"):]
+            job = video_factory.get_job(jid) if video_factory else {}
+            out = (job or {}).get("output_path")
+            if out and os.path.isfile(out):
+                self._send_video_file(out)
+            else:
+                self._json({"ok": False, "msg": "视频尚未生成或不存在"}, 404)
+        elif u.path.startswith("/api/video-factory/"):
+            jid = u.path[len("/api/video-factory/"):]
+            self._json(video_factory.get_job(jid) if video_factory
+                       else {"job_id": jid, "status": "failed",
+                             "error": "视频工厂模块不可用"})
         elif u.path == "/api/keys":
             self._json(keys_status())
         elif u.path == "/api/qq-master":
@@ -2213,6 +2564,19 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif u.path == "/obs-hud":
+            try:
+                body = (ROOT / "obs_hud.html").read_text("utf-8").encode("utf-8")
+            except Exception:
+                self._json({"ok": False, "msg": "obs_hud.html 缺失"}, 404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif u.path == "/api/obs-hud-config":
+            self._json(obs_hud_config())
         else:
             self._json({"ok": False}, 404)
 
@@ -2249,6 +2613,43 @@ class H(BaseHTTPRequestHandler):
         elif u.path == "/api/watchdog":
             ok, msg = set_watchdog(body.get("enabled", False))
             self._json({"ok": ok, "msg": msg})
+        elif u.path == "/api/event-emit":
+            if not event_bus:
+                self._json({"ok": False, "msg": "事件总线不可用"})
+            else:
+                ev = body if isinstance(body, dict) else {"raw": str(body)}
+                self._json({"ok": event_bus.emit(ev)})
+        elif u.path == "/api/recorder/start":
+            if not recorder:
+                self._json({"ok": False, "msg": "录制模块不可用"})
+            else:
+                self._json(recorder.start(segment_sec=body.get("segment_sec"),
+                                           source=body.get("source")))
+        elif u.path == "/api/recorder/stop":
+            self._json(recorder.stop() if recorder else {"ok": False, "msg": "录制模块不可用"})
+        elif u.path == "/api/clips/extract":
+            if not clipper:
+                self._json({"ok": False, "msg": "切片模块不可用"})
+            else:
+                self._json(clipper.extract(
+                    body.get("session"),
+                    before=body.get("before_sec"),
+                    after=body.get("after_sec")))
+        elif u.path == "/api/persona-trigger/reload":
+            self._json({"ok": True, "config": (persona_trigger.reload_config()
+                                               if persona_trigger else None)}
+                       if persona_trigger
+                       else {"ok": False, "msg": "人格切换触发器不可用"})
+        elif u.path == "/api/video-factory":
+            if not video_factory:
+                self._json({"ok": False, "msg": "视频工厂模块不可用"})
+            else:
+                text = str(body.get("text", "")).strip()
+                if len(text) < 20:
+                    self._json({"ok": False, "msg": "文案太短，至少 20 字"})
+                else:
+                    jid = video_factory.make_video(text, body.get("opts") or {})
+                    self._json({"ok": True, "job_id": jid})
         elif u.path == "/api/deploy":
             ok, msg = deploy_run(body.get("id", ""))
             self._json({"ok": ok, "msg": msg})
@@ -2323,63 +2724,7 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     self._json({"ok": False, "msg": str(e)})
         elif u.path == "/api/avatar-switch":
-            # 形象总控：人格卡 + 桌宠模型 一键联动（各自按需，变了才动）
-            persona_id = str(body.get("persona", "") or "")
-            model = str(body.get("model", "") or "")
-            msgs, ok = [], True
-            if persona_id:
-                if not persona_switch:
-                    ok = False
-                    msgs.append("角色切换模块不可用")
-                else:
-                    try:
-                        r = persona_switch.switch_character(persona_id)
-                        msgs.append(("人格卡已切到 %s" if r.get("changed")
-                                     else "人格卡已是 %s") % persona_id)
-                    except Exception as e:
-                        ok = False
-                        msgs.append("人格卡切换失败：%s" % e)
-            if model:
-                if model not in [m["id"] for m in pet_models()]:
-                    ok = False
-                    msgs.append("桌宠模型 %s 不存在" % model)
-                elif model == "mortis":
-                    # 墨提斯走独立新 exe：先停老桌宠，再拉起 mortis-pet
-                    try:
-                        if find_proc("dsh-pet-standalone-webm-chat.exe"):
-                            kill_pid(find_proc("dsh-pet-standalone-webm-chat.exe"))
-                            time.sleep(1.2)
-                        if not MORTIS_PET_EXE.is_file():
-                            ok = False
-                            msgs.append("找不到 mortis-pet.exe")
-                        elif find_proc("mortis-pet.exe"):
-                            msgs.append("桌宠已是墨提斯（独立版运行中）")
-                        else:
-                            spawn([str(MORTIS_PET_EXE)], MORTIS_PET_EXE.parent)
-                            msgs.append("桌宠已切到墨提斯（独立版已启动）")
-                    except Exception as e:
-                        ok = False
-                        msgs.append("桌宠切换失败：%s" % e)
-                else:
-                    # 其余模型仍用老 dsh-pet（如鲸鲸 shenshen）
-                    try:
-                        if find_proc("mortis-pet.exe"):
-                            kill_pid(find_proc("mortis-pet.exe"))
-                            time.sleep(1.2)
-                        changed = pet_set_model(model)
-                        if not PET_EXE.is_file():
-                            ok = False
-                            msgs.append("桌宠未安装（可选组件）")
-                        elif find_proc("dsh-pet-standalone-webm-chat.exe"):
-                            msgs.append("桌宠模型已切到 %s（老桌宠运行中）" % model)
-                        else:
-                            pet_clean_stale_slots()
-                            spawn([str(PET_EXE)], PET)
-                            msgs.append("桌宠模型已切到 %s 并启动" % model)
-                    except Exception as e:
-                        ok = False
-                        msgs.append("桌宠模型切换失败：%s" % e)
-            self._json({"ok": ok, "msg": "；".join(msgs) or "没有要切换的内容"})
+            self._json(_do_avatar_switch(body.get("persona"), body.get("model")))
         elif u.path == "/api/call-mode":
             p = ROOT / "config" / "call_mode.json"
             try:
@@ -2515,8 +2860,167 @@ class H(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "留言模块不可用"})
             else:
                 self._json(voice_mail.leave(str(body.get("text", ""))))
+        elif u.path == "/api/self_play/run":
+            try:
+                import self_play
+                dry = bool(body.get("dry_run"))
+                r = self_play.run_round(dry_run=dry)
+                if not dry and r.get("ok") and r.get("added_rules"):
+                    try:
+                        self_play.mark_manual_done()
+                    except Exception:
+                        pass
+                self._json(r)
+            except Exception as e:
+                self._json({"ok": False, "msg": "self_play 不可用: %s" % type(e).__name__})
+        elif u.path == "/api/self_play/rollback":
+            try:
+                import self_play
+                self._json(self_play.rollback())
+            except Exception as e:
+                self._json({"ok": False, "msg": "回滚失败: %s" % type(e).__name__})
+        elif u.path == "/api/local_voice":
+            try:
+                import local_voice
+                en = bool(body.get("enabled"))
+                local_voice.write_state(en)
+                self._json({"ok": True, "enabled": en, "running": _lv_running()})
+            except Exception as e:
+                self._json({"ok": False, "msg": "切换失败: %s" % type(e).__name__})
         else:
             self._json({"ok": False}, 404)
+
+
+# ============================================================
+# 本地麦克风唤醒（音频闭环）监督：读共享 state，起停 local_voice 子进程
+# ============================================================
+_LV_STATE = {"proc": None}
+
+
+def _lv_read() -> dict:
+    try:
+        import local_voice
+        return local_voice.read_state()
+    except Exception:
+        return {"enabled": False, "pid": None, "updated": ""}
+
+
+def _lv_running() -> bool:
+    p = _LV_STATE["proc"]
+    return p is not None and p.poll() is None
+
+
+def _lv_supervisor():
+    """每 2s 读开关状态：开则拉起 run，关则终止。进程异常退出不自动重启（防崩溃循环）。"""
+    while True:
+        try:
+            enabled = _lv_read().get("enabled", False)
+            running = _lv_running()
+            if enabled and not running:
+                try:
+                    import subprocess as _sp
+                    p = _sp.Popen(
+                        [sys.executable, str(ROOT / "tools" / "local_voice.py"), "run"],
+                        cwd=str(ROOT), creationflags=CREATE_NO_WINDOW,
+                        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                    _LV_STATE["proc"] = p
+                except Exception as e:
+                    print("local_voice 拉起失败（不影响控制台）:", type(e).__name__)
+            elif not enabled and running:
+                try:
+                    _LV_STATE["proc"].terminate()
+                    _LV_STATE["proc"].wait(timeout=5)
+                except Exception:
+                    try:
+                        _LV_STATE["proc"].kill()
+                    except Exception:
+                        pass
+                _LV_STATE["proc"] = None
+        except Exception as e:
+            print("local_voice 监督异常（不影响控制台）:", type(e).__name__)
+        time.sleep(2)
+
+
+# ============================================================
+# Task 14: 凌晨日报/梦境 → 自动赛博 Vlog
+# ============================================================
+_VF_CFG_FILE = ROOT / "config" / "video_factory.json"
+_vf_cfg: dict | None = None
+_vf_cfg_mtime: float = -1.0
+
+
+def _vf_config() -> dict:
+    """视频工厂配置（按 mtime 热加载；文件缺失/解析失败回退默认值）。"""
+    global _vf_cfg, _vf_cfg_mtime
+    try:
+        mtime = _VF_CFG_FILE.stat().st_mtime if _VF_CFG_FILE.is_file() else 0.0
+    except OSError:
+        mtime = 0.0
+    if _vf_cfg is not None and mtime == _vf_cfg_mtime:
+        return _vf_cfg
+    cfg = {"auto_from_diary": True, "vlog_style": "", "min_text_chars": 20}
+    if mtime:
+        try:
+            user = json.loads(_VF_CFG_FILE.read_text("utf-8"))
+            if isinstance(user, dict):
+                for k, v in user.items():
+                    if not k.startswith("$"):
+                        cfg[k] = v
+        except Exception as e:
+            try:
+                print("[video_factory] 配置解析失败，用默认值：%r" % (e,))
+            except Exception:
+                pass
+    _vf_cfg = cfg
+    _vf_cfg_mtime = mtime
+    return cfg
+
+
+def _build_vlog_text(date_str: str, report_text: str, dream_text: str) -> str:
+    """把当日日报 + 梦境揉成适合 30s 赛博 Vlog 的口播素材（make_video 内部再拆镜）。"""
+    parts = []
+    if report_text:
+        lines = [ln.rstrip() for ln in report_text.splitlines() if ln.strip()]
+        parts.append("\n".join(lines[:40]))
+    if dream_text:
+        parts.append("昨夜梦境：" + dream_text.strip()[:600])
+    return ("\n\n".join(parts)).strip()[:2000]
+
+
+def auto_vlog_from_diary(date_str: str | None = None) -> dict:
+    """日报/梦境生成完成后的自动成片钩子（Task 14）。
+    失败安全：任何异常只 print，绝不影响 console。返回 {ok, job_id?, reason?}。"""
+    res = {"ok": False}
+    if not video_factory:
+        res["reason"] = "video_factory 模块未加载"
+        return res
+    cfg = _vf_config()
+    if not cfg.get("auto_from_diary", True):
+        res["reason"] = "auto_from_diary=false，已关闭自动触发"
+        return res
+    try:
+        ds = date_str or time.strftime("%Y-%m-%d")
+        report_path = ROOT / "data" / "reports" / (ds + ".md")
+        report_text = report_path.read_text("utf-8") if report_path.is_file() else ""
+        dream_path = ROOT / "diary" / ("dream-" + ds + ".md")
+        dream_text = dream_path.read_text("utf-8") if dream_path.is_file() else ""
+        text = _build_vlog_text(ds, report_text, dream_text)
+        min_chars = int(cfg.get("min_text_chars", 20) or 20)
+        if len(text.strip()) < min_chars:
+            res["reason"] = "当日心得内容不足（%d 字），不触发成片" % len(text.strip())
+            return res
+        opts = {"style": str(cfg.get("vlog_style") or ""), "scene_count": 5}
+        ref = cfg.get("ref_audio")
+        if ref:
+            opts["ref_audio"] = str(ref)
+        job_id = video_factory.make_video(text, opts)
+        print("[auto-vlog] 已为 %s 启动赛博 Vlog 任务 %s（%d 字）" % (ds, job_id, len(text)))
+        res.update({"ok": True, "job_id": job_id, "text_len": len(text)})
+        return res
+    except Exception as e:
+        print("[auto-vlog] 自动触发失败（不影响控制台）：%s: %s" % (type(e).__name__, e))
+        res["reason"] = "%s: %s" % (type(e).__name__, e)
+        return res
 
 
 def main():
@@ -2545,10 +3049,94 @@ def main():
                         if not p.is_file():
                             daily_report.run(notify=True)
                             print("已生成今日日报：%s" % p)
+                            auto_vlog_from_diary()   # Task 14: 日报/梦境完成后自动赛博 Vlog
                 except Exception as e:
                     print("日报生成失败：%s" % e)
                 time.sleep(600)
         threading.Thread(target=_report_loop, daemon=True).start()
+    # 硬件遥测后台线程（赛博生命体征：GPU 过热主动说话 / 破防联动读共享状态）
+    try:
+        import telemetry
+        _telem_stop = threading.Event()
+
+        def _telem_event(state, fired):
+            if "gpu_overheat" in fired:
+                temp = (state.get("gpu") or {}).get("temp")
+                text = "显卡温度百分之s度，快热炸了，注意散热。" % (
+                    temp if temp is not None else "过高")
+                try:
+                    import local_voice
+                    lv = local_voice.load_config()
+                    # 播音会阻塞，放独立线程，不卡住遥测采集
+                    threading.Thread(target=local_voice.speak,
+                                     args=(text, lv), daemon=True).start()
+                except Exception:
+                    try:
+                        if alert:
+                            alert.send("显卡过热告警", text, key="gpu_overheat")
+                    except Exception:
+                        pass
+        threading.Thread(target=telemetry.run_loop,
+                         kwargs={"on_event": _telem_event, "stop": _telem_stop},
+                         daemon=True).start()
+    except Exception as e:
+        print("遥测线程未启动（不影响控制台）:", type(e).__name__)
+    # 自我对弈每周定时（赛博人格自进化：命中 AI 味/客服腔自动补负向规则，写前存快照可回滚）
+    try:
+        import self_play
+        _sp_last_run_day = {"day": ""}
+
+        def _self_play_sched():
+            while True:
+                try:
+                    cfg = self_play._config()
+                    if cfg.get("enabled", True):
+                        now = time.localtime()
+                        wd = int(cfg.get("schedule_weekday", 6))  # 0=周一
+                        hh = int(cfg.get("schedule_hour", 3))
+                        mm = int(cfg.get("schedule_minute", 0))
+                        today_key = time.strftime("%Y-%m-%d")
+                        if (now.tm_wday == wd and now.tm_hour == hh
+                                and now.tm_min >= mm
+                                and _sp_last_run_day["day"] != today_key):
+                            _sp_last_run_day["day"] = today_key
+                            r = self_play.run_auto_scheduled()
+                            print("自我对弈定时：", r.get("msg", ""))
+                except Exception as e:
+                    print("自我对弈定时异常（不影响控制台）:", type(e).__name__)
+                time.sleep(30)
+        threading.Thread(target=_self_play_sched, daemon=True).start()
+    except Exception as e:
+        print("自我对弈定时线程未启动（不影响控制台）:", type(e).__name__)
+    # 本地麦克风唤醒（音频闭环）监督：读共享开关，起停 local_voice 子进程（默认关闭）
+    try:
+        threading.Thread(target=_lv_supervisor, daemon=True).start()
+    except Exception as e:
+        print("local_voice 监督线程未启动（不影响控制台）:", type(e).__name__)
+    # 直播事件总线 + WebSocket 广播（OBS HUD / 前端订阅；挂了不影响控制台）
+    try:
+        if event_bus:
+            event_bus.start(TOKEN)
+    except Exception as e:
+        print("事件总线未启动（不影响控制台）:", type(e).__name__)
+    # 高光打标（订阅事件总线；挂了不影响控制台）
+    try:
+        if highlights:
+            highlights.start()
+    except Exception as e:
+        print("高光打标未启动（不影响控制台）:", type(e).__name__)
+    # 高光自动切片（订阅事件总线，下播触发；挂了不影响控制台）
+    try:
+        if clipper:
+            clipper.start()
+    except Exception as e:
+        print("自动切片未启动（不影响控制台）:", type(e).__name__)
+    # 人格切换触发器（订阅事件总线，弹幕指令/达标礼物触发；挂了不影响控制台）
+    try:
+        if persona_trigger:
+            persona_trigger.start(avatar_switch=_do_avatar_switch)
+    except Exception as e:
+        print("人格切换触发器未启动（不影响控制台）:", type(e).__name__)
     # 手机面板开 LAN 时绑 0.0.0.0，并把局域网 IP 加进 Host 白名单
     bind, lip = "127.0.0.1", ""
     try:

@@ -1,0 +1,45 @@
+{
+  "enabled": true,
+  "daily_cap": 50,
+  "monthly_cost_cap_yuan": 10.0,
+  "scene_cooldown": {
+    "group": 60,
+    "live": 120,
+    "dream": 0,
+    "default": 60
+  },
+  "providers": {
+    "glm": {
+      "model": "cogview-3-flash",
+      "cost_per_image": 0.0,
+      "enabled": true,
+      "base_url": "https://open.bigmodel.cn"
+    },
+    "qwen": {
+      "model": "wanx2.1-t2i-turbo",
+      "cost_per_image": 0.2,
+      "enabled": true,
+      "base_url": "https://dashscope.aliyuncs.com"
+    }
+  },
+  "primary": "glm",
+  "sensitive_words": [
+    "色情",
+    "裸",
+    "血腥",
+    "暴力",
+    "政治",
+    "毒品",
+    "枪",
+    "裸体",
+    "做爱"
+  ],
+  "output_dir": "data/paint_output",
+  "obs_image_path": "D:\\live_assets\\current_paint.jpg",
+  "default_size": "1024*1024",
+  "request_timeout": 30,
+  "download_timeout": 60,
+  "qwen_poll_interval": 5,
+  "qwen_poll_max_s": 90,
+  "respect_balance_hint": true
+}

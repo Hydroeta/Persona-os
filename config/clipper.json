@@ -1,0 +1,7 @@
+{
+  "auto_on_live_end": true,
+  "default_before_sec": null,
+  "default_after_sec": null,
+  "crf": 23,
+  "preset": "veryfast"
+}

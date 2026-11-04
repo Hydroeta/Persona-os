@@ -1,0 +1,60 @@
+{
+  "enabled": true,
+  "vlm": {
+    "providers": {
+      "glm": {
+        "base": "https://open.bigmodel.cn/api/paas/v4",
+        "model": "glm-4v-flash",
+        "key": "ZHIPU_API_KEY",
+        "enabled": true
+      },
+      "qwen": {
+        "base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen-vl-plus",
+        "key": "DASHSCOPE_API_KEY",
+        "enabled": true
+      }
+    },
+    "primary": "glm",
+    "max_tokens": 300,
+    "temperature": 0.3,
+    "timeout": 30,
+    "jpeg_quality": 80,
+    "max_dim": 1280
+  },
+  "capture": {
+    "monitor": 1,
+    "region": null
+  },
+  "timing": {
+    "min_vlm_interval_s": 1.0,
+    "move_duration_s": 0.6,
+    "key_hold_s": 0.2,
+    "post_action_settle_s": 0.3,
+    "loop_idle_s": 0.2
+  },
+  "stuck": {
+    "diff_threshold": 1.5,
+    "resize": [
+      320,
+      240
+    ],
+    "escape_after": 3
+  },
+  "budgets": {
+    "daily_play_minutes": 120
+  },
+  "game_rules": {
+    "safety_rule": "如果系统提示『画面未发生变化，你大概率卡住了』，绝对不许再向原方向移动。",
+    "anti_stuck_strategy": "遇到卡死提示时，你的自救优先级：1. 向反方向移动；2. 随机向左右移动；3. 调用 emergency_escape（action=escape）。",
+    "stuck_lines": [
+      "哎呀，我好像卡住了，动不了了……",
+      "救命啊，我被卡住了！",
+      "这墙怎么回事，撞得我头疼。"
+    ],
+    "game_specifics": {
+      "StardewValley": "你被床卡住时通常是站在床正上方，先按 S 往下走一格，再按 A 或 D 绕开。",
+      "Minecraft": "如果走路没反应说明撞到了方块，按空格跳跃，或用鼠标左键挖掉方块。"
+    }
+  }
+}

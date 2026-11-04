@@ -1,0 +1,40 @@
+{
+  "stage": {
+    "width_pct": 100,
+    "height_pct": 100,
+    "font_family": "'Microsoft YaHei', 'PingFang SC', sans-serif"
+  },
+  "effects": {
+    "danmu": {
+      "enabled": true,
+      "duration_ms": 5000,
+      "color": "#7dd3fc",
+      "icon": "💬",
+      "max_on_screen": 6
+    },
+    "superchat": {
+      "enabled": true,
+      "duration_ms": 5200,
+      "color": "#fbbf24",
+      "icon": "💰",
+      "min_price": 0
+    },
+    "gift": {
+      "enabled": true,
+      "duration_ms": 4200,
+      "color": "#f472b6",
+      "icon": "🎁"
+    },
+    "game_stuck": {
+      "enabled": true,
+      "duration_ms": 6500,
+      "color": "#ef4444",
+      "icon": "💥",
+      "text": "破防了！！"
+    }
+  },
+  "floaters": [
+    {"match": "!震惊", "text": "？", "color": "#fbbf24", "size_px": 160, "duration_ms": 3500},
+    {"match": "!破防", "text": "破防！", "color": "#ef4444", "size_px": 140, "duration_ms": 3500}
+  ]
+}

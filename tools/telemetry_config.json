@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "gpu_temp_threshold": 80,
+  "gpu_temp_duration": 30,
+  "ping_threshold": 300,
+  "cpu_percent_threshold": 90,
+  "collect_interval": 5,
+  "alert_cooldown": 1800,
+  "ping_target": "223.5.5.5"
+}

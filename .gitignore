@@ -72,3 +72,6 @@ mortis-pet/config.json
 # ===== PyInstaller 构建产物 =====
 mortis-pet/build/
 mortis-pet/dist/
+
+# ===== 三版本同步产生的本地备份（不入库）=====
+*.bak-sync

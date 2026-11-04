@@ -88,6 +88,41 @@ CONSOLE_DIR = _default_console_dir()
 CONSOLE_PY = os.path.join(CONSOLE_DIR, "console.py")
 CONSOLE_URL_FILE = os.path.join(CONSOLE_DIR, "data", "console.url")
 
+# 本地麦克风唤醒（音频闭环）共享开关：与控制台读写同一份 state（默认关闭）
+def _lv_state_path():
+    return os.path.join(CONSOLE_DIR, "data", "local_voice_state.json")
+
+
+def _lv_available():
+    """是否找到 persona-os 控制台（console.py）。未找到则菜单项置灰。"""
+    return bool(os.path.isfile(CONSOLE_PY))
+
+
+def _lv_read_enabled():
+    """读共享开关，默认关闭（文件不存在/损坏 → False）。"""
+    try:
+        with open(_lv_state_path(), "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return bool(d.get("enabled", False))
+    except (OSError, ValueError):
+        return False
+
+
+def _lv_write_enabled(enabled):
+    """写共享开关；失败仅记录日志，不抛异常（避免菜单操作崩溃）。"""
+    try:
+        os.makedirs(os.path.dirname(_lv_state_path()), exist_ok=True)
+        tmp = _lv_state_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"enabled": bool(enabled),
+                       "updated": time.strftime("%Y-%m-%d %H:%M:%S")},
+                      f, ensure_ascii=False)
+        os.replace(tmp, _lv_state_path())
+        return True
+    except OSError as e:
+        log("写本地麦克风唤醒开关失败: %r" % e)
+        return False
+
 SRC_W, SRC_H = 1280, 720                      # 源视频画布（720p 源渲染尺寸）
 FRAME_BYTES = SRC_W * SRC_H * 4               # 单帧 rgba 字节数 = 3686400
 CROP_X, CROP_Y, CROP_W, CROP_H = 500, 0, 284, 720   # 角色实际内容区（裁掉两侧透明，消除隐形体积）
@@ -572,6 +607,14 @@ class MortisPet(QWidget):
         top_act.setChecked(bool(self.cfg.get("on_top", False)))
         top_act.toggled.connect(self._set_on_top)
 
+        lv_act = menu.addAction("本地麦克风唤醒（控制台）")
+        lv_act.setCheckable(True)
+        lv_act.setChecked(_lv_read_enabled())
+        lv_act.setEnabled(_lv_available())
+        if not _lv_available():
+            lv_act.setToolTip("未找到控制台，无法调节")
+        lv_act.triggered.connect(self._set_local_voice_enabled)
+
         buddy_act = menu.addAction("读屏陪伴（控制台）")
         buddy_act.triggered.connect(self._open_screen_buddy)
 
@@ -604,6 +647,12 @@ class MortisPet(QWidget):
         save_config(self.cfg)
         self.setWindowFlag(Qt.WindowStaysOnTopHint, bool(on))
         self.show()                           # 改窗口标志后需重新 show
+
+    def _set_local_voice_enabled(self, on):
+        # 只拨动共享开关；真正起停 local_voice 进程由控制台监督线程执行
+        if not _lv_available():
+            return
+        _lv_write_enabled(bool(on))
 
     def _build_tray(self):
         pm = QPixmap(64, 64)                  # 首帧出来前的占位图标

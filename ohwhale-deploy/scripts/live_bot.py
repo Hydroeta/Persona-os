@@ -26,6 +26,7 @@ config.json 配置（两套独立，互不干扰）：
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import queue
 import re
@@ -37,8 +38,9 @@ from collections import deque
 from pathlib import Path
 
 # ---------- sys.path 修正 ----------
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
-for _p in (_PROJECT_ROOT, _PROJECT_ROOT / "scripts"):
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]   # ohwhale-deploy/
+_REPO_ROOT = Path(__file__).resolve().parents[2]      # 项目根（含 tools/painter）
+for _p in (_PROJECT_ROOT, _PROJECT_ROOT / "scripts", _REPO_ROOT / "tools"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -56,13 +58,19 @@ import sounddevice as sd
 from ohwhale.config import get as cfg
 from astrbot_bridge import AstrBotBridge
 
+try:
+    import live_events as _live_events
+except Exception:  # noqa: BLE001  tools/ 未同步时不影响直播主流程
+    _live_events = None
+
 # ============================================================
 # 工具：平台统一的弹幕 dict
 # ============================================================
 def _danmu_dict(platform: str, *, user_id: str, nick_name: str,
                 content: str, pay_grade: int = 0,
                 is_super: bool = False, is_gift: bool = False,
-                gift_name: str = "", gift_num: int = 0) -> dict:
+                gift_name: str = "", gift_num: int = 0,
+                price: float = 0.0) -> dict:
     """所有平台的弹幕事件进主循环前都归一化成这个格式。"""
     return {
         "platform": platform,
@@ -74,6 +82,7 @@ def _danmu_dict(platform: str, *, user_id: str, nick_name: str,
         "is_gift": bool(is_gift),
         "gift_name": str(gift_name),
         "gift_num": int(gift_num),
+        "price": float(price),
     }
 
 
@@ -92,6 +101,10 @@ class PlatformAdapter(ABC):
             self._queue.put_nowait(msg)
         except queue.Full:
             pass
+        # 上报到 persona-os 根目录（供 console 事件总线 / OBS HUD 消费）；
+        # 失败不影响直播主流程
+        if _live_events is not None:
+            _live_events.report(msg)
 
     @abstractmethod
     def start(self) -> None: ...
@@ -176,6 +189,7 @@ class BilibiliAdapter(PlatformAdapter):
                     nick_name=f"{d.user.uname}[SC¥{d.price}]",
                     content=d.msg,
                     pay_grade=int(d.price),     # SuperChat 价格当"优先级权重"
+                    price=float(d.price),
                     is_super=True,
                 ))
 
@@ -187,6 +201,7 @@ class BilibiliAdapter(PlatformAdapter):
                     nick_name=d.user.uname,
                     content=f"【礼物】{d.gift_name} × {d.gift_num}",
                     pay_grade=int(d.price * d.gift_num // 1000) if d.price else 0,
+                    price=float(d.price) if d.price else 0.0,
                     is_gift=True,
                     gift_name=d.gift_name,
                     gift_num=d.gift_num,
@@ -194,6 +209,8 @@ class BilibiliAdapter(PlatformAdapter):
 
             def onLiveEnd(self, event):
                 print("📺 B 站直播已结束")
+                if _live_events is not None:
+                    _live_events.report_lifecycle("live_end", platform="bilibili")
 
             def onException(self, exc_info):
                 import traceback
@@ -202,6 +219,9 @@ class BilibiliAdapter(PlatformAdapter):
         self._live = BilibiliLive()
         self._live.schedule(_Handler, self.short_id)
         self._live.start()
+        if _live_events is not None:
+            _live_events.report_lifecycle("live_start", platform="bilibili",
+                                          short_id=self.short_id)
 
     def stop(self):
         if self._live:
@@ -387,10 +407,41 @@ else:
     }
 
 
+# 运行时语音切换：console 人格触发器写 data/live_voice.json，直播 TTS 每次重读。
+# paths.voice_ref 在模块导入时已冻结进 _TTS_BASE，改 config.json 对已运行的
+# live_bot 无效，故用共享文件做跨进程热切换；文件缺失/无效则回退默认参考音。
+_LIVE_VOICE_FILE = _REPO_ROOT / "data" / "live_voice.json"
+_lv_cache = {"mtime": 0.0, "ref": ""}
+
+
+def _live_voice_ref() -> str:
+    try:
+        mtime = _LIVE_VOICE_FILE.stat().st_mtime if _LIVE_VOICE_FILE.is_file() else 0.0
+    except Exception:
+        return ""
+    if mtime == _lv_cache["mtime"]:
+        return _lv_cache["ref"]
+    ref = ""
+    if mtime:
+        try:
+            d = json.loads(_LIVE_VOICE_FILE.read_text(encoding="utf-8"))
+            p = str(d.get("ref_audio") or "")
+            if p and os.path.isfile(p):
+                ref = p
+        except Exception:
+            pass
+    _lv_cache["mtime"] = mtime
+    _lv_cache["ref"] = ref
+    return ref
+
+
 def stream_tts(text: str) -> None:
     if not text:
         return
     params = dict(_TTS_BASE, text=text)
+    _ov = _live_voice_ref()
+    if _ov:
+        params["ref_audio_path"] = _ov
     print(f"  🎙️ TTS: {text[:60]}{'...' if len(text) > 60 else ''}")
     try:
         with httpx.stream("GET", _TTS_URL, params=params,
@@ -416,6 +467,112 @@ def stream_tts(text: str) -> None:
         print(f"  ✗ TTS 调用失败: {e}")
     except Exception as e:  # noqa: BLE001
         print(f"  ✗ TTS 播放异常: {e}")
+
+
+# ============================================================
+# 作画功能：弹幕点单作画 + 你画我猜（OBS 图片源刷新）
+# 生图耗时长，全部放后台线程，不阻塞主循环的弹幕/TTS。
+# painter 不可用时（缺 key/配置异常）自动降级，不影响直播主流程。
+# ============================================================
+def _painter_idle(guess_game, draw_busy_event) -> bool:
+    """作画/游戏是否空闲：未在你画我猜中 且 无在途作画任务。
+
+    作画点单与游戏开局统一复用此门禁，避免游戏中/有在途图时被新请求抢占
+    （两路都写同一个 OBS 图片源，必须互斥）。
+    """
+    if draw_busy_event.is_set():
+        return False
+    if guess_game is not None:
+        with guess_game.lock:
+            if guess_game.is_playing:
+                return False
+    return True
+
+
+def _handle_draw_order(painter_mod, nick, prompt, obs_path, tts, draw_busy_event):
+    """后台线程：点单作画 → 刷 OBS → TTS 播报。"""
+    draw_busy_event.set()
+    try:
+        low = painter_mod.ink_low("live")
+        if low:
+            tts(low)
+            return
+        tts("好嘞 %s，正在画【%s】，稍等。" % (nick, prompt[:20]))
+        path, msg = painter_mod.generate_image_sync(
+            prompt, style="anime, high quality", scene="live")
+        if path:
+            painter_mod.publish_to_obs(path, obs_path)
+            tts("画好了 %s，你看看，像不像？" % nick)
+        else:
+            tts("画失败了：%s" % msg)
+    finally:
+        draw_busy_event.clear()
+
+
+class DrawGuessGame:
+    """你画我猜：后台抽词→生抽象图→刷 OBS→播报；主循环喂弹幕判定。"""
+
+    def __init__(self, painter_mod, obs_path, words, duration_s=60, tts=None):
+        self.painter = painter_mod
+        self.obs_path = obs_path
+        self.words = list(words or [])
+        self.duration_s = int(duration_s)
+        self.tts = tts or (lambda t: None)
+        self.lock = threading.Lock()
+        self.is_playing = False
+        self.current_word = ""
+
+    def start(self) -> bool:
+        with self.lock:
+            if self.is_playing:
+                return False
+            if not self.words:
+                return False
+            self.is_playing = True
+        threading.Thread(target=self._run, name="draw-guess", daemon=True).start()
+        return True
+
+    def _run(self):
+        import random
+        word = random.choice(self.words)
+        with self.lock:
+            self.current_word = word
+        self.tts("你画我猜开始！这个词有 %d 个字，大家弹幕猜起来！" % len(word))
+        prompt = "%s, 极简抽象派, 毕加索风格, 极难辨认, 单色线条" % word
+        path, msg = self.painter.generate_image_sync(prompt, scene="live")
+        if not path:
+            self.tts("哎呀画布裂开了，这轮作废：%s" % msg)
+            self._force_finish()
+            return
+        self.painter.publish_to_obs(path, self.obs_path)
+        self.tts("画好了，看看这是什么？提示：%d 个字。" % len(word))
+        deadline = time.monotonic() + self.duration_s
+        while time.monotonic() < deadline:
+            with self.lock:
+                if not self.is_playing:
+                    return  # 已被猜对
+            time.sleep(1)
+        # 超时未猜出
+        with self.lock:
+            if self.is_playing:
+                self.is_playing = False
+                w = self.current_word
+        self.tts("时间到！答案是【%s】。都没猜出来，你们太菜了。" % w)
+
+    def _force_finish(self):
+        with self.lock:
+            self.is_playing = False
+
+    def check_guess(self, nick, text) -> bool:
+        """主循环每条弹幕调用。猜对返回 True（已播报）。"""
+        with self.lock:
+            if not self.is_playing or not self.current_word:
+                return False
+            if self.current_word in (text or ""):
+                self.is_playing = False
+                w = self.current_word
+        self.tts("恭喜 %s 猜对了！答案就是【%s】！" % (nick, w))
+        return True
 
 
 # ---------- 主循环 ----------
@@ -483,6 +640,28 @@ def run(platform: str, platform_id_override: str | None = None) -> int:
         enabled=pc.get("batch_enabled", cfg("live.batch_enabled", True)),
     )
 
+    # --- 作画功能（可选：painter 不可用时自动降级，不影响直播主流程）---
+    painter_mod = None
+    guess_game = None
+    obs_path = None
+    draw_busy = threading.Event()  # 在途作画任务标志（与游戏态共同构成空闲门禁）
+    try:
+        import painter as _painter_mod
+        painter_mod = _painter_mod
+        _p_cfg = _painter_mod.load_config()
+        obs_path = cfg("painter.obs_image_path", _p_cfg.get("obs_image_path"))
+        guess_words = cfg("painter.guess_words",
+                          ["电饭煲", "赛博朋克", "大肥鱼", "女仆装",
+                           "向日葵", "机械键盘", "珍珠奶茶", "奥特曼"])
+        guess_game = DrawGuessGame(
+            painter_mod, obs_path, guess_words,
+            duration_s=cfg("painter.guess_duration_s", 60),
+            tts=stream_tts,
+        )
+        print("🎨 作画功能就绪（OBS 图片源: %s）" % obs_path)
+    except Exception as e:  # noqa: BLE001
+        print("⚠️ 作画功能未启用: %s" % e)
+
     # --- 开弹幕抓取 ---
     print(f"📺 连接 {adapter.describe()} ...")
     adapter.start()
@@ -506,6 +685,35 @@ def run(platform: str, platform_id_override: str | None = None) -> int:
             if msg is not None:
                 content = msg.get("content", "").strip()
                 nick = msg.get("nick_name", "")
+
+                # --- 作画/游戏指令（优先于普通回复，不占回复配额/冷却）---
+                # 触发词不再需要 ! 前缀：直接"画 xxx" / "画个 xxx" / "猜画"。
+                # 仅在空闲状态触发：游戏中或有在途作画时，新点单/开局直接忽略
+                # （直播弹幕实时场景，跳过即丢弃，不补偿）。
+                if painter_mod is not None:
+                    m = re.match(r"^\s*(?:画|画个|draw)\s+(.+)", content)
+                    if m:
+                        prompt = m.group(1).strip()
+                        if prompt and _painter_idle(guess_game, draw_busy):
+                            print(f"🎨 [点单] {nick} 要画：{prompt}")
+                            threading.Thread(
+                                target=_handle_draw_order,
+                                args=(painter_mod, nick, prompt, obs_path,
+                                      stream_tts, draw_busy),
+                                daemon=True).start()
+                        elif prompt:
+                            print(f"🎨 [点单] 忙碌中（游戏/在途图），忽略 {nick}：{prompt}")
+                        continue
+                    if guess_game is not None and re.match(
+                            r"^\s*(?:猜画|你画我猜|drawguess)\s*(开始|start)?\s*$", content):
+                        if _painter_idle(guess_game, draw_busy) and guess_game.start():
+                            print("🎨 你画我猜开始")
+                        else:
+                            print("🎨 你画我猜已在进行中/作画中或词库为空")
+                        continue
+                    # 游戏进行中，每条弹幕都喂给判定（猜词不经过空闲门禁，必须继续工作）
+                    if guess_game is not None and guess_game.check_guess(nick, content):
+                        continue
 
                 # --- Gift 特殊处理：直接"谢谢" ---
                 if msg.get("is_gift"):

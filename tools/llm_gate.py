@@ -1,5 +1,3 @@
-# Copyright 2026 persona-os contributors
-# SPDX-License-Identifier: MIT
 # -*- coding: utf-8 -*-
 """小鲸鱼 · LLM Token 闸门（成本主战场：通话/搭话/直播/定时任务全是 LLM 消耗）
 
@@ -51,7 +49,17 @@ DEFAULT_CONFIG = {
         "live_danmaku": 30000, "cron": 20000, "screen": 15000,
         "persona_judge": 8000, "rewrite": 15000, "other": 10000,
         "capsule": 2000, "guard": 2000, "group_summary": 5000,
+        "game_agent": 40000,   # 游戏代理 VLM 决策（一秒一截屏，token 消耗大，单独配额）
+        "local_voice": 20000,  # 本地麦克风唤醒对话（路由到本地 Ollama，不占云端配额）
+        "memory_compress": 6000,  # 冷门记忆本地压缩（路由到本地 Ollama）
+        "desk_tidy": 8000,    # 下载文件夹智能分类（路由到本地 Ollama）
+        "ai_ops": 6000,       # 崩溃日志 AI 诊断（路由到本地 Ollama）
+        "self_play": 10000,   # 自我对弈调优（路由到本地 Ollama）
     },
+    # scene 标 "local" → 走本地 Ollama（免费、不出本机）；本地失败按 local_fallback_cloud 决定是否落回云端
+    "scene_providers": {"group_summary": "local", "local_voice": "local",
+                        "memory_compress": "local", "desk_tidy": "local",
+                        "ai_ops": "local", "self_play": "local"},
 }
 
 

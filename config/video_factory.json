@@ -1,0 +1,6 @@
+{
+  "$comment": "视频工厂配置（Task 13/14）。auto_from_diary=true 时，控制台定时线程在每日 23:50 生成日报/梦境完成后，自动把当日心得做成约 30 秒「赛博 Vlog」。改本文件即时生效（按 mtime 热加载）；置 false 可关闭自动触发。",
+  "auto_from_diary": true,
+  "vlog_style": "赛博朋克，霓虹雨夜，近未来都市，胶片颗粒，冷暖对比，电影感",
+  "min_text_chars": 20
+}
