@@ -13,5 +13,7 @@ comtypes==1.4.17
 qrcode==8.2
 PyYAML==6.0.3
 pycaw==20260927
-# 本地 ASR（可选）：装了模型就走本地，不再需要 DASHSCOPE_API_KEY
-sherpa-onnx==2.0.1
+# Optional local ASR (sherpa-onnx): enables offline ASR, no DASHSCOPE_API_KEY needed.
+# Mirrors often lack the Windows wheel; install manually when needed:
+#   pip install sherpa-onnx -i https://mirrors.aliyun.com/pypi/simple/
+# sherpa-onnx==2.0.1

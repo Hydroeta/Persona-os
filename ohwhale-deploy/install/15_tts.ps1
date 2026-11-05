@@ -7,7 +7,7 @@ if (-not (Test-Path -LiteralPath $TTSPython)) {
     & $ProjectPython -m venv (Join-Path $ProjectRoot '.venv-tts')
     if ($LASTEXITCODE -ne 0) { throw 'BLOCKED: TTS venv creation failed' }
 }
-& $TTSPython -m pip install 'torch==2.9.1+cu128' 'torchaudio==2.9.1+cu128' --index-url https://download.pytorch.org/whl/cu128
+& $TTSPython -m pip install 'torch==2.9.1+cu128' 'torchaudio==2.9.1+cu128' --index-url https://download.pytorch.org/whl/cu128 --timeout 120 --retries 5
 if ($LASTEXITCODE -ne 0) { throw 'BLOCKED: PyTorch CUDA installation failed' }
 & $TTSPython -m pip install -r (Join-Path $ProjectRoot 'requirements-tts.txt')
 if ($LASTEXITCODE -ne 0) { throw 'BLOCKED: TTS dependency installation failed' }
