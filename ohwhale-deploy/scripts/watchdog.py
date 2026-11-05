@@ -80,8 +80,10 @@ def restart_stack():
         except psutil.Error as e:
             log(f"客户端停止失败：{e}")
             return
-    subprocess.Popen([executable], cwd=str(Path(executable).parent))
-    log("已启动本安装的 NapCat，等待登录")
+    argv = (["cmd", "/c", executable]
+            if executable.lower().endswith((".bat", ".cmd")) else [executable])
+    subprocess.Popen(argv, cwd=str(Path(executable).parent))
+    log("已启动本安装的 QQ 协议端（NapCat），等待登录")
 
 
 def main():

@@ -1,0 +1,31 @@
+name: Verify ohwhale-deploy
+
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ohwhale-deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 1) pyproject.toml 必须能被 tomllib 解析 —— 防止 CR/CRLF 行尾损坏溜进来
+      - name: pyproject.toml parses (guards CRCRLF corruption)
+        run: python -c "import tomllib; tomllib.load(open('pyproject.toml','rb')); print('pyproject.toml parses OK')"
+
+      # 2) setuptools 声明的 ohwhale 包目录必须真实存在 —— 防止漏提交导致空包
+      - name: declared package dir exists
+        run: python -c "import os,sys; sys.exit(0 if os.path.isdir('ohwhale') and os.path.isfile(os.path.join('ohwhale','__init__.py')) else 1)"
+
+      # 3) 可编辑安装成功 —— 同时验证 pyproject 与包发现
+      - name: pip install -e . --no-deps
+        run: python -m pip install -e . --no-deps
+
+      # 4) 包真正可导入
+      - name: import ohwhale
+        run: python -c "import ohwhale; print('ohwhale', ohwhale.__version__, 'importable')"

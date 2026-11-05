@@ -1,0 +1,35 @@
+schema: 1
+project: ohwhale-deploy
+version: 0.1.0a1
+status: preview-candidate
+verified_fresh_install: false
+platform:
+  full_stack: Windows 11 x64 (target; fresh installation not verified)
+  python: '3.12.x x64'
+  gpu_runtime: IndexTTS2 (fp16); match PyTorch to the user's CUDA hardware
+services:
+  astrbot: {version: 4.29.1, dashboard_port: 6185, license: AGPL-3.0}
+  llbot: {observed_version: 8.3.2, onebot_reverse_ws_port: 6199, webui_port: 3080, install: install/16_qq_client.ps1}
+  qq: {observed_version: 9.9.35.52892, login: user-scan}
+  tts: {port: 9881, engine: indextts2, server: scripts/indextts_server.py, weights: C:\idx_models}
+  avatar: {udp_port: 9999, virtual_camera: CameraEmulator, install: manual}
+required_secrets: [DEEPSEEK_API_KEY, DASHSCOPE_API_KEY, ASTRBOT_DASHBOARD_PASSWORD]
+required_config: [master.qq, paths.tts_python, paths.llbot_exe, audio.playback_hint, audio.capture_hint]
+optional_features: [bilibili, avatar, mic_guard, cloud-cloned-voice]
+download_catalog: config/downloads.json
+source_catalog: config/runtimes.json
+client_catalog: config/client-downloads.json
+video_catalog: config/video-runtime.json
+python_catalog: config/python-runtime.json
+device_test: Run-device-test.cmd
+default_voice_weights_in_git: false
+checks:
+  source: python scripts/release_check.py
+  offline_tests: python -m unittest discover -s tests -v
+  install: install/verify.ps1 -Stage 2 -Json
+  audio: install/verify.ps1 -Stage 5 -Json
+  acceptance_record: install/verify.ps1 -Stage 6 -Json
+acceptance:
+  functional_items: 25
+  automatic_interaction_test: false
+  human_experience_review_required: true
