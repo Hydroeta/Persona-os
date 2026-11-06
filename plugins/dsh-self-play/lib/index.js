@@ -956,7 +956,7 @@ var import_node_cron = __toESM(require_node_cron(), 1);
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, renameSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-var LOCAL_FALLBACK_ROOTS = ["c:\\Users\\user\\Desktop\\\u65B0\u5EFA\u6587\u4EF6\u5939 (2)"];
+var LOCAL_FALLBACK_ROOTS = [];
 function resolvePersonasRoot() {
   if (process.env.PERSONA_CONFIG_DIR) {
     if (existsSync(process.env.PERSONA_CONFIG_DIR)) return process.env.PERSONA_CONFIG_DIR;

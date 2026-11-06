@@ -166,6 +166,19 @@ importers:
 
   .: {}
 
+  plugins/dsh-game-agent:
+    dependencies:
+      node-screenshots:
+        specifier: ^0.2.8
+        version: 0.2.8
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.5
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+
   plugins/dsh-live-director:
     dependencies:
       node-screenshots:
@@ -202,18 +215,6 @@ importers:
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
-
-  plugins/dsh-memory-map:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.20.5
-      esbuild:
-        specifier: ^0.25.0
-        version: 0.25.12
-      three:
-        specifier: ^0.160.0
-        version: 0.160.1
 
   plugins/dsh-painter:
     dependencies:
@@ -793,9 +794,6 @@ packages:
   simple-swizzle@0.2.4:
     resolution: {integrity: sha512-nAu1WFPQSMNr2Zn9PGSZK9AGn4t/y97lEm+MXTtUDwfP0ksAIX4nO+6ruD9Jwut4C49SB1Ws+fbXsm/yScWOHw==}
 
-  three@0.160.1:
-    resolution: {integrity: sha512-Bgl2wPJypDOZ1stAxwfWAcJ0WQf7QzlptsxkjYiURPz+n5k4RBDLsq+6f9Y75TYxn6aHLcWz+JNmwTOXWrQTBQ==}
-
   tslib@2.9.1:
     resolution: {integrity: sha512-a4Ux9VKuIMHsOS7ENbEq6hK2ZGYIT27Rtl0E4eD9KqwxhKiQeMZE/9xb3IdYwWaSOyIBQLExhQgXDTYoiCxnWA==}
 
@@ -1235,8 +1233,6 @@ snapshots:
   simple-swizzle@0.2.4:
     dependencies:
       is-arrayish: 0.3.4
-
-  three@0.160.1: {}
 
   tslib@2.9.1:
     optional: true

@@ -1,0 +1,14 @@
+# dsh-game-agent —— DSH bundle patch
+# 把本插件插进 profile 配置树，作为可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "c:\Users\user\Desktop\projects (2)\github-release\persona-os\plugins\dsh-game-agent"
+#
+# ⚠️ name 必须与包名完全一致（dsh-game-agent），否则会表现为「装上了但不加载」。
+# ⚠️ 依赖 dsh-service-manager 拉起的 game-bot 微服务（:8003）执行虚拟手柄信号；
+#    依赖 VISION_API_BASE/KEY/MODEL 配置的多模态模型做画面决策。
+#    任一缺失都会安全降级（dry_run 预览 / 返回 ok:false），不阻断 DSH。
+
+- insert:
+    - id: dsh-game-agent
+      name: 'dsh-game-agent'

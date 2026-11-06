@@ -48,13 +48,10 @@ LOG_TAG = "[memory]"
 # 路径解析（优先级：MEMORY_DB > PERSONA_OS_ROOT > 上溯探测 > 本地回退）
 # ---------------------------------------------------------------------------
 
-# 已知本地源项目（运行时环境）的绝对路径。微服务从发布版目录
-# （github-release/persona-os/core-services/memory）启动时，上溯探测在
-# 发布版树里找不到记忆库，于是回退到这里借数据。开源用户请设置
-# PERSONA_OS_ROOT 或 MEMORY_DB 指向自己的项目，无需修改此处。
-LOCAL_FALLBACK_ROOTS = [
-    r"c:\Users\user\Desktop\projects (2)",
-]
+# 本地兜底路径已移除（避免硬编码开发者机器路径）。
+# 定位优先级：MEMORY_DB > PERSONA_OS_ROOT > 沿 __file__ 上溯探测；
+# 开源用户请设置 PERSONA_OS_ROOT 或 MEMORY_DB 指向自己的项目。
+LOCAL_FALLBACK_ROOTS: list[str] = []
 
 MEOW_TABLES = ("soul", "user", "project", "fact", "lesson", "topic", "rules")
 DB_REL = Path("dsh") / "workspace" / ".dsh-meow" / "memory.db"
@@ -263,7 +260,7 @@ def recall(query: str, limit: int = 20) -> list[dict]:
 
 def recent(days: int = 90, limit: int = 500) -> list[dict]:
     """拉取最近 days 天内的活跃记忆（跨所有层），按 created_at 倒序，最多 limit 条。
-    供 dsh-memory-map 星图后端批量聚合使用（全字段，含 content / tags / importance / 时间）。"""
+    供批量聚合 / 导出使用（全字段，含 content / tags / importance / 时间）。"""
     cutoff = int((time.time() - days * 86400) * 1000)
     out: list[dict] = []
     conn = connect()
@@ -371,7 +368,7 @@ def api_recall(query: str = Query(..., min_length=1), limit: int = Query(20, ge=
 
 @app.get("/recent")
 def api_recent(days: int = Query(90, ge=1, le=3650), limit: int = Query(500, ge=1, le=5000)):
-    """批量拉取最近 days 天的活跃记忆（dsh-memory-map 星图后端用）。"""
+    """批量拉取最近 days 天的活跃记忆（供聚合 / 导出）。"""
     try:
         results = recent(days, limit)
         return {"ok": True, "days": days, "count": len(results), "results": results}

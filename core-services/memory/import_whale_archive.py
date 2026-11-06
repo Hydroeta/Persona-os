@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""一次性导入脚本：把老记忆档案（C:\Users\user\Documents\档案\鲸鱼）接入当前记忆微服务。
+r"""一次性导入脚本：把老记忆档案（默认 ~/Documents/档案/鲸鱼，可用环境变量 WHALE_ARCHIVE 覆盖）接入当前记忆微服务。
 
 源：
   - 记忆卡.md  ：从 meow-memory 导出的 261 条长期记忆，分六章，每条末尾带 ⟨簇:标签⟩
@@ -17,6 +17,7 @@ r"""一次性导入脚本：把老记忆档案（C:\Users\user\Documents\档案\
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -24,7 +25,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ARCHIVE = Path(r"C:\Users\user\Documents\档案\鲸鱼")
+ARCHIVE = Path(os.environ.get("WHALE_ARCHIVE", str(Path.home() / "Documents" / "档案" / "鲸鱼")))
 CARD = ARCHIVE / "记忆卡.md"
 DIARY_DIR = ARCHIVE / "日记"
 BASE = "http://127.0.0.1:8001"

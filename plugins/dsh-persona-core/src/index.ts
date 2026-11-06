@@ -27,8 +27,9 @@ import { fileURLToPath } from 'node:url'
 
 const LOG_TAG = '[dsh-persona-core]'
 
-// 源项目根（运行时真相）。插件从发布版目录加载时，靠它找到 live config。
-const LOCAL_FALLBACK_ROOTS = ['c:\\Users\\user\\Desktop\\projects (2)']
+// 本地兜底路径已移除（避免硬编码开发者机器路径）。
+// 优先级：PERSONA_CONFIG_DIR > PERSONA_OS_ROOT/config/personas > 沿 __dirname 上溯（发布版自带 config）。
+const LOCAL_FALLBACK_ROOTS: string[] = []
 
 // system prompt 段落排序：比 meow-memory 的记忆手册(order=130)更靠前，人格是更基础的设定。
 const SECTION_ORDER = 100

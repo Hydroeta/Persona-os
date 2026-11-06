@@ -6,9 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 var LOG_TAG = "[dsh-service-manager]";
 var HERE = path.dirname(fileURLToPath(import.meta.url));
-var LOCAL_FALLBACK_ROOTS = [
-  "c:\\Users\\user\\Desktop\\\u65B0\u5EFA\u6587\u4EF6\u5939 (2)"
-];
+var LOCAL_FALLBACK_ROOTS = [];
 function looksLikeSourceRoot(cur) {
   return existsSync(path.join(cur, "ohwhale-deploy", "scripts", "indextts_server.py")) && existsSync(path.join(cur, "index-tts", ".venv", "Scripts", "python.exe"));
 }
@@ -79,6 +77,18 @@ var SERVICES = [
     scriptRel: (r) => path.join(r, "core-services", "painter", "main.py"),
     portEnv: "PAINTER_PORT",
     portDefault: 8002,
+    healthPath: "/health",
+    cwdFrom: "release"
+  },
+  {
+    name: "GameBot",
+    tag: "game",
+    pythonEnv: "GAME_PYTHON",
+    pythonRel: (r) => path.join(r, "ohwhale-deploy", ".venv", "Scripts", "python.exe"),
+    scriptEnv: "GAME_SERVER",
+    scriptRel: (r) => path.join(r, "core-services", "game-bot", "main.py"),
+    portEnv: "GAME_BOT_PORT",
+    portDefault: 8003,
     healthPath: "/health",
     cwdFrom: "release"
   }

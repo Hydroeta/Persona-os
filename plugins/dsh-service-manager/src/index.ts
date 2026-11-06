@@ -5,10 +5,11 @@
  *   DSH 加载本插件时（apply），在后台自动拉起本地微服务；卸载/热重载时（dispose），
  *   把「本插件拉起的」进程树彻底杀掉，防止僵尸进程占满显存/端口。
  *
- * 目前托管三个服务：
+ * 目前托管四个服务：
  *   - IndexTTS2  语音合成   端口 9881（无 HTTP 健康端点，spawn 后只看日志）
  *   - Memory     记忆存取   端口 8001（GET /health）
  *   - Painter    生图引擎   端口 8002（GET /health）
+ *   - GameBot    虚拟手柄   端口 8003（GET /health，vgamepad + ViGEmBus）
  *
  * 契约说明（对照 DSH 0.2.0-rc.2 实测）：
  *   - 退出钩子是 ctx.on("dispose", cb)。
@@ -44,13 +45,11 @@ const LOG_TAG = '[dsh-service-manager]'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 /**
- * 已知本地源项目（运行时环境）的绝对路径。
- * 插件从发布版目录（github-release/persona-os）以 link 方式加载时，上溯探测在发布版树里
- * 找不到 index-tts/.venv，于是回退到这里借算力；开源用户请设置 PERSONA_OS_ROOT，无需改本常量。
+ * 本地兜底路径已移除（避免硬编码开发者机器路径）。
+ * 源项目根 / 发布版根定位优先级：PERSONA_OS_ROOT > 从 lib 位置上溯探测。
+ * 若上溯找不到 index-tts/.venv，请设置 PERSONA_OS_ROOT 指向含 ohwhale-deploy 的工作区根。
  */
-const LOCAL_FALLBACK_ROOTS: string[] = [
-  'c:\\Users\\user\\Desktop\\projects (2)',
-]
+const LOCAL_FALLBACK_ROOTS: string[] = []
 
 // ---------------------------------------------------------------------------
 // 路径探测
@@ -156,6 +155,18 @@ const SERVICES: Svc[] = [
     scriptRel: (r) => path.join(r, 'core-services', 'painter', 'main.py'),
     portEnv: 'PAINTER_PORT',
     portDefault: 8002,
+    healthPath: '/health',
+    cwdFrom: 'release',
+  },
+  {
+    name: 'GameBot',
+    tag: 'game',
+    pythonEnv: 'GAME_PYTHON',
+    pythonRel: (r) => path.join(r, 'ohwhale-deploy', '.venv', 'Scripts', 'python.exe'),
+    scriptEnv: 'GAME_SERVER',
+    scriptRel: (r) => path.join(r, 'core-services', 'game-bot', 'main.py'),
+    portEnv: 'GAME_BOT_PORT',
+    portDefault: 8003,
     healthPath: '/health',
     cwdFrom: 'release',
   },

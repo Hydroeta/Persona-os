@@ -44,9 +44,8 @@ LOG_TAG = "[painter]"
 # 路径解析（优先级：PERSONA_OS_ROOT > 沿 __file__ 上溯找 tools/painter.py > 本地回退）
 # ---------------------------------------------------------------------------
 
-LOCAL_FALLBACK_ROOTS = [
-    r"c:\Users\user\Desktop\projects (2)",
-]
+# 本地兜底路径已移除（避免硬编码开发者机器路径）；请设置 PERSONA_OS_ROOT 指向含 tools/painter.py 的项目根。
+LOCAL_FALLBACK_ROOTS: list[str] = []
 
 PAINTER_REL = Path("tools") / "painter.py"
 

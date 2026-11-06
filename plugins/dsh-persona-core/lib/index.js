@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 var LOG_TAG = "[dsh-persona-core]";
-var LOCAL_FALLBACK_ROOTS = ["c:\\Users\\user\\Desktop\\\u65B0\u5EFA\u6587\u4EF6\u5939 (2)"];
+var LOCAL_FALLBACK_ROOTS = [];
 var SECTION_ORDER = 100;
 function resolvePersonasRoot() {
   if (process.env.PERSONA_CONFIG_DIR) {

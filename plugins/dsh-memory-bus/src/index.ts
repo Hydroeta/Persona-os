@@ -22,7 +22,7 @@
 
 const LOG_TAG = '[dsh-memory-bus]'
 // 自动连本地记忆微服务：dsh-service-manager 会在 8001 拉起 memory 微服务。
-// 未显式设置 MEMORY_BUS_URL 时写默认值，保证本进程内所有消费者（含 dsh-memory-map）都能拿到。
+// 未显式设置 MEMORY_BUS_URL 时写默认值，保证本进程内所有消费者都能拿到。
 if (!process.env.MEMORY_BUS_URL) process.env.MEMORY_BUS_URL = 'http://127.0.0.1:8001'
 const BASE_URL = (process.env.MEMORY_BUS_URL || 'http://127.0.0.1:8001').replace(/\/$/, '')
 

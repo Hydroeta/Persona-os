@@ -20,19 +20,20 @@
                 ┌───────────────────────┼────────────────────────┐
                 │                       │                        │
         ┌───────▼────────┐      ┌───────▼─────────┐      ┌───────▼──────────┐
-        │  TS 插件层 (9) │      │  Python 微服务   │      │   外部能力        │
+        │ TS 插件层 (9)  │      │  Python 微服务   │      │   外部能力        │
         │  plugins/*     │      │  core-services/* │      │                  │
         ├────────────────┤      ├─────────────────┤      ├──────────────────┤
         │ dsh-live-director│    │ memory  :8001   │      │ DeepSeek / Gemini │
         │   (弹幕WS:9001) │    │ painter :8002   │      │ Ollama (本地)     │
+        │                 │    │ game-bot :8003  │      │ ViGEmBus 虚拟手柄 │
         │ dsh-persona-core│    │ IndexTTS2(由     │      │ QQ / QQ频道      │
         │ dsh-memory-bus │      │  service-manager│      │ NapCat / go-cqhttp│
-        │ dsh-memory-map │      │   拉起 :9881)   │      │ OBS (虚拟摄像头) │
         │ dsh-painter    │      └─────────────────┘      └──────────────────┘
         │ dsh-web-agent  │
         │ dsh-llm-router │
         │ dsh-service-mgr│
         │ dsh-self-play  │
+        │ dsh-game-agent │
         └────────────────┘
 ```
 
@@ -43,12 +44,12 @@
 ## 核心亮点
 
 - 🎬 **Rundown 自主直播**（`dsh-live-director`）：弹幕 WebSocket 接入 → 优先级队列（礼物>画图>对话）→ 状态机（闲聊 3min → 你画我猜 5min → 自由点单 5min 循环）→ 20s 心跳自动切环节 / 冷场破冰；观众记忆注入 System Prompt；命中“在干嘛/画了什么”自动截屏喂多模态视觉。
-- 🧠 **3D 记忆星图**（`dsh-memory-map`）：聚合每日记忆按 tag 聚类成星系，Three.js 交互式可视化，每日 03:00 自动重算。
 - 🌐 **Playwright 无头浏览器**（`dsh-web-agent`）：后台静默抓网页正文/链接/点击，**不抢占物理鼠标**，带超时防挂死。
 - 🎭 **多角色热切换**（`dsh-persona-core`）：`switch_persona` 即时切换人格，回写 `active.json` 无需重启。
 - 🖌️ **逐帧作画**（`dsh-painter`）：扫描线/网格遮罩逐帧显影，原子写入覆盖 OBS 监听图片，模拟人类手绘节奏，支持并发取消。
 - 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
 - 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
+- 🎮 **虚拟手柄游戏代理**（`dsh-game-agent`）：截屏 → 多模态 VLM 决策下一步宏观动作 → HTTP 转发 game-bot 微服务（:8003）调 `vgamepad` 虚拟 Xbox 手柄；默认 `dry_run` 安全预览不操作手柄，Python 端 2s 看门狗无指令自动松杆防失控，任一环节离线/超时均安全降级不阻断 DSH。
 
 ---
 
@@ -83,6 +84,7 @@ node build.mjs
   |---|---|---|
   | `MEMORY_PORT` | `8001` | 记忆微服务端口 |
   | `PAINTER_PORT` | `8002` | 生图微服务端口 |
+  | `GAME_BOT_PORT` | `8003` | 游戏手柄微服务端口（vgamepad + ViGEmBus） |
   | `INDEXTTS_PORT` | `9881` | IndexTTS2 端口 |
   | `DSH_LIVE_DIRECTOR_PORT` | `9001` | 直播弹幕 WebSocket 端口 |
   | `VISION_API_BASE` / `VISION_API_KEY` / `VISION_MODEL` | 空 | 多模态视觉（GLM-4V 等）；不配则画面感知静默降级 |
@@ -108,6 +110,7 @@ dsh tool list
 # 健康检查
 curl http://127.0.0.1:8001/health   # 记忆微服务
 curl http://127.0.0.1:8002/health   # 生图微服务
+curl http://127.0.0.1:8003/health   # 游戏手柄微服务（driver_ready=true 表示 ViGEmBus 就绪）
 
 # 往直播引擎推一条模拟弹幕（应触发 LLM 回复 + TTS 播报）
 # 见 使用说明.md 的“测试直播弹幕”章节
@@ -121,17 +124,18 @@ curl http://127.0.0.1:8002/health   # 生图微服务
 persona-os/
 ├─ plugins/                  # TS 插件层（DSH 加载）
 │  ├─ dsh-live-director/     #   直播交互引擎（弹幕/状态机/记忆/视觉）
-│  ├─ dsh-memory-map/        #   3D 记忆星图
 │  ├─ dsh-memory-bus/        #   记忆工具（调 :8001）
 │  ├─ dsh-persona-core/      #   多人格热切换
 │  ├─ dsh-painter/           #   逐帧作画
 │  ├─ dsh-web-agent/         #   Playwright 无头浏览器
 │  ├─ dsh-llm-router/        #   LLM 路由
 │  ├─ dsh-service-manager/   #   微服务生命周期
-│  └─ dsh-self-play/         #   人格自进化（半夜复盘去 AI 味）
+│  ├─ dsh-self-play/         #   人格自进化（半夜复盘去 AI 味）
+│  └─ dsh-game-agent/        #   游戏代理大脑（截屏→VLM→虚拟手柄 :8003）
 ├─ core-services/            # Python 微服务层
 │  ├─ memory/   main.py      #   记忆存取 :8001
-│  └─ painter/  main.py      #   生图 :8002
+│  ├─ painter/  main.py      #   生图 :8002
+│  └─ game-bot/ main.py      #   虚拟手柄 :8003（vgamepad + ViGEmBus）
 ├─ dsh/                      # DSH 工作区（home/cordis.patch.yml）
 ├─ config/                   # master.json / personas / 密钥占位
 ├─ Tulpa/                    # 副人格 Tulpa（独立进程 / MCP）
@@ -149,9 +153,10 @@ persona-os/
 
 | 端口 | 服务 | 说明 |
 |---|---|---|
-| `3080` | DSH Web 服务器 | 记忆星图 UI、插件 Web 路由挂载点 |
+| `3080` | DSH Web 服务器 | 插件 Web 路由挂载点 |
 | `8001` | Memory 微服务 | 记忆存取（`/remember` `/recall`） |
 | `8002` | Painter 微服务 | 生图（`/generate`） |
+| `8003` | GameBot 微服务 | 虚拟手柄（`/action` `/health` `/reset`，vgamepad + ViGEmBus） |
 | `9001` | Live Director WS | 直播弹幕接入 |
 | `9881` | IndexTTS2 | TTS（由 service-manager 拉起） |
 | `11434` | Ollama | 本地 LLM（可选） |
