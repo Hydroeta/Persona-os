@@ -1,0 +1,12 @@
+# dsh-service-manager —— DSH bundle patch
+# 插件挂载声明：DSH 启动时把本插件插进 profile 的配置树，作为一个可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "c:\Users\user\Desktop\projects (2)\github-release\persona-os\plugins\dsh-service-manager"
+#
+# ⚠️ name 必须与安装后的包名完全一致（dsh-service-manager），否则会表现为
+#    「装上了但不加载（declares no dsh.bundle / 不是 profile layer）」。
+
+- insert:
+    - id: dsh-service-manager
+      name: 'dsh-service-manager'

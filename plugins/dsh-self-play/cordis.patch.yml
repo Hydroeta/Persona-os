@@ -1,0 +1,13 @@
+# dsh-self-play —— DSH bundle patch
+# 把本插件插进 profile 配置树，作为可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "c:\Users\user\Desktop\projects (2)\github-release\persona-os\plugins\dsh-self-play"
+#
+# ⚠️ name 必须与包名完全一致（dsh-self-play），否则会表现为「装上了但不加载」。
+# ⚠️ 依赖 dsh-service-manager 拉起的 memory 微服务（:8001）提供近期文本样本；
+#    依赖本地 Ollama（:11434）做语感审查。任一缺失都会安全降级，不阻断 DSH。
+
+- insert:
+    - id: dsh-self-play
+      name: 'dsh-self-play'

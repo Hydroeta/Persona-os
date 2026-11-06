@@ -1,0 +1,345 @@
+/**
+ * dsh-live-director —— 终极直播交互引擎
+ *
+ * 模块拆分（src/）：
+ *   index.ts      插件生命周期与工具注册（本文件）
+ *   queue.ts      弹幕接入与优先级队列（模块 1）
+ *   director.ts   Rundown 状态机与主动心跳（模块 2）
+ *   memory.ts     观众记忆注入（模块 3，待实现）
+ *   perception.ts 多模态画面截取与解析（模块 4，待实现）
+ *
+ * 本轮（模块 2）：把 director 接入 index.ts，形成闭环
+ *   弹幕到达 → markInteraction（刷新冷场计时）+ 入队
+ *   队列消费 → LLM 生成回复 → speak（TTS 占位）→ markInteraction
+ *   director 心跳 → sys_action（切状态/冷场搭话）→ LLM 生成文案 → speak
+ *
+ * 解耦原则：director.ts 只产生“意图”，LLM 调用与文案生成全部在本文件。
+ * 无 LLM 环境（测试 / 未装 dsh-llm-router）时降级 mock 文案，保证链路不崩。
+ */
+import { startDanmakuServer, type DanmakuServer, type QueuedItem, Priority } from './queue'
+import { Director, RundownState, type SysAction, STATE_LABEL } from './director'
+import { MemoryClient, buildMemoryPrompt } from './memory'
+import { Perception, shouldCaptureScreen, buildScreenPrompt } from './perception'
+
+const LOG_TAG = '[dsh-live-director]'
+const DANMAKU_PORT = Number(process.env.DSH_LIVE_DIRECTOR_PORT) || 9001
+
+// ---------------------------------------------------------------------------
+// DSH 工具类型（最小子集，参照 dsh-memory-bus 实测结构）
+// ---------------------------------------------------------------------------
+
+interface DshTool {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+  output?: { schema: Record<string, unknown>; render: (args: any, value: any) => any[] }
+  execute: (args: any, exec: any) => Promise<any>
+  presentCall?: (args: any) => any
+}
+
+// ---------------------------------------------------------------------------
+// 运行时单例（apply 时创建，dispose 时销毁）
+// ---------------------------------------------------------------------------
+
+let danmakuServer: DanmakuServer | null = null
+let director: Director | null = null
+let stopConsume: (() => void) | null = null
+let memoryClient: MemoryClient | null = null
+let perception: Perception | null = null
+
+/** 测试/运行时注入：允许覆盖默认 memory 与 perception（默认走真实 HTTP + 截屏） */
+let memoryClientOverride: MemoryClient | null = null
+let perceptionOverride: Perception | null = null
+export function __injectForTest(opts: { memory?: MemoryClient; perception?: Perception }): void {
+  memoryClientOverride = opts.memory ?? null
+  perceptionOverride = opts.perception ?? null
+}
+
+// ---------------------------------------------------------------------------
+// LLM 接入：优先 ctx.get('llmRouter')，取不到则降级 mock（保证无 LLM 环境不崩）
+// ---------------------------------------------------------------------------
+
+/** 调 LLM 生成一句回复；失败或无 router 时返回 fallback */
+async function generateReply(
+  ctx: any,
+  prompt: string,
+  fallback: string,
+): Promise<string> {
+  let router: any = null
+  try {
+    router = typeof ctx?.get === 'function' ? ctx.get('llmRouter') : null
+  } catch {
+    router = null
+  }
+  if (router && typeof router.chat === 'function') {
+    try {
+      const res = await router.chat(
+        [{ role: 'user', content: prompt }],
+        { background: true },
+      )
+      const content = res?.content
+      if (typeof content === 'string' && content.trim()) return content
+    } catch (e) {
+      console.error(`${LOG_TAG} LLM 调用失败，降级 mock 文案：`, (e as Error).message)
+    }
+  }
+  return fallback
+}
+
+/** 调 LLM（传完整 messages 数组）；失败或无 router 时返回 fallback */
+async function chatWithMessages(
+  ctx: any,
+  messages: Array<{ role: string; content: string }>,
+  fallback: string,
+): Promise<string> {
+  let router: any = null
+  try {
+    router = typeof ctx?.get === 'function' ? ctx.get('llmRouter') : null
+  } catch {
+    router = null
+  }
+  if (router && typeof router.chat === 'function') {
+    try {
+      const res = await router.chat(messages, { background: true })
+      const content = res?.content
+      if (typeof content === 'string' && content.trim()) return content
+    } catch (e) {
+      console.error(`${LOG_TAG} LLM 调用失败，降级 mock 文案：`, (e as Error).message)
+    }
+  }
+  return fallback
+}
+
+/**
+ * 纯函数：组装发给 LLM 的消息（System Prompt 注入记忆，User 消息注入画面上下文）。
+ * 导出供 test-mock.js 验证“记忆/画面是否真的注入到了请求 Payload”。
+ */
+export function buildChatMessages(opts: {
+  user: string
+  text: string
+  userContext?: string
+  screenContext?: string
+}): Array<{ role: 'system' | 'user'; content: string }> {
+  const sysParts: string[] = [
+    '你是直播间的 AI 主播，口语化、热情、有网感，回复简短（不超过 40 字），不要重复弹幕原文。',
+  ]
+  const memPrompt = buildMemoryPrompt(opts.user, opts.userContext ?? '')
+  if (memPrompt) sysParts.push(memPrompt)
+
+  const userParts: string[] = []
+  const screenPrompt = buildScreenPrompt(opts.screenContext ?? '')
+  if (screenPrompt) userParts.push(screenPrompt)
+  userParts.push(`观众「${opts.user}」发弹幕：「${opts.text}」，请回复。`)
+
+  return [
+    { role: 'system', content: sysParts.join('\n') },
+    { role: 'user', content: userParts.join(' ') },
+  ]
+}
+
+/**
+ * TTS 播报占位（模块 5 实现真实 TTS 时替换内部）。
+ * 每次主动发言后刷新 director 冷场计时，避免刚说完又触发冷场。
+ */
+function speak(text: string, meta: Record<string, unknown> = {}): void {
+  console.log(`${LOG_TAG} 🔊 speak：${text}`, Object.keys(meta).length ? meta : '')
+  director?.markInteraction()
+  // TODO(模块 5)：调用真实 TTS 服务播放 audio
+}
+
+/** 处理 director 产生的 sys_action：按意图生成文案并播报 */
+async function handleSysAction(ctx: any, action: SysAction): Promise<void> {
+  if (action.type === 'switch_state') {
+    const prompt =
+      `直播 Rundown 切换环节：从「${STATE_LABEL[action.from]}」进入「${STATE_LABEL[action.to]}」，` +
+      `请用一句热情的主播口播宣布进入新环节（不超过 40 字）。`
+    const fallback = `好嘞，接下来进入「${STATE_LABEL[action.to]}」环节，大家多多互动哦！`
+    const text = await generateReply(ctx, prompt, fallback)
+    speak(text, { action: 'switch_state', from: action.from, to: action.to })
+    return
+  }
+  // cold_break
+  const prompt = `直播间冷场了，用话题「${action.topic}」主动跟观众搭话，一句轻松口语（不超过 30 字）。`
+  const fallback = `${action.topic} 来聊聊天呀～别让我一个人尬住！`
+  const text = await generateReply(ctx, prompt, fallback)
+  speak(text, { action: 'cold_break', topic: action.topic })
+}
+
+/** 取当前生效的 memory（测试可注入覆盖） */
+function getMemory(): MemoryClient | null {
+  return memoryClientOverride ?? memoryClient
+}
+/** 取当前生效的 perception（测试可注入覆盖） */
+function getPerception(): Perception | null {
+  return perceptionOverride ?? perception
+}
+
+/** 队列消费：记忆注入 → 画面感知(按需) → 组装 messages → LLM 生成 → 播报 → 异步存记忆 */
+async function consumeDanmaku(ctx: any, item: QueuedItem): Promise<void> {
+  const { user, text } = item.msg
+  const mem = getMemory()
+  const perc = getPerception()
+
+  // 1) 查观众记忆（3s 超时，失败降级为空，不阻塞）
+  const userContext = mem ? await mem.getUserContext(user) : ''
+
+  // 2) 命中画面关键词才截屏感知（2s 超时降级，绝不卡死）
+  let screenContext = ''
+  if (perc && shouldCaptureScreen(text)) {
+    screenContext = await perc.captureScreenContext()
+  }
+
+  // 3) 组装 LLM 请求（记忆进 System Prompt，画面进 User 上下文）
+  const messages = buildChatMessages({ user, text, userContext, screenContext })
+  const fallback = `收到「${user}」的「${text}」啦，安排上！`
+  const reply = await chatWithMessages(ctx, messages, fallback)
+
+  speak(reply, { priority: item.priority, user, hasMemory: !!userContext, hasScreen: !!screenContext })
+
+  // 4) 异步存入记忆库（fire-and-forget，不阻塞响应）
+  mem?.saveUserInteraction(user, text)
+}
+
+// ---------------------------------------------------------------------------
+// 工具定义
+// ---------------------------------------------------------------------------
+
+const tools: DshTool[] = [
+  {
+    name: 'live_director_status',
+    description:
+      '查询直播导演引擎当前运行状态：弹幕服务是否在跑、队列积压多少条、' +
+      '当前 Rundown 状态（director 心跳状态机）。调试直播链路时调用。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+    },
+    output: {
+      schema: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean' },
+          running: { type: 'boolean' },
+          port: { type: ['integer', 'null'] },
+          queueSize: { type: 'integer' },
+          topPriority: { type: ['integer', 'null'] },
+          state: { type: 'string' },
+          stateLabel: { type: 'string' },
+          stateAgeMs: { type: 'integer' },
+          idleMs: { type: 'integer' },
+        },
+      },
+      render: (_args: any, value: any) => [
+        {
+          type: 'text',
+          text: value?.running
+            ? `🎙️ 直播导演运行中（端口 ${value.port}）｜环节：${value.stateLabel}｜队列积压 ${value.queueSize} 条`
+            : `⚠️ 直播导演未在运行`,
+        },
+      ],
+    },
+    async execute() {
+      const top = danmakuServer?.queue.peek()
+      const state = director?.currentState ?? RundownState.CHITCHAT
+      return {
+        ok: true,
+        running: !!danmakuServer,
+        port: danmakuServer?.port ?? null,
+        queueSize: danmakuServer?.queue.size ?? 0,
+        topPriority: top ? top.priority : null,
+        state,
+        stateLabel: STATE_LABEL[state],
+        stateAgeMs: director ? director.stateAgeMs() : 0,
+        idleMs: director ? director.idleMs() : 0,
+      }
+    },
+    presentCall() {
+      return { card: 'generic', title: 'live_director_status', kind: 'read' }
+    },
+  },
+]
+
+// ---------------------------------------------------------------------------
+// DSH 插件入口
+// ---------------------------------------------------------------------------
+
+export default {
+  name: 'dsh-live-director',
+  async apply(ctx: any) {
+    console.log(`${LOG_TAG} apply`)
+
+    // 1) 注册工具
+    const disposers: Array<() => void> = []
+    for (const t of tools) {
+      try {
+        const d = ctx.tools.register(t)
+        if (typeof d === 'function') disposers.push(d)
+        console.log(`${LOG_TAG} 已注册工具 ${t.name}`)
+      } catch (e) {
+        console.error(`${LOG_TAG} 注册工具 ${t.name} 失败：`, e)
+      }
+    }
+
+    // 1.5) 初始化记忆客户端（memory-bus :8001）与画面感知（node-screenshots + 视觉模型）
+    //      默认走真实服务；测试可通过 __injectForTest 注入 mock。失败均降级，不影响启动。
+    memoryClient = memoryClientOverride ?? new MemoryClient()
+    perception = perceptionOverride ?? new Perception()
+
+    // 2) 启动 Rundown 状态机 + 心跳（director 独立于弹幕服务，即使弹幕没起来也要跑）
+    director = new Director({
+      onActionNeeded: (action) => {
+        void handleSysAction(ctx, action)
+      },
+    })
+    director.start()
+
+    // 3) 启动弹幕 WebSocket 服务（模块 1）
+    try {
+      danmakuServer = await startDanmakuServer({
+        port: DANMAKU_PORT,
+        // 每条弹幕到达（放行或拦截）都刷新 director 冷场计时
+        onMessage: () => director?.markInteraction(),
+      })
+      console.log(
+        `${LOG_TAG} 弹幕服务就绪（端口 ${DANMAKU_PORT}），优先级：礼物=${Priority.GIFT} 画图=${Priority.DRAW} 对话=${Priority.CHAT}`,
+      )
+
+      // 4) 启动队列消费循环：有弹幕就 LLM 生成 + 播报（串行，TTS 不重叠）
+      stopConsume = danmakuServer.queue.consume(async (item) => {
+        await consumeDanmaku(ctx, item)
+      })
+      console.log(`${LOG_TAG} 队列消费者已启动`)
+    } catch (e) {
+      console.error(`${LOG_TAG} 启动弹幕服务失败（端口 ${DANMAKU_PORT} 可能被占用）：`, e)
+    }
+
+    // 5) 清理：必须把所有定时器（director 心跳 + 队列消费）都清掉，避免泄漏
+    ctx.on('dispose', () => {
+      console.log(`${LOG_TAG} dispose：停止心跳、关闭队列消费、关闭弹幕服务、注销 ${disposers.length} 个工具`)
+      director?.stop()
+      director = null
+      memoryClient = null
+      perception = null
+      if (stopConsume) {
+        try {
+          stopConsume()
+        } catch {
+          /* ignore */
+        }
+        stopConsume = null
+      }
+      if (danmakuServer) {
+        danmakuServer.close().catch((e) => console.error(`${LOG_TAG} 关闭弹幕服务出错：`, e))
+        danmakuServer = null
+      }
+      for (const d of disposers) {
+        try {
+          d()
+        } catch {
+          /* ignore */
+        }
+      }
+    })
+  },
+}

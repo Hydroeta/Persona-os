@@ -1,0 +1,38 @@
+{
+  "name": "dsh-self-play",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：人格自进化。每天凌晨 3 点复盘角色近期回复，用本地 Ollama 审查 AI 味/客服腔，把负向指令追加到 config/personas/<id>/rules.json 的 negative_rules（先备份再写入）。纯逻辑，安全降级。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/node-cron": "^3.0.11",
+    "esbuild": "^0.25.0"
+  }
+}

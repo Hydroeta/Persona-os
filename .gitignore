@@ -51,6 +51,12 @@ venv/
 node_modules/
 .pnpm-store/
 *.log
+# Playwright 浏览器内核（本地下载，体积大，不入库；用户首次使用前自行 npx playwright install chromium）
+.playwright-browsers/
+
+# dsh-painter 逐帧作画测试中间帧（本地验证遮罩显影用，不入库）
+temp_paint_frames/
+**/temp_paint_frames/
 
 # ===== 系统与编辑器 =====
 .DS_Store
@@ -75,3 +81,6 @@ mortis-pet/dist/
 
 # ===== 三版本同步产生的本地备份（不入库）=====
 *.bak-sync
+
+# ===== V1 旧版归档（本地保留观察，不入库；发布快照不含归档文件）=====
+_archive_v1/

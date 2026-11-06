@@ -1,0 +1,38 @@
+{
+  "name": "dsh-painter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：逐帧作画引擎。拿到完整图片后，用扫描线/网格遮罩逐帧显影，原子写入覆盖 OBS 监听图片，模拟人类作画过程；支持并发取消与 dispose 清理。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0"
+  }
+}

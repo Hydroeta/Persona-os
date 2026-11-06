@@ -1,0 +1,38 @@
+{
+  "name": "dsh-web-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：后台无头浏览器（Playwright Chromium 单例），静默抓取网页正文/链接/点击，不抢占物理鼠标，带超时与防挂死。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs",
+    "install-browsers": "playwright install chromium"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.49.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0"
+  }
+}

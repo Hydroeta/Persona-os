@@ -1,0 +1,15 @@
+# dsh-memory-map —— DSH bundle patch
+# 把本插件插进 profile 配置树，作为可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "c:\Users\user\Desktop\projects (2)\github-release\persona-os\plugins\dsh-memory-map"
+#
+# 依赖：需先装好 dsh-memory-bus（或 8001 端口有 Memory 微服务）+ dsh-service-manager 自动拉起。
+# 输出：<发布版根>/data/memory_constellation.json（可用 MEMORY_MAP_OUT 覆盖路径）。
+# 关闭每日定时：MEMORY_MAP_CRON=0
+#
+# ⚠️ name 必须与包名完全一致（dsh-memory-map），否则会表现为「装上了但不加载」。
+
+- insert:
+    - id: dsh-memory-map
+      name: 'dsh-memory-map'

@@ -1,0 +1,21 @@
+# dsh-painter —— DSH bundle patch
+# 把本插件插进 profile 配置树，作为可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "c:\Users\user\Desktop\projects (2)\github-release\persona-os\plugins\dsh-painter"
+#
+# 底图来源（二选一，不设则用内置测试图，仅用于验证显影管线）：
+#   1) 指向 Python 生图微服务（推荐，复用 tools/painter.py 的闸门/双通道/key_vault）：
+#      启动微服务：
+#        & "c:\Users\user\Desktop\projects (2)\ohwhale-deploy\.venv\Scripts\python.exe" "c:\Users\user\Desktop\projects (2)\github-release\persona-os\core-services\painter\main.py"
+#      设环境变量：IMAGE_GEN_URL=http://127.0.0.1:8002/generate
+#   2) 直接指向任意返回图片字节的 HTTP 端点（含 CogView 代理），POST {prompt}。
+#
+# 测试模式（保存中间帧到临时目录，验证遮罩显影）：
+#   PAINTER_TEST_MODE=1  或  PAINTER_FRAMES_DIR=<绝对目录>
+#
+# ⚠️ name 必须与包名完全一致（dsh-painter），否则会表现为「装上了但不加载」。
+
+- insert:
+    - id: dsh-painter
+      name: 'dsh-painter'

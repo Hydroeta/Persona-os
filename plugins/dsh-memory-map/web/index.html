@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>记忆星云 · Memory Nebula</title>
+<style>
+  :root {
+    --bg: #05060d;
+    --fg: #e8ecf5;
+    --muted: #8a93a8;
+    --accent: #7cc4ff;
+    --gold: #ffd87a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+    cursor: grab;
+  }
+  body:active { cursor: grabbing; }
+  #graph { position: fixed; inset: 0; z-index: 1; display: block; }
+
+  /* 顶部信息条 */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; gap: 18px;
+    padding: 12px 22px;
+    background: linear-gradient(180deg, rgba(5,6,13,0.85), rgba(5,6,13,0));
+    pointer-events: none;
+  }
+  #topbar .title {
+    font-size: 15px; font-weight: 600; letter-spacing: 2px;
+    color: var(--fg);
+    text-shadow: 0 0 12px rgba(124,196,255,0.5);
+  }
+  #topbar .title .dot { color: var(--gold); }
+  #topbar .stats { display: flex; gap: 16px; font-size: 12px; color: var(--muted); }
+  #topbar .stats b { color: var(--accent); font-weight: 600; }
+  #topbar .stats .mode {
+    color: var(--gold); opacity: 0.9; letter-spacing: 1px;
+  }
+  #topbar .spacer { flex: 1; }
+  #topbar button {
+    pointer-events: auto;
+    background: rgba(124,196,255,0.08);
+    border: 1px solid rgba(124,196,255,0.35);
+    color: var(--accent);
+    padding: 6px 14px; border-radius: 16px; font-size: 12px;
+    cursor: pointer; transition: all .2s ease; backdrop-filter: blur(6px);
+  }
+  #topbar button:hover:not(:disabled) {
+    background: rgba(124,196,255,0.18); box-shadow: 0 0 14px rgba(124,196,255,0.35);
+  }
+  #topbar button:disabled { opacity: 0.45; cursor: default; }
+
+  /* 底部提示 */
+  #hint {
+    position: fixed; bottom: 12px; left: 0; right: 0; z-index: 10;
+    text-align: center; font-size: 11px; color: var(--muted); pointer-events: none;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  }
+
+  /* 悬停 tooltip：毛玻璃，仅文字用 HTML */
+  #tooltip {
+    position: fixed; z-index: 20; pointer-events: none;
+    max-width: 300px; padding: 10px 13px;
+    background: rgba(10,14,24,0.78);
+    border: 1px solid rgba(124,196,255,0.35);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6), 0 0 18px rgba(124,196,255,0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-size: 12px; line-height: 1.55; color: var(--fg);
+    opacity: 0; transform: translateY(4px); transition: opacity .15s ease, transform .15s ease;
+  }
+  #tooltip.show { opacity: 1; transform: translateY(0); }
+  #tooltip .t-title { font-weight: 600; color: var(--gold); margin-bottom: 4px; }
+  #tooltip .t-meta { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+  #tooltip .t-text { color: #cfd6e6; word-break: break-word; }
+
+  /* 星系标签 / 主星标签已改为 3D Sprite（Star Chart 文字系统），不再用 HTML 浮层 */
+
+  /* 加载 / 错误遮罩 */
+  .overlay {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(5,6,13,0.88); backdrop-filter: blur(4px);
+    color: var(--muted); font-size: 14px; text-align: center; padding: 24px;
+  }
+  .overlay.hidden { display: none; }
+  .overlay .spinner {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid rgba(124,196,255,0.2); border-top-color: var(--accent);
+    animation: spin 1s linear infinite; margin: 0 auto 14px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <!-- canvas 由 app.bundle.js 创建并插入，id="graph" -->
+
+  <div id="topbar">
+    <div class="title">记忆星云 <span class="dot">·</span> MEMORY NEBULA</div>
+    <div class="stats">
+      <span>星系 <b id="meta-clusters">—</b></span>
+      <span>星星 <b id="meta-stars">—</b></span>
+      <span>更新 <b id="meta-time">—</b></span>
+      <span class="mode" id="meta-mode">—</span>
+    </div>
+    <div class="spacer"></div>
+    <button id="btn-reset" title="回到全览视角">重置视角</button>
+    <button id="btn-refresh" title="重新拉取快照数据">刷新数据</button>
+  </div>
+
+  <div id="hint">拖拽旋转 · 滚轮缩放 · 悬停查看记忆（其他星系会变暗）· 单击聚焦星系 · 双击空白处回到全览</div>
+
+  <div id="tooltip"></div>
+
+  <div id="overlay" class="overlay">
+    <div>
+      <div class="spinner"></div>
+      <div id="overlay-text">正在点亮记忆星云…</div>
+    </div>
+  </div>
+
+  <script src="app.bundle.js"></script>
+</body>
+</html>

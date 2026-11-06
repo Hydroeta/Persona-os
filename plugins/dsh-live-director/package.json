@@ -1,0 +1,44 @@
+{
+  "name": "dsh-live-director",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：直播交互引擎。弹幕接入(WebSocket :9001) → 优先级队列 → Rundown 状态机 → LLM/TTS/画画执行，含观众记忆注入与多模态画面感知。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./queue": "./lib/queue.js",
+    "./director": "./lib/director.js",
+    "./memory": "./lib/memory.js",
+    "./perception": "./lib/perception.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs",
+    "test": "node test-mock.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "node-screenshots": "^0.2.8",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.25.0"
+  }
+}

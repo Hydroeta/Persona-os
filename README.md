@@ -1,112 +1,173 @@
-# persona-os
+# persona-os V2
 
-可私有部署的多角色 AI Agent 操作系统。集成统一拓扑控制台、端云协同推理、独立记忆隔离与端侧情境感知。
+> 数字人直播 / 陪伴操作系统 —— 从 Python 单体进化为 **DSH 宿主 + TypeScript 插件层 + Python 微服务层** 的分布式 Monorepo。
+> 让 AI 主播既能自动推进节目单、主动破冰、叫着老粉的名字互动，也能“看”到自己的屏幕在画什么。
 
-把 QQ / 微信式聊天、语音通话、桌宠、直播弹幕、记忆与日程、成本闸门与统一控制台拼在一起，
-强调「可运维」而不只是「能聊天」。多角色通过 `config/personas/` 正本 + 物化视图实现静默热切换
-（`tools/persona_switch.py`，零 LLM 调用），各角色人格、声音状态与情绪存档相互隔离。
+[![DSH](https://img.shields.io/badge/runtime-DSH%20%28Cordis%29-7c3aed)](https://github.com/deepseek-ai/dsh)
+[![pnpm](https://img.shields.io/badge/monorepo-pnpm-workspace-F69220)](https://pnpm.io)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](#许可证)
 
-> 本仓库是**源码与配置**的整理版：不含任何第三方二进制、模型权重、密钥、聊天记录或用户数据。
-> 运行时需要自行准备文末列出的外部组件。
+---
 
-## 能做什么
-
-| 模块 | 能力 |
-|---|---|
-| 控制台 `console.py` | 服务拓扑启动、就绪探针、健康守护、密钥保险库、指标面板、自检、**服务链路拓扑图**（节点随 `/api/status` 实时着色，一眼定位断线环节）、**赛博生命体征**遥测卡片（GPU/CPU/网络，过热语音播报）、**自我对弈**人格自进化（命中 AI 味写规则、写前存快照可回滚）、崩溃**绿色 AI 诊断**卡片（纯标准库） |
-| 多角色 | `config/personas/` 多角色正本 + 激活指针，静默热切换（零 LLM 调用），状态/记忆按角色隔离 |
-| 语音通话 | 本地 ASR + IndexTTS2 零样本音色克隆（默认引擎，可切回遗留 GPT-SoVITS，`services.tts_engine` 一键切换），按情绪/精力切换参考音（`config/persona.json` 的 `voice.states`）；另支持 `local_voice.py` 本地麦克风唤醒（不依赖 QQ：麦→ASR→本地 Ollama→TTS→音箱直连，TTS 挂了降级 SAPI）|
-| 聊天接入 | QQ 双协议端（Tulpa←SnowLuma 注入桌面 QQ；哦鲸鲸←NapCat 便携 QQ）、AstrBot 插件、B 站与抖音弹幕回复 |
-| 桌宠 | 桌面角色（基于 dsh-pet 的定制人设与菜单 + 自建 mortis-pet（源码随仓库）；均**可选**，缺失不影响其他服务） |
-| 记忆与关系 | 目标、时间胶囊、日记回顾、日历提醒、关心心跳、记忆总线、冷门记忆遗忘曲线压缩（本地 Ollama 极度压缩 + 原文软删归档，零 schema） |
-| 作画与游戏 | 统一生图引擎（弹幕点单作画 / 你画我猜 / OBS 图片源联动，带敏感词与计费闸门）；通用游戏代理（看画面 → VLM 决策 → 按键，帧差防卡死）；游戏事件联动让人格实时破防 / 得瑟；游戏代理新增宏观模式（VLM 只挑宏、按键写死、卡死硬脱困，更省 token） |
-| 成本与资源 | LLM token 闸门、场景配额、端云路由（Ollama 本地免费 / DeepSeek 主用 / 千问兜底）、GPU 互斥租约、搜索网关、日报 |
-| 工具集 | `tools/` 40+ 个纯标准库模块（本轮新增 telemetry / self_play / ai_ops / vector_store / knowledge_snapshot，全部懒加载降级、缺依赖不崩）；`tests/` 117 项冒烟测试 |
-
-## 目录
+## 架构拓扑
 
 ```
-console.py / 控制台.cmd      控制台入口
-一键安装.cmd                安装入口（调用 install/安装.ps1）
-config/                     配置单一事实源（密钥只进本机 DPAPI，不落盘明文）
-tools/                      工具模块（含 pet_adapters/ 桌宠适配器子目录）
-tests/                      冒烟测试
-ohwhale-deploy/             语音/聊天部署包（第三方，含本人改动）
-whale-pod/                  DSH 插件宿主（MIT）
-dsh/                        DSH 定时任务与工作区配置
-dsh-pet/                    桌宠人设与菜单定制（JSON）
-mortis-pet/                 自建第二桌宠源码（PySide6；素材 videos/ 与台词 config.json 自备不入库，附 config.example.json 模板）
-Tulpa/Tulpa/chatlocal/      Tulpa 本地聊天模块
-install/                    安装脚本（基础环境 + 组件依赖）
-使用说明.md / 项目介绍.md     详细文档
-THIRD-PARTY-NOTICES.md     第三方归属、许可证与修改声明（唯一清单）
+                        ┌──────────────────────────────────────────────┐
+                        │               DSH 宿主 (Cordis)              │
+                        │   会话 / Agent 调度 / Web 服务器(:3080)        │
+                        └───────────────┬──────────────────────────────┘
+                                        │  ctx 注入 + 插件加载
+                ┌───────────────────────┼────────────────────────┐
+                │                       │                        │
+        ┌───────▼────────┐      ┌───────▼─────────┐      ┌───────▼──────────┐
+        │  TS 插件层 (9) │      │  Python 微服务   │      │   外部能力        │
+        │  plugins/*     │      │  core-services/* │      │                  │
+        ├────────────────┤      ├─────────────────┤      ├──────────────────┤
+        │ dsh-live-director│    │ memory  :8001   │      │ DeepSeek / Gemini │
+        │   (弹幕WS:9001) │    │ painter :8002   │      │ Ollama (本地)     │
+        │ dsh-persona-core│    │ IndexTTS2(由     │      │ QQ / QQ频道      │
+        │ dsh-memory-bus │      │  service-manager│      │ NapCat / go-cqhttp│
+        │ dsh-memory-map │      │   拉起 :9881)   │      │ OBS (虚拟摄像头) │
+        │ dsh-painter    │      └─────────────────┘      └──────────────────┘
+        │ dsh-web-agent  │
+        │ dsh-llm-router │
+        │ dsh-service-mgr│
+        │ dsh-self-play  │
+        └────────────────┘
 ```
+
+**设计理念**：TS 管调度与交互（快、类型安全、易插件化），Python 管存储与重计算（生态成熟、复用现有模型封装），DSH 做宿主粘合。详见 [项目介绍.md](./项目介绍.md)。
+
+---
+
+## 核心亮点
+
+- 🎬 **Rundown 自主直播**（`dsh-live-director`）：弹幕 WebSocket 接入 → 优先级队列（礼物>画图>对话）→ 状态机（闲聊 3min → 你画我猜 5min → 自由点单 5min 循环）→ 20s 心跳自动切环节 / 冷场破冰；观众记忆注入 System Prompt；命中“在干嘛/画了什么”自动截屏喂多模态视觉。
+- 🧠 **3D 记忆星图**（`dsh-memory-map`）：聚合每日记忆按 tag 聚类成星系，Three.js 交互式可视化，每日 03:00 自动重算。
+- 🌐 **Playwright 无头浏览器**（`dsh-web-agent`）：后台静默抓网页正文/链接/点击，**不抢占物理鼠标**，带超时防挂死。
+- 🎭 **多角色热切换**（`dsh-persona-core`）：`switch_persona` 即时切换人格，回写 `active.json` 无需重启。
+- 🖌️ **逐帧作画**（`dsh-painter`）：扫描线/网格遮罩逐帧显影，原子写入覆盖 OBS 监听图片，模拟人类手绘节奏，支持并发取消。
+- 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
+- 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
+
+---
 
 ## 快速开始
 
+### 1. 环境准备
+
+- Node.js ≥ 22，pnpm ≥ 9（`npm i -g pnpm`）
+- Python 3.10+（微服务运行时）
+- Windows 10/11（计划任务、DPAPI 密钥、OBS 集成均在 Windows 验证）
+
+### 2. 安装与构建
+
 ```powershell
-.\控制台.cmd                # 启动控制台（唯一入口），浏览器打开打印的带 token 链接
-python tests/test_smoke.py  # 117 项冒烟测试
+# 进入发布版根目录（即本 README 所在目录）
+cd github-release\persona-os
+
+# 安装 monorepo 全部依赖（含插件 esbuild 编译产物）
+pnpm install
+
+# 如需单独重编某个插件（例如刚改了源码）
+cd plugins\dsh-live-director
+node build.mjs
 ```
 
-一键装基础环境（Node / Python / pnpm / ffmpeg）与包内依赖：双击 `一键安装.cmd`。
+### 3. 配置
 
-## 需要自行准备
+- 复制 [config/master.json](./config/master.json) 为你的运行配置（DSH 启动时合并）。
+- 关键环境变量（可写进系统环境变量或 `.env`，DSH 会继承）：
 
-| 组件 | 用途 | 获取方式 |
+  | 变量 | 默认值 | 说明 |
+  |---|---|---|
+  | `MEMORY_PORT` | `8001` | 记忆微服务端口 |
+  | `PAINTER_PORT` | `8002` | 生图微服务端口 |
+  | `INDEXTTS_PORT` | `9881` | IndexTTS2 端口 |
+  | `DSH_LIVE_DIRECTOR_PORT` | `9001` | 直播弹幕 WebSocket 端口 |
+  | `VISION_API_BASE` / `VISION_API_KEY` / `VISION_MODEL` | 空 | 多模态视觉（GLM-4V 等）；不配则画面感知静默降级 |
+  | `LLM_ROUTER_OLLAMA_PROVIDER` | 空 | 配置后启用 LLM 路由对 `agent/request` 的透明拦截 |
+
+### 4. 启动 DSH 并加载插件
+
+```powershell
+# 启动 DSH（它会按 dsh/home/cordis.patch.yml 拉起微服务 + 加载插件）
+dsh up
+
+# 查看已加载插件 / 工具
+dsh plugin --profile web list
+dsh tool list
+```
+
+> 每个插件根目录的 `cordis.patch.yml` 已声明为 DSH 可加载 bundle；首次加载可用：
+> `dsh plugin --profile web add "<插件绝对路径>"`
+
+### 5. 验证
+
+```powershell
+# 健康检查
+curl http://127.0.0.1:8001/health   # 记忆微服务
+curl http://127.0.0.1:8002/health   # 生图微服务
+
+# 往直播引擎推一条模拟弹幕（应触发 LLM 回复 + TTS 播报）
+# 见 使用说明.md 的“测试直播弹幕”章节
+```
+
+---
+
+## 目录结构
+
+```
+persona-os/
+├─ plugins/                  # TS 插件层（DSH 加载）
+│  ├─ dsh-live-director/     #   直播交互引擎（弹幕/状态机/记忆/视觉）
+│  ├─ dsh-memory-map/        #   3D 记忆星图
+│  ├─ dsh-memory-bus/        #   记忆工具（调 :8001）
+│  ├─ dsh-persona-core/      #   多人格热切换
+│  ├─ dsh-painter/           #   逐帧作画
+│  ├─ dsh-web-agent/         #   Playwright 无头浏览器
+│  ├─ dsh-llm-router/        #   LLM 路由
+│  ├─ dsh-service-manager/   #   微服务生命周期
+│  └─ dsh-self-play/         #   人格自进化（半夜复盘去 AI 味）
+├─ core-services/            # Python 微服务层
+│  ├─ memory/   main.py      #   记忆存取 :8001
+│  └─ painter/  main.py      #   生图 :8002
+├─ dsh/                      # DSH 工作区（home/cordis.patch.yml）
+├─ config/                   # master.json / personas / 密钥占位
+├─ Tulpa/                    # 副人格 Tulpa（独立进程 / MCP）
+├─ ohwhale-deploy/           # QQ 语音通话直播（live_bot / call_loop）
+├─ README.md                 # 本文件
+├─ 使用说明.md                # 运行与功能使用手册
+├─ 项目介绍.md                # 设计理念与路线图
+├─ THIRD-PARTY-NOTICES.md    # 第三方开源声明
+└─ V2-MIGRATION-NOTES.md     # V1→V2 迁移说明
+```
+
+---
+
+## 端口清单
+
+| 端口 | 服务 | 说明 |
 |---|---|---|
-| IndexTTS2 环境 + 模型 | 默认 TTS 引擎（本地 HTTP 合成 :9881，零样本克隆） | 官方仓库自建 `index-tts/` 环境（Python 3.11 + torch），权重默认放 `C:\idx_models`（纯 ASCII 路径），见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) C4 |
-| GPT-SoVITS 运行时 + 模型（遗留可选） | 旧版 TTS 引擎（主链路已迁 IndexTTS2，保留作可切换备选） | 按 `ohwhale-deploy` 的脚本自行下载，下载约 4 GB（安装后含独立 venv 与 PyTorch 共约 9.8 GB） |
-| Tulpa | QQ 客户端集成 | 官方 Releases（源码 MIT，发行包含预编译 exe；`chatlocal` 源码随仓库保留） |
-| Ollama + Qwen2.5-1.5B（可选） | 本地免费推理 provider（端云路由的 local 端） | `ollama pull qwen2.5:1.5b` |
-| SnowLuma | Tulpa 号 QQ 协议端 | 官方 Releases（专有软件，需同意其 EULA） |
-| dsh-pet | 桌宠可执行程序（老桌宠，含事件播报通道） | 上游 Releases（本仓库只含人设/菜单，见 NOTICES B2） |
-| mortis-pet 源码 + mortis 素材 | 第二桌宠（独立展示型，无事件通道） | 源码随仓库提供（`mortis-pet/`，PySide6）：先 `pip install -r mortis-pet/requirements.txt`（打包另需 `pip install pyinstaller`），再用 PyInstaller 按 `mortis-pet.spec` 打包；运行另需 ffmpeg（放 `~/.local/bin/ffmpeg.exe` 或入 PATH）；视频素材（`mortis-pet/videos/`，VP9 透明底）与台词文件（`mortis-pet/config.json`，整理自 Ave Mujica 动画及二创，不适用 MIT）均自备不入库，仓库只含 `config.example.json` 模板（见 NOTICES B2） |
-| DSH 核心 | 插件运行时 | `npm i @deepseek-ai/dsh`，免费渠道插件见 `dsh-our-free-model` |
-| API Key | 对话与视觉 | 自备 DeepSeek / DashScope 账号 |
-| AstrBot（AGPL-3.0） | 消息框架与面板 | 由 ohwhale-deploy 安装，源码从上游获取 |
-| NapCatQQ（GPL-3.0） | QQ 协议端 | 官方 Releases，独立进程运行 |
+| `3080` | DSH Web 服务器 | 记忆星图 UI、插件 Web 路由挂载点 |
+| `8001` | Memory 微服务 | 记忆存取（`/remember` `/recall`） |
+| `8002` | Painter 微服务 | 生图（`/generate`） |
+| `9001` | Live Director WS | 直播弹幕接入 |
+| `9881` | IndexTTS2 | TTS（由 service-manager 拉起） |
+| `11434` | Ollama | 本地 LLM（可选） |
+| `8080` | Tulpa MCP | 副人格 MCP（可选，`TULPA_MCP_URL`） |
 
-## 隐私与脱敏
+---
 
-仓库内所有路径、账号、密钥字段均已替换为占位符；`.env`、数据库、会话记录、参考音、
-日志与缓存一律不入库（见 `.gitignore`）。控制台的密钥写入本机 DPAPI 保险库。
-安装脚本生成的 `部署待办清单.md` 同样自动脱敏本机路径（`%PROJECT_ROOT%` / `%USERPROFILE%` / `C:\Users\%USERNAME%`），并已加入 `.gitignore`。
+## 文档
 
-## 来源与致谢
+- [使用说明.md](./使用说明.md) — 启动顺序、端口、各功能用法、V1 遗留处理
+- [项目介绍.md](./项目介绍.md) — “TS 壳 + Python 核”设计理念、项目结构、路线图
+- [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) — 第三方开源库与协议声明
+- [V2-MIGRATION-NOTES.md](./V2-MIGRATION-NOTES.md) — V1 到 V2 的迁移记录
 
-- 桌宠代码基于 `https://github.com/MerZlin/dsh-pet-indesktop`（MIT），
-  其上游为 `https://github.com/PC2005-cloud/dsh-pet`。
-  **角色形象素材**的创作者为 B站 @上善无形（原始角色“溟月”，CC BY-NC-SA 4.0）、
-  B站 @ZipZipPipe（DeepSeek 女仆版二次设计，CC BY-NC-SA 4.0，不可商业化）、B站 @这个刀子真甜；
-  动画素材作者 B站 @浩瀚星空2005，余额部分参考 B站 @月匠 的项目；
-  贡献者 B站 @快乐小咸鱼a（灵动岛改动与优化）、B站 @咕噜千鹤子（语音功能）。
-  本仓库仅包含人设与菜单定制（JSON），**未重新分发素材或二进制**，素材不适用 MIT 许可。
-  另含第二形象 **mortis（若叶睦）**：素材渲染自游戏 Live2D 资源 `adv_live2d_mutsumi_007_live_01`，
-  权利归原作方（BanG Dream! 项目相关权利方）所有，仅限个人非商业使用，**自备不入库**；其桌宠载体为项目自建的
-  mortis-pet（PySide6，源码随仓库 `mortis-pet/`）。**mortis-pet 的台词文本整理自《Ave Mujica》动画及部分二创，
-  不适用 MIT、不随仓库分发**（见 NOTICES B2）。mortis 同时是第二个 persona（`config/personas/mortis/`，
-  语音链路走 IndexTTS2），详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) B2。
-- 语音/聊天部署包来自 `https://github.com/chauko0423/ohwhale-deploy`（MIT）。
-- SurfCore（MIT，`https://github.com/Mieksido/surfcore`）的 B站插件
-  灵感来源于 B站 @凌羽clover，特此致谢；其本地语音模型不随本仓库分发。
-- Tulpa（`chatlocal` 源码 MIT，`https://github.com/fumingyang2004/Tulpa`）
-  的本地聊天模块随仓库保留；其发行包与 `Tulpa.exe` 需自行从官方 Releases 获取，本仓库未重新分发。
-- 消息框架 AstrBot（AGPL-3.0）与 QQ 协议端 NapCatQQ（GPL-3.0）以独立进程集成，
-  详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 的 A 节。
-- 全部第三方组件（直接使用 / 修改后分发 / 运行时集成）的许可证、版权行、修改声明与素材署名，
-  集中在 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+---
 
-## 许可
+## 许可证
 
-本仓库自有代码以 MIT 发布（见 `LICENSE`）；第三方组件保持各自许可。
-
-**注意 copyleft 组件**：消息框架 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 为 **AGPL-3.0**，
-QQ 协议端 [NapCatQQ](https://github.com/NapNeko/NapCatQQ) 为 **GPL-3.0**。
-两者以独立进程 / OneBot 协议集成，本仓库未修改、未分发其源码；对外服务或再分发前请自行遵守其条款。
-其余组件许可与完整版权行见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
-
-## 免责声明
-
-软件驱动的虚拟角色，不冒充现实个人，不用于医疗、法律或紧急服务。QQ 协议端可能触发平台风控，
-账号风险自负；建议使用小号并遵守各平台用户协议。
+Apache License 2.0，见 [LICENSE](./LICENSE)。使用的第三方开源组件协议见 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)；其中 AstrBot、NapCat 等组件遵循 GPL 相关协议，已在该文件中明确标注并保留原文。

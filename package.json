@@ -1,0 +1,10 @@
+{
+  "name": "persona-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "persona-os monorepo：DSH TS 插件（plugins/）+ Python 微服务（core-services/）",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

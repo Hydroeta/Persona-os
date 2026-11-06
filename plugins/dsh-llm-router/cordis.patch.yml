@@ -1,0 +1,11 @@
+# dsh-llm-router —— DSH bundle patch
+# 把本插件插进 profile 配置树，作为可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "c:\Users\user\Desktop\projects (2)\github-release\persona-os\plugins\dsh-llm-router"
+#
+# ⚠️ name 必须与包名完全一致（dsh-llm-router），否则会表现为「装上了但不加载」。
+
+- insert:
+    - id: dsh-llm-router
+      name: 'dsh-llm-router'

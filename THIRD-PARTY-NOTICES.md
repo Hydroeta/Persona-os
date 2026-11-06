@@ -229,3 +229,29 @@
 | Tulpa chatlocal | `Tulpa/Tulpa/LICENSE` |
 | dsh-pet | `dsh-pet/LICENSE` |
 | AstrBot / NapCatQQ | 上游仓库 LICENSE（未随本仓库分发） |
+| playwright / sharp / node-screenshots / three / ws / esbuild / node-cron / vgamepad（预留） | 各包 `node_modules/<pkg>/LICENSE`，或上游仓库（运行时由 pnpm 安装，未入库） |
+
+---
+
+## D. V2 新增依赖（TS 插件层 / Monorepo 运行时与构建）
+
+> V2 新增的 TypeScript 插件与 Monorepo 工具链依赖。全部为**宽松许可证**（MIT / Apache-2.0），
+> 无 copyleft 风险，不影响自有代码按 MIT 发布。下表“使用方式”标注所在插件。
+
+| 项目 | 链接 | 许可证 | 版权行 | 使用方式 |
+|---|---|---|---|---|
+| Playwright | https://github.com/microsoft/playwright | Apache-2.0 | Copyright (c) Microsoft Corporation | `dsh-web-agent` 后台无头浏览器（Chromium 单例），静默抓网页不抢鼠标。浏览器二进制由用户 `npx playwright install` 获取，不入库 |
+| node-screenshots | https://github.com/06wj/node-screenshots | Apache-2.0 | Copyright (c) 次惑, 2022 | `dsh-live-director` 多模态画面感知：截取主屏→JPEG 压缩→base64 喂视觉模型。native 模块，esbuild 标记 external，运行时动态加载；失败自动降级不阻塞直播 |
+| sharp | https://github.com/lovell/sharp | Apache-2.0 | Copyright 2013 Lovell Fuller and others | `dsh-painter` 图像缩放/转码（底图处理）。含预编译原生二进制，由 pnpm 安装 |
+| three | https://github.com/mrdoob/three.js | MIT | Copyright (c) 2010-2024 three.js authors | `dsh-memory-map` 3D 记忆星图前端可视化 |
+| ws | https://github.com/websockets/ws | MIT | Copyright (c) 2011 Einar Otto Stangvik et al. | `dsh-live-director` 弹幕 WebSocket 服务端（:9001） |
+| node-cron | https://github.com/node-cron/node-cron | MIT | Copyright (c) 2016 node-cron contributors | `dsh-self-play` 定时任务：每天 03:00 触发人格自进化复盘。纯 JS，经 esbuild 打包进插件（createRequire banner 兼容 CJS） |
+| esbuild | https://github.com/evanw/esbuild | MIT | Copyright (c) 2020 Evan Wallace | 全部 TS 插件的构建工具（`build.mjs`，`prepare` 钩子编译 `src`→`lib`） |
+| @deepseek-ai/dsh | https://github.com/deepseek-ai/dsh | MIT | 见 A12 | DSH 宿主（Cordis）与核心工具链 |
+| vgamepad | https://github.com/mi5c44/Node-Virtual-Gamepad | MIT | 见上游 `LICENSE` | **预留 / 尚未安装**：路线图中的「虚拟手柄游戏代理（dsh-game-agent）」将用它让主播操作游戏。当前未引入，待直播主链路稳定后启动 |
+
+### V2 依赖许可兼容性补充
+
+- 上表 V2 新增依赖均为 MIT 或 Apache-2.0，均为**非 copyleft** 许可证，可与本仓库 MIT 自有代码兼容。
+- `node-screenshots`、`sharp`、`playwright` 含原生/平台二进制，均由用户在安装阶段获取（pnpm / npx），**不随 Git 仓库分发**；`.gitignore` 已忽略 `node_modules/`。
+- copyleft 边界不变：AstrBot（AGPL-3.0）与 NapCatQQ（GPL-3.0）仍以独立进程 + 标准协议集成，V2 未改变这一关系；对外服务或再分发前仍需自行履行其条款。

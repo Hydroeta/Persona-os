@@ -1,0 +1,36 @@
+{
+  "name": "dsh-memory-map",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：每日记忆星图后端。从 Memory 微服务聚合最近记忆，按 tags 聚类成星系、为每条记忆生成稳定坐标，输出 data/memory_constellation.json 供前端可视化；支持增量追加与每日 03:00 定时。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "web",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "three": "^0.160.0"
+  }
+}

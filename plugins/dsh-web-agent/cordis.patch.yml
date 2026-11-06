@@ -1,0 +1,15 @@
+# dsh-web-agent —— DSH bundle patch
+# 把本插件插进 profile 配置树，作为可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "c:\Users\user\Desktop\projects (2)\github-release\persona-os\plugins\dsh-web-agent"
+#
+# 首次使用前需下载浏览器内核（在发布版根目录执行一次）：
+#   pnpm --filter dsh-web-agent exec playwright install chromium
+# 若下载失败，可设 WEB_AGENT_CHROMIUM_PATH 指向系统 Chrome/Edge 可执行文件。
+#
+# ⚠️ name 必须与包名完全一致（dsh-web-agent），否则会表现为「装上了但不加载」。
+
+- insert:
+    - id: dsh-web-agent
+      name: 'dsh-web-agent'
