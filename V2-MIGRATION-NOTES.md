@@ -35,7 +35,7 @@
 - [x] 发布版目录已创建 `core-services/` 微服务目录（占位，待迁入 Memory FastAPI 等）。
 - [x] `dsh-service-manager`（第一阶段已落地）：DSH apply 时拉起 IndexTTS2（`indextts_server.py`，端口 9881，模型懒加载），dispose 时 taskkill 进程树防僵尸；已从发布版目录 link 到 `web` profile。
 - [ ] `dsh-live-director`：替代 `live_bot.py` 直播导播（Rundown 状态机 + OBS WebSocket）。
-- [x] 记忆星图**后端**：3D 聚类坐标生成 + 每日增量 + 原子写入 `data/memory_constellation.json`（已落地并冒烟）；**Three.js 3D 星云前端已完成**（UnrealBloom 泛光 + OrbitControls + Raycaster 悬停 tooltip），DSH 内访问 `/memory-map/`，真实环境浏览器实测通过（见第 9 节）。
+- [ ] 记忆星图可视化（**V2.1 计划，暂缓公开**）：3D 聚类坐标 / 星云前端的实现记录见下文第 8、9 节；插件 `dsh-memory-map` 已从公开版剥离并归档至 `_archive_v1/`，前端视觉打磨后随 V2.1 公开。
 - [ ] 通用游戏代理：vgamepad 虚拟手柄 + VLM 视觉。
 - [ ] 后台静默操作：Playwright 无头浏览器。
 
@@ -109,7 +109,7 @@
 - **配套：插件零配置连本地微服务**。`dsh-painter` 模块顶层在未设 `IMAGE_GEN_URL` 且未开 `PAINTER_USE_LOCAL_IMAGE=1` 时，默认写 `http://127.0.0.1:8002/generate`；`dsh-memory-bus` 在未设 `MEMORY_BUS_URL` 时写默认 `http://127.0.0.1:8001`（进程内所有消费者共享）。已设的 env 仍优先生效，`PAINTER_USE_LOCAL_IMAGE=1` 保留内置测试图逃生口。
 - 冒烟通过：路径解析正确、Painter spawn→健康就绪→`/health` `/stats` 200、dispose 杀进程树后 8002 释放；IndexTTS/Memory 走「端口已占跳过」分支不重复加载。
 
-### 8. `plugins/dsh-memory-map`（TS 插件）— 记忆星图后端（本次，任务 3 后端）
+### 8. `plugins/dsh-memory-map`（TS 插件）— 记忆星图后端（**已从公开版剥离，归档至 `_archive_v1/`，待 V2.1 复公开**；以下为历史实现记录）
 - 注册工具 `generate_constellation_snapshot(days?, limit?, rebuild?)`：从 8001 Memory 微服务 `/recent` 拉最近 N 天记忆（默认 90 天 / 500 条；`/recent` 为本次给 memory 微服务新增的批量端点，跨 7 层返回全字段）。
 - **聚类（3D 版重构）**：每条记忆取其 tags 中**全局频次最高**者作为代表 tag 聚合（并列取排序最前）；无 tags → 按 level 兜底（`__level__:<level>`）。不同 key 超过 15 个时，保留频次最高的 14 个，其余并入 `__other__`（「其他记忆」），星系总数封顶 5~15。`cluster_id` 由键哈希生成，跨运行稳定。
 - **3D 坐标**：星系中心 = 球面均匀分布（`cluster_id` 哈希 → phi/theta，半径 `230 + √count·24`）；星星坐标 = 中心 + 球内随机方向偏移（半径 `22 + √count·8` 内），由 `memory_id` 哈希派生 → 同一记忆坐标永远不变。`size` = `3 + importance·1.5 + log10(1+content长度)·1.2`，clamp [3,20]；`color`：`importance≥4` 金色 `#ffd87a`，否则按 `cluster_id` 哈希色相 `hsl(hash, 78, 62)`。
