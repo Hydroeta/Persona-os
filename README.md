@@ -84,6 +84,7 @@ node build.mjs
   | `MEMORY_PORT` | `8001` | 记忆微服务端口 |
   | `PAINTER_PORT` | `8002` | 生图微服务端口 |
   | `GAME_BOT_PORT` | `8003` | 游戏手柄微服务端口（vgamepad + ViGEmBus） |
+  | `AUDIO_COVER_PORT` | `8005` | 实时翻唱微服务端口（sounddevice 音频闭环） |
   | `INDEXTTS_PORT` | `9881` | IndexTTS2 端口 |
   | `IMAGE_PATH` | 空 | `dsh-painter` 写帧目标 PNG（OBS 图片源监听此路径） |
   | `DSH_LIVE_DIRECTOR_PORT` | `9001` | 直播弹幕 WebSocket 端口 |
@@ -111,6 +112,7 @@ dsh tool list
 curl http://127.0.0.1:8001/health   # 记忆微服务
 curl http://127.0.0.1:8002/health   # 生图微服务
 curl http://127.0.0.1:8003/health   # 游戏手柄微服务（driver_ready=true 表示 ViGEmBus 就绪）
+curl http://127.0.0.1:8005/health   # 实时翻唱微服务（running=true 表示音频流已开）
 
 # 往直播引擎推一条模拟弹幕（应触发 LLM 回复 + TTS 播报；TTS 接线进行中，当前为占位日志）
 # 见 使用说明.md 的“测试直播弹幕”章节
@@ -131,11 +133,13 @@ persona-os/
 │  ├─ dsh-llm-router/        #   LLM 路由
 │  ├─ dsh-service-manager/   #   微服务生命周期
 │  ├─ dsh-self-play/         #   人格自进化（半夜复盘去 AI 味）
-│  └─ dsh-game-agent/        #   游戏代理大脑（截屏→VLM→虚拟手柄 :8003）
+│  ├─ dsh-game-agent/        #   游戏代理大脑（截屏→VLM→虚拟手柄 :8003）
+│  └─ dsh-audio-cover/       #   实时翻唱开关（调 :8005）
 ├─ core-services/            # Python 微服务层
 │  ├─ memory/   main.py      #   记忆存取 :8001
 │  ├─ painter/  main.py      #   生图 :8002
-│  └─ game-bot/ main.py      #   虚拟手柄 :8003（vgamepad + ViGEmBus）
+│  ├─ game-bot/ main.py      #   虚拟手柄 :8003（vgamepad + ViGEmBus）
+│  └─ audio-cover/ main.py   #   实时翻唱 :8005（sounddevice 音频闭环）
 ├─ dsh/                      # DSH 工作区（home/cordis.patch.yml）
 ├─ config/                   # master.json / personas / 密钥占位
 ├─ Tulpa/                    # 副人格 Tulpa（独立进程 / MCP）
@@ -157,6 +161,7 @@ persona-os/
 | `8001` | Memory 微服务 | 记忆存取（`/remember` `/recall`） |
 | `8002` | Painter 微服务 | 生图（`/generate`） |
 | `8003` | GameBot 微服务 | 虚拟手柄（`/action` `/health` `/reset`，vgamepad + ViGEmBus） |
+| `8005` | AudioCover 微服务 | 实时翻唱音频闭环（`/start` `/stop` `/devices`） |
 | `9001` | Live Director WS | 直播弹幕接入 |
 | `9881` | IndexTTS2 | TTS（由 service-manager 拉起） |
 | `11434` | Ollama | 本地 LLM（可选） |

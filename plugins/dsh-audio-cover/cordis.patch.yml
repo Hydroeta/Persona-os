@@ -1,0 +1,11 @@
+# dsh-audio-cover —— DSH bundle patch
+# 把本插件插进 profile 配置树，作为可加载的 profile layer。
+#
+# 安装（本地开发，link 到发布版源码目录）：
+#   dsh plugin --profile web add "<persona-os 根目录>/plugins/dsh-audio-cover"
+#
+# ⚠️ name 必须与包名完全一致（dsh-audio-cover），否则会表现为「装上了但不加载」。
+
+- insert:
+    - id: dsh-audio-cover
+      name: 'dsh-audio-cover'

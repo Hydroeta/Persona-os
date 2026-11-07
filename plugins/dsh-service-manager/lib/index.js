@@ -91,6 +91,18 @@ var SERVICES = [
     portDefault: 8003,
     healthPath: "/health",
     cwdFrom: "release"
+  },
+  {
+    name: "AudioCover",
+    tag: "audio-cover",
+    pythonEnv: "AUDIO_COVER_PYTHON",
+    pythonRel: (r) => path.join(r, "ohwhale-deploy", ".venv", "Scripts", "python.exe"),
+    scriptEnv: "AUDIO_COVER_SERVER",
+    scriptRel: (r) => path.join(r, "core-services", "audio-cover", "main.py"),
+    portEnv: "AUDIO_COVER_PORT",
+    portDefault: 8005,
+    healthPath: "/health",
+    cwdFrom: "release"
   }
 ];
 function portInUse(port, host = "127.0.0.1") {

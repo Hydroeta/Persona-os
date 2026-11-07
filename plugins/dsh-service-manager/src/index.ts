@@ -10,6 +10,7 @@
  *   - Memory     记忆存取   端口 8001（GET /health）
  *   - Painter    生图引擎   端口 8002（GET /health）
  *   - GameBot    虚拟手柄   端口 8003（GET /health，vgamepad + ViGEmBus）
+ *   - AudioCover 实时翻唱   端口 8005（GET /health，sounddevice 音频闭环）
  *
  * 契约说明（对照 DSH 0.2.0-rc.2 实测）：
  *   - 退出钩子是 ctx.on("dispose", cb)。
@@ -167,6 +168,18 @@ const SERVICES: Svc[] = [
     scriptRel: (r) => path.join(r, 'core-services', 'game-bot', 'main.py'),
     portEnv: 'GAME_BOT_PORT',
     portDefault: 8003,
+    healthPath: '/health',
+    cwdFrom: 'release',
+  },
+  {
+    name: 'AudioCover',
+    tag: 'audio-cover',
+    pythonEnv: 'AUDIO_COVER_PYTHON',
+    pythonRel: (r) => path.join(r, 'ohwhale-deploy', '.venv', 'Scripts', 'python.exe'),
+    scriptEnv: 'AUDIO_COVER_SERVER',
+    scriptRel: (r) => path.join(r, 'core-services', 'audio-cover', 'main.py'),
+    portEnv: 'AUDIO_COVER_PORT',
+    portDefault: 8005,
     healthPath: '/health',
     cwdFrom: 'release',
   },

@@ -147,6 +147,33 @@ function speak(text: string, meta: Record<string, unknown> = {}): void {
   // TODO(模块 5)：调用真实 TTS 服务播放 audio
 }
 
+/** 实时翻唱命令：`!翻唱 <歌名>` 开唱、`!停唱` 收工（调 audio-cover 微服务 :8005） */
+const AUDIO_COVER_URL = (process.env.AUDIO_COVER_URL || 'http://127.0.0.1:8005').replace(/\/$/, '')
+
+async function handleCoverCommand(text: string): Promise<string | null> {
+  const t = String(text || '').trim()
+  const start = /^[!！]翻唱\s*(.*)$/.exec(t)
+  const stop = /^[!！]停唱\s*$/.exec(t)
+  if (!start && !stop) return null
+  try {
+    if (stop) {
+      await fetch(`${AUDIO_COVER_URL}/stop`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      return '收工！这首歌就唱到这，掌声呢？'
+    }
+    const song = (start?.[1] || '').trim()
+    await fetch(`${AUDIO_COVER_URL}/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'bypass', output_device: null }),
+    })
+    console.log(`${LOG_TAG} 🎤 实时翻唱已开启，歌曲=${song || '未指定'}`)
+    return song ? `《${song}》是吧？来了，我可是练过的！` : '开唱！想听什么随便点。'
+  } catch (e: any) {
+    console.error(`${LOG_TAG} 实时翻唱调用失败：`, e?.message || e)
+    return '翻唱设备没连上，等我把它插好再说。'
+  }
+}
+
 /** 处理 director 产生的 sys_action：按意图生成文案并播报 */
 async function handleSysAction(ctx: any, action: SysAction): Promise<void> {
   if (action.type === 'switch_state') {
@@ -177,6 +204,14 @@ function getPerception(): Perception | null {
 /** 队列消费：记忆注入 → 画面感知(按需) → 组装 messages → LLM 生成 → 播报 → 异步存记忆 */
 async function consumeDanmaku(ctx: any, item: QueuedItem): Promise<void> {
   const { user, text } = item.msg
+
+  // 0) 实时翻唱命令优先（命中即接管，不进 LLM）
+  const coverReply = await handleCoverCommand(text)
+  if (coverReply) {
+    speak(coverReply, { action: 'audio_cover', user })
+    return
+  }
+
   const mem = getMemory()
   const perc = getPerception()
 

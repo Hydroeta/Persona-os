@@ -166,6 +166,15 @@ importers:
 
   .: {}
 
+  plugins/dsh-audio-cover:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.5
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+
   plugins/dsh-game-agent:
     dependencies:
       node-screenshots:

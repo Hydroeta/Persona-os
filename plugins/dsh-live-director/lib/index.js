@@ -4316,6 +4316,30 @@ function speak(text, meta = {}) {
   console.log(`${LOG_TAG5} \u{1F50A} speak\uFF1A${text}`, Object.keys(meta).length ? meta : "");
   director?.markInteraction();
 }
+var AUDIO_COVER_URL = (process.env.AUDIO_COVER_URL || "http://127.0.0.1:8005").replace(/\/$/, "");
+async function handleCoverCommand(text) {
+  const t = String(text || "").trim();
+  const start = /^[!！]翻唱\s*(.*)$/.exec(t);
+  const stop = /^[!！]停唱\s*$/.exec(t);
+  if (!start && !stop) return null;
+  try {
+    if (stop) {
+      await fetch(`${AUDIO_COVER_URL}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      return "\u6536\u5DE5\uFF01\u8FD9\u9996\u6B4C\u5C31\u5531\u5230\u8FD9\uFF0C\u638C\u58F0\u5462\uFF1F";
+    }
+    const song = (start?.[1] || "").trim();
+    await fetch(`${AUDIO_COVER_URL}/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "bypass", output_device: null })
+    });
+    console.log(`${LOG_TAG5} \u{1F3A4} \u5B9E\u65F6\u7FFB\u5531\u5DF2\u5F00\u542F\uFF0C\u6B4C\u66F2=${song || "\u672A\u6307\u5B9A"}`);
+    return song ? `\u300A${song}\u300B\u662F\u5427\uFF1F\u6765\u4E86\uFF0C\u6211\u53EF\u662F\u7EC3\u8FC7\u7684\uFF01` : "\u5F00\u5531\uFF01\u60F3\u542C\u4EC0\u4E48\u968F\u4FBF\u70B9\u3002";
+  } catch (e) {
+    console.error(`${LOG_TAG5} \u5B9E\u65F6\u7FFB\u5531\u8C03\u7528\u5931\u8D25\uFF1A`, e?.message || e);
+    return "\u7FFB\u5531\u8BBE\u5907\u6CA1\u8FDE\u4E0A\uFF0C\u7B49\u6211\u628A\u5B83\u63D2\u597D\u518D\u8BF4\u3002";
+  }
+}
 async function handleSysAction(ctx, action) {
   if (action.type === "switch_state") {
     const prompt2 = `\u76F4\u64AD Rundown \u5207\u6362\u73AF\u8282\uFF1A\u4ECE\u300C${STATE_LABEL[action.from]}\u300D\u8FDB\u5165\u300C${STATE_LABEL[action.to]}\u300D\uFF0C\u8BF7\u7528\u4E00\u53E5\u70ED\u60C5\u7684\u4E3B\u64AD\u53E3\u64AD\u5BA3\u5E03\u8FDB\u5165\u65B0\u73AF\u8282\uFF08\u4E0D\u8D85\u8FC7 40 \u5B57\uFF09\u3002`;
@@ -4337,6 +4361,11 @@ function getPerception() {
 }
 async function consumeDanmaku(ctx, item) {
   const { user, text } = item.msg;
+  const coverReply = await handleCoverCommand(text);
+  if (coverReply) {
+    speak(coverReply, { action: "audio_cover", user });
+    return;
+  }
   const mem = getMemory();
   const perc = getPerception();
   const userContext = mem ? await mem.getUserContext(user) : "";

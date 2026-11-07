@@ -1,0 +1,34 @@
+{
+  "name": "dsh-audio-cover",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：把 Audio Cover 实时翻唱微服务（core-services/audio-cover，端口 8005）暴露为 DSH 工具 toggle_live_cover。TS 管调度，Python 管音频流与推理。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0"
+  }
+}
