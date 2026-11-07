@@ -144,11 +144,7 @@ persona-os/
 ├─ 使用说明.md                # 运行与功能使用手册
 ├─ 项目介绍.md                # 设计理念与路线图
 ├─ THIRD-PARTY-NOTICES.md    # 第三方开源声明
-├─ V2-MIGRATION-NOTES.md     # V1→V2 迁移说明
-└─ [V1 历史文档，仅作参考，不代表 V2 用法]
-   ├─ README_v1.md           # V1 版 README
-   ├─ 项目介绍_v1.md          # V1 版项目介绍
-   └─ 部署待办清单.md          # V1 安装脚本产物（V2 已改用 dsh up + dsh-service-manager；本机生成物，不入库）
+└─ V2-MIGRATION-NOTES.md     # V1→V2 迁移说明（V1 文档已移除，历史见 git 提交记录）
 ```
 
 ---
