@@ -3741,6 +3741,7 @@ var import_sender = __toESM(require_sender(), 1);
 var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
+var wrapper_default = import_websocket.default;
 
 // src/queue.ts
 var LOG_TAG = "[dsh-live-director:queue]";
@@ -4244,8 +4245,159 @@ function buildScreenPrompt(desc) {
   return d ? `\uFF08\u5F53\u524D\u76F4\u64AD\u753B\u9762\uFF1A${d}\uFF09` : "";
 }
 
+// src/bgm.ts
+import fs from "node:fs";
+import path from "node:path";
+var LOG_TAG5 = "[dsh-live-director/bgm]";
+var OBS_WS_URL = process.env.OBS_WS_URL || "";
+var OBS_WS_PASSWORD = process.env.OBS_WS_PASSWORD || "";
+var OBS_BGM_SOURCE = process.env.OBS_BGM_SOURCE || "BGM";
+var BGM_DIR = process.env.BGM_DIR || "";
+function findSongFile(song) {
+  if (!BGM_DIR || !fs.existsSync(BGM_DIR)) return void 0;
+  const exts = /* @__PURE__ */ new Set([".mp3", ".wav", ".flac", ".m4a", ".ogg", ".aac"]);
+  let files = [];
+  try {
+    files = fs.readdirSync(BGM_DIR).filter((f) => exts.has(path.extname(f).toLowerCase()));
+  } catch {
+    return void 0;
+  }
+  const key = song.trim().toLowerCase();
+  if (!key) return void 0;
+  const hit = files.find((f) => f.toLowerCase().includes(key)) || files.find((f) => path.parse(f).name.toLowerCase() === key);
+  return hit ? path.join(BGM_DIR, hit) : void 0;
+}
+var ObsClient = class {
+  ws = null;
+  reqId = 0;
+  pending = /* @__PURE__ */ new Map();
+  async connect(timeoutMs = 1500) {
+    if (this.ws && this.ws.readyState === wrapper_default.OPEN) return;
+    await new Promise((resolve, reject) => {
+      const ws = new wrapper_default(OBS_WS_URL);
+      const timer = setTimeout(() => {
+        ws.terminate();
+        reject(new Error("\u8FDE\u63A5 obs-websocket \u8D85\u65F6"));
+      }, timeoutMs);
+      ws.on("open", () => {
+      });
+      ws.on("message", (raw) => {
+        let msg;
+        try {
+          msg = JSON.parse(String(raw));
+        } catch {
+          return;
+        }
+        if (msg.op === 0 && msg.d?.authentication) {
+          if (!OBS_WS_PASSWORD) {
+            clearTimeout(timer);
+            ws.terminate();
+            reject(new Error("OBS \u8981\u6C42\u5BC6\u7801\u4F46\u672A\u8BBE OBS_WS_PASSWORD"));
+            return;
+          }
+          clearTimeout(timer);
+          ws.terminate();
+          reject(new Error("OBS \u5F00\u542F\u4E86 WebSocket \u8BA4\u8BC1\uFF08\u9700 sha256 challenge\uFF09\uFF0C\u5F53\u524D\u672A\u5B9E\u73B0"));
+          return;
+        }
+        if (msg.op === 2) {
+          clearTimeout(timer);
+          this.ws = ws;
+          resolve();
+          return;
+        }
+        if (msg.op === 7) {
+          const p = this.pending.get(msg.d?.requestId);
+          if (p) {
+            this.pending.delete(msg.d.requestId);
+            if (msg.d.requestStatus?.result) p.resolve(msg.d.responseData ?? {});
+            else p.reject(new Error(msg.d.requestStatus?.comment || "OBS \u8BF7\u6C42\u5931\u8D25"));
+          }
+        }
+      });
+      ws.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+  request(requestType, requestData = {}, timeoutMs = 1500) {
+    if (!this.ws || this.ws.readyState !== wrapper_default.OPEN) return Promise.reject(new Error("OBS \u672A\u8FDE\u63A5"));
+    const requestId = String(++this.reqId);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error(`OBS \u8BF7\u6C42\u8D85\u65F6\uFF1A${requestType}`));
+      }, timeoutMs);
+      this.pending.set(requestId, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        }
+      });
+      this.ws.send(JSON.stringify({ op: 6, d: { requestType, requestId, requestData } }));
+    });
+  }
+  close() {
+    try {
+      this.ws?.close();
+    } catch {
+    }
+    this.ws = null;
+  }
+};
+var obs = new ObsClient();
+async function playBgm(song) {
+  const name = String(song || "").trim();
+  const file = findSongFile(name);
+  if (!OBS_WS_URL) {
+    console.log(`${LOG_TAG5} mock \u64AD\u653E\u4F34\u594F\uFF1A${name || "(\u672A\u6307\u5B9A)"}${file ? ` -> ${file}` : ""}`);
+    return { ok: true, mode: "mock", song: name, file, source: OBS_BGM_SOURCE };
+  }
+  try {
+    await obs.connect();
+    if (file) {
+      await obs.request("SetInputSettings", {
+        inputName: OBS_BGM_SOURCE,
+        inputSettings: { local_file: file, is_local_file: true },
+        overlay: true
+      });
+    }
+    await obs.request("TriggerMediaInputAction", {
+      inputName: OBS_BGM_SOURCE,
+      mediaAction: "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"
+    });
+    console.log(`${LOG_TAG5} OBS \u4F34\u594F\u5DF2\u8D77\uFF1A${name || "(\u672A\u6307\u5B9A)"}${file ? ` -> ${file}` : ""}`);
+    return { ok: true, mode: "obs", song: name, file, source: OBS_BGM_SOURCE };
+  } catch (e) {
+    const error = e?.message || String(e);
+    console.error(`${LOG_TAG5} OBS \u4F34\u594F\u5931\u8D25\uFF08\u964D\u7EA7 mock\uFF09\uFF1A${error}`);
+    return { ok: false, mode: "mock", song: name, file, source: OBS_BGM_SOURCE, error };
+  }
+}
+async function stopBgm() {
+  if (!OBS_WS_URL) {
+    console.log(`${LOG_TAG5} mock \u505C\u6B62\u4F34\u594F`);
+    return { ok: true, mode: "mock", song: "", source: OBS_BGM_SOURCE };
+  }
+  try {
+    await obs.connect();
+    await obs.request("TriggerMediaInputAction", {
+      inputName: OBS_BGM_SOURCE,
+      mediaAction: "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP"
+    });
+    return { ok: true, mode: "obs", song: "", source: OBS_BGM_SOURCE };
+  } catch (e) {
+    return { ok: false, mode: "mock", song: "", source: OBS_BGM_SOURCE, error: e?.message || String(e) };
+  }
+}
+
 // src/index.ts
-var LOG_TAG5 = "[dsh-live-director]";
+var LOG_TAG6 = "[dsh-live-director]";
 var DANMAKU_PORT = Number(process.env.DSH_LIVE_DIRECTOR_PORT) || 9001;
 var danmakuServer = null;
 var director = null;
@@ -4274,7 +4426,7 @@ async function generateReply(ctx, prompt, fallback) {
       const content = res?.content;
       if (typeof content === "string" && content.trim()) return content;
     } catch (e) {
-      console.error(`${LOG_TAG5} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
+      console.error(`${LOG_TAG6} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
     }
   }
   return fallback;
@@ -4292,7 +4444,7 @@ async function chatWithMessages(ctx, messages, fallback) {
       const content = res?.content;
       if (typeof content === "string" && content.trim()) return content;
     } catch (e) {
-      console.error(`${LOG_TAG5} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
+      console.error(`${LOG_TAG6} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
     }
   }
   return fallback;
@@ -4313,7 +4465,7 @@ function buildChatMessages(opts) {
   ];
 }
 function speak(text, meta = {}) {
-  console.log(`${LOG_TAG5} \u{1F50A} speak\uFF1A${text}`, Object.keys(meta).length ? meta : "");
+  console.log(`${LOG_TAG6} \u{1F50A} speak\uFF1A${text}`, Object.keys(meta).length ? meta : "");
   director?.markInteraction();
 }
 var AUDIO_COVER_URL = (process.env.AUDIO_COVER_URL || "http://127.0.0.1:8005").replace(/\/$/, "");
@@ -4325,6 +4477,8 @@ async function handleCoverCommand(text) {
   try {
     if (stop) {
       await fetch(`${AUDIO_COVER_URL}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const bgm2 = await stopBgm();
+      console.log(`${LOG_TAG6} \u{1F3A4} \u6536\u5DE5\uFF0C\u4F34\u594F\u505C\u6B62=${bgm2.mode}`);
       return "\u6536\u5DE5\uFF01\u8FD9\u9996\u6B4C\u5C31\u5531\u5230\u8FD9\uFF0C\u638C\u58F0\u5462\uFF1F";
     }
     const song = (start?.[1] || "").trim();
@@ -4333,10 +4487,14 @@ async function handleCoverCommand(text) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ mode: "bypass", output_device: null })
     });
-    console.log(`${LOG_TAG5} \u{1F3A4} \u5B9E\u65F6\u7FFB\u5531\u5DF2\u5F00\u542F\uFF0C\u6B4C\u66F2=${song || "\u672A\u6307\u5B9A"}`);
-    return song ? `\u300A${song}\u300B\u662F\u5427\uFF1F\u6765\u4E86\uFF0C\u6211\u53EF\u662F\u7EC3\u8FC7\u7684\uFF01` : "\u5F00\u5531\uFF01\u60F3\u542C\u4EC0\u4E48\u968F\u4FBF\u70B9\u3002";
+    const bgm = await playBgm(song);
+    console.log(`${LOG_TAG6} \u{1F3A4} \u5B9E\u65F6\u7FFB\u5531\u5DF2\u5F00\u542F\uFF0C\u6B4C\u66F2=${song || "\u672A\u6307\u5B9A"}\uFF0C\u4F34\u594F=${bgm.mode}${bgm.file ? ` (${bgm.file})` : ""}${bgm.error ? ` err=${bgm.error}` : ""}`);
+    if (song) {
+      return bgm.ok ? `\u300A${song}\u300B\u662F\u5427\uFF1F\u6765\u4E86\uFF0C\u6211\u53EF\u662F\u7EC3\u8FC7\u7684\uFF01` : `\u300A${song}\u300B\u4F34\u594F\u6CA1\u627E\u5230\uFF0C\u6211\u5C31\u6E05\u5531\u5427\uFF01`;
+    }
+    return "\u5F00\u5531\uFF01\u60F3\u542C\u4EC0\u4E48\u968F\u4FBF\u70B9\u3002";
   } catch (e) {
-    console.error(`${LOG_TAG5} \u5B9E\u65F6\u7FFB\u5531\u8C03\u7528\u5931\u8D25\uFF1A`, e?.message || e);
+    console.error(`${LOG_TAG6} \u5B9E\u65F6\u7FFB\u5531\u8C03\u7528\u5931\u8D25\uFF1A`, e?.message || e);
     return "\u7FFB\u5531\u8BBE\u5907\u6CA1\u8FDE\u4E0A\uFF0C\u7B49\u6211\u628A\u5B83\u63D2\u597D\u518D\u8BF4\u3002";
   }
 }
@@ -4433,15 +4591,15 @@ var tools = [
 var index_default = {
   name: "dsh-live-director",
   async apply(ctx) {
-    console.log(`${LOG_TAG5} apply`);
+    console.log(`${LOG_TAG6} apply`);
     const disposers = [];
     for (const t of tools) {
       try {
         const d = ctx.tools.register(t);
         if (typeof d === "function") disposers.push(d);
-        console.log(`${LOG_TAG5} \u5DF2\u6CE8\u518C\u5DE5\u5177 ${t.name}`);
+        console.log(`${LOG_TAG6} \u5DF2\u6CE8\u518C\u5DE5\u5177 ${t.name}`);
       } catch (e) {
-        console.error(`${LOG_TAG5} \u6CE8\u518C\u5DE5\u5177 ${t.name} \u5931\u8D25\uFF1A`, e);
+        console.error(`${LOG_TAG6} \u6CE8\u518C\u5DE5\u5177 ${t.name} \u5931\u8D25\uFF1A`, e);
       }
     }
     memoryClient = memoryClientOverride ?? new MemoryClient();
@@ -4459,17 +4617,17 @@ var index_default = {
         onMessage: () => director?.markInteraction()
       });
       console.log(
-        `${LOG_TAG5} \u5F39\u5E55\u670D\u52A1\u5C31\u7EEA\uFF08\u7AEF\u53E3 ${DANMAKU_PORT}\uFF09\uFF0C\u4F18\u5148\u7EA7\uFF1A\u793C\u7269=${3 /* GIFT */} \u753B\u56FE=${2 /* DRAW */} \u5BF9\u8BDD=${1 /* CHAT */}`
+        `${LOG_TAG6} \u5F39\u5E55\u670D\u52A1\u5C31\u7EEA\uFF08\u7AEF\u53E3 ${DANMAKU_PORT}\uFF09\uFF0C\u4F18\u5148\u7EA7\uFF1A\u793C\u7269=${3 /* GIFT */} \u753B\u56FE=${2 /* DRAW */} \u5BF9\u8BDD=${1 /* CHAT */}`
       );
       stopConsume = danmakuServer.queue.consume(async (item) => {
         await consumeDanmaku(ctx, item);
       });
-      console.log(`${LOG_TAG5} \u961F\u5217\u6D88\u8D39\u8005\u5DF2\u542F\u52A8`);
+      console.log(`${LOG_TAG6} \u961F\u5217\u6D88\u8D39\u8005\u5DF2\u542F\u52A8`);
     } catch (e) {
-      console.error(`${LOG_TAG5} \u542F\u52A8\u5F39\u5E55\u670D\u52A1\u5931\u8D25\uFF08\u7AEF\u53E3 ${DANMAKU_PORT} \u53EF\u80FD\u88AB\u5360\u7528\uFF09\uFF1A`, e);
+      console.error(`${LOG_TAG6} \u542F\u52A8\u5F39\u5E55\u670D\u52A1\u5931\u8D25\uFF08\u7AEF\u53E3 ${DANMAKU_PORT} \u53EF\u80FD\u88AB\u5360\u7528\uFF09\uFF1A`, e);
     }
     ctx.on("dispose", () => {
-      console.log(`${LOG_TAG5} dispose\uFF1A\u505C\u6B62\u5FC3\u8DF3\u3001\u5173\u95ED\u961F\u5217\u6D88\u8D39\u3001\u5173\u95ED\u5F39\u5E55\u670D\u52A1\u3001\u6CE8\u9500 ${disposers.length} \u4E2A\u5DE5\u5177`);
+      console.log(`${LOG_TAG6} dispose\uFF1A\u505C\u6B62\u5FC3\u8DF3\u3001\u5173\u95ED\u961F\u5217\u6D88\u8D39\u3001\u5173\u95ED\u5F39\u5E55\u670D\u52A1\u3001\u6CE8\u9500 ${disposers.length} \u4E2A\u5DE5\u5177`);
       director?.stop();
       director = null;
       memoryClient = null;
@@ -4482,7 +4640,7 @@ var index_default = {
         stopConsume = null;
       }
       if (danmakuServer) {
-        danmakuServer.close().catch((e) => console.error(`${LOG_TAG5} \u5173\u95ED\u5F39\u5E55\u670D\u52A1\u51FA\u9519\uFF1A`, e));
+        danmakuServer.close().catch((e) => console.error(`${LOG_TAG6} \u5173\u95ED\u5F39\u5E55\u670D\u52A1\u51FA\u9519\uFF1A`, e));
         danmakuServer = null;
       }
       for (const d of disposers) {

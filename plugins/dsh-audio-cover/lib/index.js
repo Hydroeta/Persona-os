@@ -40,6 +40,30 @@ var tools = [
       },
       required: ["action"]
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          action: { type: "string" },
+          state: { type: "object" },
+          count: { type: "integer" },
+          devices: { type: "array" }
+        }
+      },
+      render: (_args, value) => {
+        const a = String(value?.action || "");
+        if (a === "devices") {
+          const list = Array.isArray(value?.devices) ? value.devices : [];
+          const lines = list.filter((d) => d.in > 0 || d.out > 0).slice(0, 24).map((d) => `[${d.index}] in=${d.in} out=${d.out} ${d.name}`);
+          return [{ type: "text", text: `\u97F3\u9891\u8BBE\u5907 ${value?.count ?? list.length} \u4E2A\uFF1A
+` + lines.join("\n") }];
+        }
+        const s = value?.state || {};
+        const text = a === "status" ? `\u7FFB\u5531\u670D\u52A1\uFF1Arunning=${s.running} mode=${s.mode} frames=${s.frames} \u79D2=${s.seconds} \u9519\u8BEF=${s.last_error ?? "\u65E0"}` : `\u7FFB\u5531${a === "start" ? "\u5DF2\u542F\u52A8" : "\u5DF2\u505C\u6B62"}\uFF1Arunning=${s.running} mode=${s.mode}`;
+        return [{ type: "text", text }];
+      }
+    },
     async execute(args) {
       const action = String(args?.action || "").toLowerCase();
       if (action === "start") {
@@ -78,6 +102,8 @@ var tools = [
 ];
 var index_default = {
   name: "dsh-audio-cover",
+  // cordis 依赖注入：不声明 inject 时访问 ctx.tools 会抛 cannot get property "tools" without inject
+  inject: ["tools"],
   apply(ctx) {
     console.log(`${LOG_TAG} apply (base=${BASE_URL})`);
     const disposers = [];

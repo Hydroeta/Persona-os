@@ -63,6 +63,34 @@ const tools: DshTool[] = [
       },
       required: ['action'],
     },
+    output: {
+      schema: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean' },
+          action: { type: 'string' },
+          state: { type: 'object' },
+          count: { type: 'integer' },
+          devices: { type: 'array' },
+        },
+      },
+      render: (_args: any, value: any) => {
+        const a = String(value?.action || '')
+        if (a === 'devices') {
+          const list = Array.isArray(value?.devices) ? value.devices : []
+          const lines = list
+            .filter((d: any) => d.in > 0 || d.out > 0)
+            .slice(0, 24)
+            .map((d: any) => `[${d.index}] in=${d.in} out=${d.out} ${d.name}`)
+          return [{ type: 'text', text: `音频设备 ${value?.count ?? list.length} 个：\n` + lines.join('\n') }]
+        }
+        const s = value?.state || {}
+        const text = a === 'status'
+          ? `翻唱服务：running=${s.running} mode=${s.mode} frames=${s.frames} 秒=${s.seconds} 错误=${s.last_error ?? '无'}`
+          : `翻唱${a === 'start' ? '已启动' : '已停止'}：running=${s.running} mode=${s.mode}`
+        return [{ type: 'text', text }]
+      },
+    },
     async execute(args: any) {
       const action = String(args?.action || '').toLowerCase()
       if (action === 'start') {
@@ -102,6 +130,8 @@ const tools: DshTool[] = [
 
 export default {
   name: 'dsh-audio-cover',
+  // cordis 依赖注入：不声明 inject 时访问 ctx.tools 会抛 cannot get property "tools" without inject
+  inject: ['tools'],
   apply(ctx: any) {
     console.log(`${LOG_TAG} apply (base=${BASE_URL})`)
     const disposers: Array<() => void> = []

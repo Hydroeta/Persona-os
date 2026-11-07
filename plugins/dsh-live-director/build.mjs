@@ -26,3 +26,4 @@ await build({ ...common, entryPoints: ['src/queue.ts'], outfile: 'lib/queue.js' 
 await build({ ...common, entryPoints: ['src/director.ts'], outfile: 'lib/director.js' })
 await build({ ...common, entryPoints: ['src/memory.ts'], outfile: 'lib/memory.js' })
 await build({ ...common, entryPoints: ['src/perception.ts'], outfile: 'lib/perception.js' })
+await build({ ...common, entryPoints: ['src/bgm.ts'], outfile: 'lib/bgm.js' })

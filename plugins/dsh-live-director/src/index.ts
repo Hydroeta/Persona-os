@@ -20,6 +20,7 @@ import { startDanmakuServer, type DanmakuServer, type QueuedItem, Priority } fro
 import { Director, RundownState, type SysAction, STATE_LABEL } from './director'
 import { MemoryClient, buildMemoryPrompt } from './memory'
 import { Perception, shouldCaptureScreen, buildScreenPrompt } from './perception'
+import { playBgm, stopBgm } from './bgm'
 
 const LOG_TAG = '[dsh-live-director]'
 const DANMAKU_PORT = Number(process.env.DSH_LIVE_DIRECTOR_PORT) || 9001
@@ -158,6 +159,8 @@ async function handleCoverCommand(text: string): Promise<string | null> {
   try {
     if (stop) {
       await fetch(`${AUDIO_COVER_URL}/stop`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      const bgm = await stopBgm()
+      console.log(`${LOG_TAG} 🎤 收工，伴奏停止=${bgm.mode}`)
       return '收工！这首歌就唱到这，掌声呢？'
     }
     const song = (start?.[1] || '').trim()
@@ -166,8 +169,13 @@ async function handleCoverCommand(text: string): Promise<string | null> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ mode: 'bypass', output_device: null }),
     })
-    console.log(`${LOG_TAG} 🎤 实时翻唱已开启，歌曲=${song || '未指定'}`)
-    return song ? `《${song}》是吧？来了，我可是练过的！` : '开唱！想听什么随便点。'
+    // 伴奏：OBS 可用就走 WebSocket 播媒体源，否则降级 mock 只打日志
+    const bgm = await playBgm(song)
+    console.log(`${LOG_TAG} 🎤 实时翻唱已开启，歌曲=${song || '未指定'}，伴奏=${bgm.mode}${bgm.file ? ` (${bgm.file})` : ''}${bgm.error ? ` err=${bgm.error}` : ''}`)
+    if (song) {
+      return bgm.ok ? `《${song}》是吧？来了，我可是练过的！` : `《${song}》伴奏没找到，我就清唱吧！`
+    }
+    return '开唱！想听什么随便点。'
   } catch (e: any) {
     console.error(`${LOG_TAG} 实时翻唱调用失败：`, e?.message || e)
     return '翻唱设备没连上，等我把它插好再说。'
