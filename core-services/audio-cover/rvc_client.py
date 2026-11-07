@@ -22,7 +22,7 @@ from typing import Optional
 
 import numpy as np
 
-DEFAULT_PY = r"C:\Users\79365\Desktop\新建文件夹 (2)\svc\env\Scripts\python.exe"
+DEFAULT_PY = r"C:\Users\79365\Desktop\新建文件夹 (2)\index-tts\.venv\Scripts\python.exe"
 DEFAULT_SCRIPT = r"C:\Users\79365\Desktop\新建文件夹 (2)\svc\Retrieval-based-Voice-Conversion-WebUI-main\rvc_worker.py"
 
 TAG_J = b"J"
@@ -31,6 +31,10 @@ TAG_A = b"A"
 
 class RvcWorkerClient:
     def __init__(self) -> None:
+        # 与子进程环境保持一致：默认 GPU 半精度（4GB 显存跑 fp16 更稳），CPU 线程压到 1
+        os.environ.setdefault("RVC_DEVICE", "cuda")
+        os.environ.setdefault("RVC_HALF", "1")
+        os.environ.setdefault("OMP_NUM_THREADS", "1")
         self.python = os.environ.get("RVC_WORKER_PYTHON", DEFAULT_PY)
         self.script = os.environ.get("RVC_WORKER_SCRIPT", DEFAULT_SCRIPT)
         self.block_timeout = float(os.environ.get("RVC_WORKER_TIMEOUT", "3.0"))
@@ -83,6 +87,9 @@ class RvcWorkerClient:
         env = dict(os.environ)
         # 默认跳过预热：底模预热在这台机器上会挂住（0 CPU），跳过才能验证协议
         env.setdefault('RVC_NO_WARMUP', '1')
+        env.setdefault('RVC_DEVICE', 'cuda')
+        env.setdefault('RVC_HALF', '1')
+        env.setdefault('OMP_NUM_THREADS', '1')
         self._p = subprocess.Popen(
             [self.python, "-u", self.script],
             cwd=cwd, env=env,
@@ -128,8 +135,8 @@ class RvcWorkerClient:
                 self._spawn()
                 self._send(TAG_J, json.dumps({
                     "cmd": "load", "model_path": model_path, "index_path": index_path or "",
-                    "pitch": int(pitch), "device": os.environ.get("RVC_DEVICE", "cpu"),
-                    "is_half": os.environ.get("RVC_HALF", "0") == "1",
+                    "pitch": int(pitch), "device": os.environ.get("RVC_DEVICE", "cuda"),
+                    "is_half": os.environ.get("RVC_HALF", "1") == "1",
                 }).encode("utf-8"))
                 rsp = self._recv_json(self.load_timeout)
                 if rsp.get("event") == "ready":
