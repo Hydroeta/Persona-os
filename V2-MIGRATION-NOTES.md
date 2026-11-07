@@ -35,7 +35,6 @@
 - [x] 发布版目录已创建 `core-services/` 微服务目录（占位，待迁入 Memory FastAPI 等）。
 - [x] `dsh-service-manager`（第一阶段已落地）：DSH apply 时拉起 IndexTTS2（`indextts_server.py`，端口 9881，模型懒加载），dispose 时 taskkill 进程树防僵尸；已从发布版目录 link 到 `web` profile。
 - [ ] `dsh-live-director`：替代 `live_bot.py` 直播导播（Rundown 状态机 + OBS WebSocket）。
-- [ ] 记忆星图可视化（**V2.1 计划，暂缓公开**）：3D 聚类坐标 / 星云前端的实现记录见下文第 8、9 节；插件 `dsh-memory-map` 已从公开版剥离并归档至 `_archive_v1/`，前端视觉打磨后随 V2.1 公开。
 - [ ] 通用游戏代理：vgamepad 虚拟手柄 + VLM 视觉。
 - [ ] 后台静默操作：Playwright 无头浏览器。
 
@@ -109,77 +108,12 @@
 - **配套：插件零配置连本地微服务**。`dsh-painter` 模块顶层在未设 `IMAGE_GEN_URL` 且未开 `PAINTER_USE_LOCAL_IMAGE=1` 时，默认写 `http://127.0.0.1:8002/generate`；`dsh-memory-bus` 在未设 `MEMORY_BUS_URL` 时写默认 `http://127.0.0.1:8001`（进程内所有消费者共享）。已设的 env 仍优先生效，`PAINTER_USE_LOCAL_IMAGE=1` 保留内置测试图逃生口。
 - 冒烟通过：路径解析正确、Painter spawn→健康就绪→`/health` `/stats` 200、dispose 杀进程树后 8002 释放；IndexTTS/Memory 走「端口已占跳过」分支不重复加载。
 
-### 8. `plugins/dsh-memory-map`（TS 插件）— 记忆星图后端（**已从公开版剥离，归档至 `_archive_v1/`，待 V2.1 复公开**；以下为历史实现记录）
-- 注册工具 `generate_constellation_snapshot(days?, limit?, rebuild?)`：从 8001 Memory 微服务 `/recent` 拉最近 N 天记忆（默认 90 天 / 500 条；`/recent` 为本次给 memory 微服务新增的批量端点，跨 7 层返回全字段）。
-- **聚类（3D 版重构）**：每条记忆取其 tags 中**全局频次最高**者作为代表 tag 聚合（并列取排序最前）；无 tags → 按 level 兜底（`__level__:<level>`）。不同 key 超过 15 个时，保留频次最高的 14 个，其余并入 `__other__`（「其他记忆」），星系总数封顶 5~15。`cluster_id` 由键哈希生成，跨运行稳定。
-- **3D 坐标**：星系中心 = 球面均匀分布（`cluster_id` 哈希 → phi/theta，半径 `230 + √count·24`）；星星坐标 = 中心 + 球内随机方向偏移（半径 `22 + √count·8` 内），由 `memory_id` 哈希派生 → 同一记忆坐标永远不变。`size` = `3 + importance·1.5 + log10(1+content长度)·1.2`，clamp [3,20]；`color`：`importance≥4` 金色 `#ffd87a`，否则按 `cluster_id` 哈希色相 `hsl(hash, 78, 62)`。
-- **输出 / 迁移**：`schema_version: 3`；旧 2D 快照（无 `schema_version`）加载时自动触发全量重建为 3D。结构 `{schema_version, generated_at, days, total_memories, clusters:[{cluster_id,label,tags,count,center{x,y,z}}], stars:[{memory_id,cluster_id,x,y,z,size,color,title,text,level,importance,created_at}]}`。**原子写入**：写 `*.tmp` 再 rename（带 3 次重试），前端永远只读完整 JSON。
-- **增量追加（核心）**：默认 `rebuild=false`，加载已有快照，只为「未分配坐标的新记忆」补坐标并 append，既有坐标原样保留；`rebuild=true` 全量重算。冒烟实测：第二次运行 `new_count=0`、星数不变、星星坐标与星系中心完全稳定（幂等）。
-- **每日定时**：apply 后调度到下一个 03:00 本地时间跑一次增量，之后每 24h 一次；`dispose` 清定时器；`MEMORY_MAP_CRON=0` 关闭。宿主休眠只影响触发时刻，不破坏数据。
-- 零运行时依赖（Node 22 内置 `fetch` + `node:fs`），esbuild 无 external；devDeps 用 `npm install --no-package-lock` 扁平安装（避开沙箱 pnpm junction 回收）。
-- 已 link 到 web profile（无 "not a profile layer" 警告）；冒烟通过：67 条记忆 → **67 星 / 15 星系**（星系封顶生效），坐标/颜色均合法、所有星引用有效星系，增量幂等。
-- ✅ **前端 Three.js 3D 星云已完成并在真实 DSH 上验证通过**（见第 9 节）。
+### 8. 记忆星图（已移除）
 
-### 9. `plugins/dsh-memory-map` 前端可视化 + HTTP 路由（本次，任务 3 前端）
-
-> 让用户在浏览器里直观看到「她的记忆星云」——Three.js 3D 粒子星云 + UnrealBloom 泛光，废弃原 D3.js 2D 力导向方案。源文件 `web/app.js`（ESM）由 esbuild 打成 `web/app.bundle.js`（IIFE，内嵌 three + addons），零 CDN 依赖，**可双击 `file://` 直接打开**（走内置 mock 数据）。
-
-**后端补字段（3D）**：`Cluster.center` → `{x,y,z}`；`Star` 新增 `z`、`color`；`Snapshot` 新增 `schema_version: 3`。旧 2D 快照（无 schema_version）加载时自动全量重建为 3D；增量重建循环为旧 star 补齐 `z`/`color`。67 星全部带 `z`（0 缺失）、`color` 全部合法 6 位 hex。
-
-**HTTP 路由**（复用 whale 同款 `ctx.webServer.register({kind:'exact',path,handler})`，dispose 注销 disposer）：
-- `GET /api/constellation` → 快照 JSON（带 CORS、`Cache-Control: no-store`）。
-- `GET /memory-map`、`/memory-map/`、`/memory-map/index.html` → `web/index.html`。
-- `GET /memory-map/app.bundle.js` → `web/app.bundle.js`（含 three 的单文件打包，`application/javascript`）。
-- **信任栅栏**：仅 GET、回环 Host 校验（`isLoopbackHostname`）、`sec-fetch-site`/origin 校验、可选委托 `connection.requestRejection`。
-- 新增工具 `get_constellation_ui_url` → `http://127.0.0.1:${webPort}/memory-map/`。
-- CLI 入口（仅直接 `node lib/index.js` 运行时触发，DSH import 不触发）：`--regen [--days N] [--limit N] [--rebuild]`。
-
-**构建**：`build.mjs` 用 esbuild 同时打后端（`src/index.ts` → `lib/index.js`，node ESM）与前端（`web/app.js` → `web/app.bundle.js`，browser IIFE，`target es2020`）。前端必须 IIFE + 普通 `<script src>`：Chrome 对 `file://` 的 ES module import 有 CORS 限制，`<script type=module>` 会白屏。`three@0.160.0` 为 devDependency（仅构建期用，运行时已内嵌进 bundle，约 930KB）。
-
-**前端实现**（`web/`，`package.json` 的 `files` 已含 `"web"`）：
-- `index.html`：深色背景、顶部信息条（星系/星星/更新时间/「实时·演示数据」模式 + 重置视角/刷新数据按钮）、毛玻璃 tooltip、loading/error overlay；普通 `<script src="app.bundle.js">`（非 module）。
-- `app.js`（Three.js 源）：
-  - **深空背景**：4200 个远星铺在半径 1700~2400 球壳 + 600 个近层星尘，冷白/淡蓝小点；`bgGroup` 每帧极慢旋转（`rotation.y += 1.6e-4`）制造漂移感，星尘自带 shader 呼吸（`uTime` 驱动透明度）。
-  - **记忆节点**：`THREE.Points` + 自定义 `ShaderMaterial`，顶点属性 `aSize`/`aColor`/`aPhase`/`aFreq`/`aHover`，uniform `uTime`；`gl_PointSize = aSize · pulse · boost · (scale/-mv.z)`，`pulse = 0.7 + 0.3·sin(uTime·aFreq + aPhase)`（每星呼吸频率/相位错开）；片元 `mix(vColor, white, vHover)` + 径向 `smoothstep` 白热核心，`AdditiveBlending` → 强泛光。
-  - **星系形态（去线化）**：每个星系 = 一个 `THREE.Group`，星星用**局部坐标**（`星 − 中心`）挂入 → 转 group 即星系自转；辉光 `Sprite` 作为子节点挂在 group 原点（透明度调低至 `glowOpacity=0.16`，让星点更锐利）。**已删除全部 `LineSegments` 连线**——靠星点聚拢（向心力）+ 同色辉光体现同类。
-  - **星系标签**：`#cluster-labels` 容器，每星系一个 HTML 浮层，每帧 `updateLabels()` 把中心投影到屏幕、下方偏移 18px，`opacity 0.2` 极低透明，超出视锥则隐藏。
-  - **动效（`requestAnimationFrame`）**：① 星系自转 `group.rotation.y += spin`（每星系 `0.6~1.4` 随机错开）；② 星星呼吸闪烁（shader `uTime`）；③ 相机入场飞入 `Z=2350 → 920`（`easeInOutCubic`，~1.9s）；④ 背景星尘漂移。
-  - **相机控制**：`OrbitControls` 阻尼 + 缓慢 `autoRotate`(0.32)；min/maxDistance 140/2800。**入场闸门修复自动拉近 Bug**：入场期间 `controls.enabled=false` 且不调 `controls.update()`，只 `camera.position.lerpVectors`；入场结束（t≥1）才 `controls.enabled=true; autoRotate=true; controls.update()`，把控制权完全交还 OrbitControls。聚焦用 `controls.target.lerp` + `camera.position.lerp`，到达后 `focus.active=false` 自终止，渲染循环绝不每帧重置相机。
-  - **后处理**：`EffectComposer` → `RenderPass` → `UnrealBloomPass`(strength 1.1, radius 0.55, threshold 0) → `OutputPass`；`ACESFilmicToneMapping` + `outputColorSpace = SRGB`；`exposure 1.15`。
-  - **悬停**：`Raycaster`（Points threshold 14）`pointermove` 命中 → 命中星 `aHover=1`（shader 混合纯白 + `hoverBoostSize=1.5` 放大），**其他星系顶点色 ×0.2 变暗**（`baseColors` 缓存防漂移），HTML 毛玻璃 tooltip 跟随鼠标；移出恢复。
-  - **聚焦**：单击星星 lerp `controls.target` + `camera.position` 到该星系中心（关闭 autoRotate）；双击空白 / 「重置视角」按钮回全览（恢复 autoRotate）。
-  - **数据**：`fetch('/api/constellation')` 优先；失败（如 `file://`）自动回退内置 mock（6 星系 / 54 星），顶栏标注「演示数据」。
-
-**踩过的坑（已修复）**：
-1. `hslToHex` 最初把 s/l 当百分数直接代入标准公式（公式需 [0,1]），产出 `#e5d686a6d27` 非法值。修：函数开头 `s/=100; l/=100` 并 clamp 0~255。
-2. **悬停不弹 tooltip**：`pointermove` 里只调了 `setHover`（变暗）和 `moveTooltip`（定位），漏调 `showTooltip`——tooltip 从未在悬停时填充显示。修：命中时 `showTooltip(star, x, y)`（首次填内容，后续仅 `moveTooltip` 跟随）。用临时 `window.__nebula` debug 钩子 + 浏览器 `browser_evaluate` 确定性复现并验证后移除钩子。
-3. `file://` ESM CORS：Chrome 拦 `file://` 的 module import。修：esbuild 打 IIFE + 普通 `<script src>`，bundle 内嵌 three，零外部依赖。
-4. **星系共线「贪吃蛇」（hash01 碰撞，根因）**：`hash01` 原实现 `(hash32(s) % 100000) / 100000`。djb2（`h = 33·h + c`）对末位单字符差是**线性**的——`hash('…ox')`、`hash('…oy')`、`hash('…oz')` 恰好差 1/2，`%100000` 后仍差 1 → `gx≈gy≈gz` → 归一化方向恒为 `±(1,1,1)/√3` → 整个星系的星排在一条对角线上。删连线治标不治本。**修**：`hash01` 加 fmix32 雪崩混合（`h ^= h>>>16; h = Math.imul(h, 0x85ebca6b); h ^= h>>>13; h = Math.imul(h, 0xc2b2ae35); h ^= h>>>16`），把 1 bit 差扩散到 ~16 bit，`ox/oy/oz` 得到互不相关的 [0,1)，星星才在球内真正散开。注意：单纯改 `hash32(s)/4294967296` **无效**（djb2 线性仍在，差缩到 2⁻³² 照样共线）。验证：每星系统计「方向与均值几乎平行（|dot|>0.99）的星数」，修复前所有 n≥3 星系该值 = n（全共线），修复后 ≈0。
-5. **`clusterMap` 值对象缺 `cluster_id` → 只追踪 1 个星系**：`buildConstellation` 把 `clusterMap[cl.cluster_id]` 存成 `{label, center, color, count, indices}`（**没带 `cluster_id`**），下游 `Object.values(clusterMap)` 遍历拿到的 `cl.cluster_id` 全是 `undefined` → `clusterGroups.set(undefined, …)` / `labelDivs.set(undefined, div)` 都只保留 1 个（但 15 个 group 已 `scene.add`，所以视觉上 15 个都在，造成假象）。症状：`labelDivs.size=1`（只有 1 个标签被 `updateLabels` 定位，其余 14 个留在默认位置不可见）、`clusterInfo()` 抛 `Cannot read properties of undefined (reading 'label')`、`applyHover` 只影响 1 个星系。**修**：值对象补 `cluster_id: cl.cluster_id`。
-
-**验证**：真实 DSH 3080 浏览器实测——控制台零错误；入场后相机稳定在 Z≈880–920（不自拉近）、`controls`/`autoRotate` 正常交还；星系 `rotY` 随时间增长（自转生效）；15 个星系标签全部投影定位；悬停命中星纯白放大、其他星系变暗、tooltip 显示真实记忆正文；单击聚焦平滑推进、双击/按钮回全览。截图：`memory-map-overview.png` / `memory-map-hover.png` / `memory-map-final.png`。
-
-**访问方式**：DSH web 启动后浏览器打开 `http://127.0.0.1:3080/memory-map/`（实时数据）；或双击 `plugins/dsh-memory-map/web/index.html`（`file://`，演示 mock 数据）。前端改完需 `node build.mjs` 重打 bundle，DSH 按请求从磁盘读 `web/`，**无需重启 DSH**。
-
-**DSH Web 重启注意事项（极其脆弱，务必看）**：
-1. `Shell` 后台 / `run_in_background` 拉起 DSH → `EPERM: operation not permitted, open 'C:\Users\user\.dsh\profiles\web\cordis.yml'`（受限 token 写不了用户 home 下的 `.dsh`，即便关沙箱也不行）。
-2. `Start-Process`（完整用户 token）能正常启动 DSH，**但启动它的 Shell 命令一退出，进程树就被环境回收**，DSH 跟着死。
-3. **本环境可靠启动法**：用 WMI 从「前台 + 关沙箱」命令创建进程——进程挂在 `WmiPrvSE` 下不归 Shell 树（不会被回收），且继承前台命令的完整 token（能写 cordis.yml）：
-   ```powershell
-   $wd = "C:\Users\user\Desktop\projects (2)\github-release\persona-os"
-   $runner = "$wd\plugins\dsh-memory-map\_dsh_runner.mjs"
-   $cmd = '"C:\Program Files\nodejs\node.exe" "' + $runner + '"'
-   Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd; CurrentDirectory = $wd }
-   ```
-   `_dsh_runner.mjs` 用 `stdio: ['pipe','pipe','pipe']` 且**永不 `child.stdin.end()`**（DSH `web` 把 stdin EOF 当退出信号），自身 `setInterval` 保活；日志写 `%TEMP%\dsh-runner.log`。
-4. **长期稳定方案**：用户在**自己的终端**里跑原始命令（stdin 是 TTY 不会 EOF，且用户 token 写 cordis.yml 无压力）：
-   ```
-   "C:\Program Files\nodejs\node.exe" "--env-file=C:\Users\user\Desktop\projects (2)\dsh\connection.env" "C:\Users\user\Desktop\projects (2)\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js" web --host 127.0.0.1 --port 3080 --no-open
-   ```
-5. 启动后确认：`netstat -ano | findstr :3080` 应有 LISTENING；`Invoke-WebRequest http://127.0.0.1:3080/api/constellation` 返回 200。**改后端 `src/index.ts` → 需 `node build.mjs` 并重启 DSH**（加载新 `lib/index.js`）；**改前端 `web/app.js` → 只需 `node build.mjs` 重打 `web/app.bundle.js`，DSH 按请求从磁盘读，无需重启**，刷新浏览器即可。
+> 该功能已从公开版完全移除，连同快照数据、文档表述与依赖声明一并清理；实现细节仅保留在本地归档，不随仓库分发。
 
 ### 验证状态
-- 全部插件 `node --check` 通过、TS 诊断 0 错误、`dsh plugin --profile web list` 均为 profile layer（无 "not a profile layer" 警告）；本批次 `dsh-service-manager` 升级与 `dsh-memory-map` 新增均冒烟通过。
+- 全部插件 `node --check` 通过、TS 诊断 0 错误、`dsh plugin --profile web list` 均为 profile layer（无 "not a profile layer" 警告）；本批次 `dsh-service-manager` 升级冒烟通过。
 - 任务 1&2 已在用户环境实测连通（8001 /health → /remember → /recall）；任务 3&4 待用户在 DSH web 重启后在聊天里实测；dsh-web-agent 已在沙箱用真实 headless Edge 冒烟通过，待用户在 DSH 里实测 `run_web_task`。
 - pnpm 在 Windows 并发链接大型依赖树时会 `thread overflowed its stack` 崩溃：添加新包后若 install 崩溃，用 `pnpm install --no-frozen-lockfile --child-concurrency=1` 串行化链接即可（playwright 1.64.1 已据此装好）。
 - ⚠️ 沙箱会回收 pnpm `.pnpm` junction 目标，导致 sharp 原生包链接**确定性**栈溢出（`os error 1001`）；dsh-painter 的 `sharp`/`axios` 暂用 `npm install --no-package-lock` 装在插件自己的 `node_modules`（扁平、无 junction），运行时解析正常。**普通环境下 `pnpm install --no-frozen-lockfile --child-concurrency=1` 同样能装好这两个依赖**，无需特殊处理。
@@ -189,7 +123,7 @@
 **数据源**：`C:\Users\user\Documents\档案\鲸鱼`（**非 SQLite**，绝不写源文件）：
 - `记忆卡.md`（157KB / 291 行）：从 meow-memory 导出的长期记忆——261 条 `- ` 子弹条目，分六章（我是谁 / 底线与约定 / 在忙的项目 / 经历过的事 / 学到的 / 一起走过的事），每条末尾带 `⟨簇:标签⟩`，共 29 个不同簇标签；另含第三章 5 段加粗项目概述（persona-os / douyin-whale / dsh-pet / dsh / minecraft）。
 - `日记/2026-11-05.md`：1 篇日记。
-- `.xingxi/*`（clusters.json / clusters_v2.json / emb.npy 等）：旧星图实现的产物，**冗余，未动**。
+- `.xingxi/*`：旧聚类实验的中间产物，已随星图功能一并弃用。
 
 **接入方式**：一次性脚本 `core-services/memory/import_whale_archive.py`
 1. 只读解析 `记忆卡.md`（`- ` 子弹 → 一条记忆；`⟨簇:…⟩` → 唯一 tag；章节 → 记忆层映射：我是谁→`soul`、底线与约定→`rules`、第三章加粗段→`project`、经历过的事→`fact`、学到的→`lesson`、一起走过的→`topic`）+ `日记/*.md` → 共 **267 条候选**。
@@ -205,14 +139,12 @@
 
 **结果**：
 - 记忆库活跃记忆：67 → **350**（soul 57 / project 11 / fact 94 / lesson 161 / topic 19 / rules 8）；`/recent` 可拉 334 条（16 条旧记录 `created_at` 异常落在 cutoff 之外，可忽略）。
-- 星图快照 `data/memory_constellation.json` 用 `--regen --days 3650 --limit 5000 --rebuild` 全量重算：**334 星 / 15 星系**。最大星系：「其他记忆」112、「参考·模型」33、「渲染·截图」29、「字幕·画面」29、「游戏·光标」22…；每星系 `nearLine` 16–48（球状散布，上一轮 hash01 雪崩修复保持有效，无共线退化）；全局散布 794×784×622。
-- DSH `/api/constellation` 从磁盘读快照即时生效（**无需重启 DSH**）；浏览器实测：15 个 `.cluster-label` 全投影、控制台零错、星系自转/呼吸/悬停正常，悬停 tooltip 直接显示老档案记忆正文（如「Mortis 语感参考语料…」）。
+- 记忆侧结论：334 条可拉取，层级分布正常；星图可视化已整体移除，不再产出快照。
 
 **复现 / 重跑**：
 ```powershell
 python core-services/memory/import_whale_archive.py          # dry-run：只打印条数
 python core-services/memory/import_whale_archive.py --apply  # 写入（幂等，已存在的跳过）
-node plugins/dsh-memory-map/lib/index.js --regen --days 3650 --limit 5000 --rebuild
 ```
 注：若日后新增老档案，重跑脚本即可（幂等）；`--days` 默认 90，想拉全量历史需显式传 3650。
 
