@@ -220,6 +220,8 @@
 
 ## 许可文本位置
 
+**V1 组件**
+
 | 组件 | 许可文件 |
 |---|---|
 | 本仓库 | `LICENSE` |
@@ -229,13 +231,19 @@
 | Tulpa chatlocal | `Tulpa/Tulpa/LICENSE` |
 | dsh-pet | `dsh-pet/LICENSE` |
 | AstrBot / NapCatQQ | 上游仓库 LICENSE（未随本仓库分发） |
+
+**V2 新增组件**
+
+| 组件 | 许可文件 |
+|---|---|
 | playwright / sharp / node-screenshots / ws / esbuild / node-cron / vgamepad | 各包 `node_modules/<pkg>/LICENSE`，或上游仓库（运行时由 pnpm / pip 安装，未入库） |
 
 ---
 
 ## D. V2 新增依赖（TS 插件层 / Monorepo 运行时与构建）
 
-> V2 新增的 TypeScript 插件与 Monorepo 工具链依赖。全部为**宽松许可证**（MIT / Apache-2.0），
+> V2 新增的 TypeScript 插件与 Monorepo 工具链依赖。除 **ViGEmBus**（系统级驱动，许可证见上游，
+> 由用户自行安装、不随仓库分发）外，其余均为**宽松许可证**（MIT / Apache-2.0），
 > 无 copyleft 风险，不影响自有代码按 MIT 发布。下表“使用方式”标注所在插件。
 
 | 项目 | 链接 | 许可证 | 版权行 | 使用方式 |

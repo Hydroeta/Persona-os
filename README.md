@@ -5,7 +5,7 @@
 
 [![DSH](https://img.shields.io/badge/runtime-DSH%20%28Cordis%29-7c3aed)](https://github.com/deepseek-ai/dsh)
 [![pnpm](https://img.shields.io/badge/monorepo-pnpm-workspace-F69220)](https://pnpm.io)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](#许可证)
+[![license](https://img.shields.io/badge/license-MIT-green)](#许可证)
 
 ---
 
@@ -57,15 +57,14 @@
 
 ### 1. 环境准备
 
-- Node.js ≥ 22，pnpm ≥ 9（`npm i -g pnpm`）
+- Node.js ≥ 22，pnpm ≥ 9（开发环境实测 v12，`npm i -g pnpm`）
 - Python 3.10+（微服务运行时）
 - Windows 10/11（计划任务、DPAPI 密钥、OBS 集成均在 Windows 验证）
 
 ### 2. 安装与构建
 
 ```powershell
-# 进入发布版根目录（即本 README 所在目录）
-cd github-release\persona-os
+# 以下命令均在解压后的 persona-os 根目录执行（即本 README 所在目录）
 
 # 安装 monorepo 全部依赖（含插件 esbuild 编译产物）
 pnpm install
@@ -86,6 +85,7 @@ node build.mjs
   | `PAINTER_PORT` | `8002` | 生图微服务端口 |
   | `GAME_BOT_PORT` | `8003` | 游戏手柄微服务端口（vgamepad + ViGEmBus） |
   | `INDEXTTS_PORT` | `9881` | IndexTTS2 端口 |
+  | `IMAGE_PATH` | 空 | `dsh-painter` 写帧目标 PNG（OBS 图片源监听此路径） |
   | `DSH_LIVE_DIRECTOR_PORT` | `9001` | 直播弹幕 WebSocket 端口 |
   | `VISION_API_BASE` / `VISION_API_KEY` / `VISION_MODEL` | 空 | 多模态视觉（GLM-4V 等）；不配则画面感知静默降级 |
   | `LLM_ROUTER_OLLAMA_PROVIDER` | 空 | 配置后启用 LLM 路由对 `agent/request` 的透明拦截 |
@@ -112,7 +112,7 @@ curl http://127.0.0.1:8001/health   # 记忆微服务
 curl http://127.0.0.1:8002/health   # 生图微服务
 curl http://127.0.0.1:8003/health   # 游戏手柄微服务（driver_ready=true 表示 ViGEmBus 就绪）
 
-# 往直播引擎推一条模拟弹幕（应触发 LLM 回复 + TTS 播报）
+# 往直播引擎推一条模拟弹幕（应触发 LLM 回复 + TTS 播报；TTS 接线进行中，当前为占位日志）
 # 见 使用说明.md 的“测试直播弹幕”章节
 ```
 
@@ -144,7 +144,11 @@ persona-os/
 ├─ 使用说明.md                # 运行与功能使用手册
 ├─ 项目介绍.md                # 设计理念与路线图
 ├─ THIRD-PARTY-NOTICES.md    # 第三方开源声明
-└─ V2-MIGRATION-NOTES.md     # V1→V2 迁移说明
+├─ V2-MIGRATION-NOTES.md     # V1→V2 迁移说明
+└─ [V1 历史文档，仅作参考，不代表 V2 用法]
+   ├─ README_v1.md           # V1 版 README
+   ├─ 项目介绍_v1.md          # V1 版项目介绍
+   └─ 部署待办清单.md          # V1 安装脚本产物（V2 已改用 dsh up + dsh-service-manager；本机生成物，不入库）
 ```
 
 ---
@@ -175,4 +179,4 @@ persona-os/
 
 ## 许可证
 
-Apache License 2.0，见 [LICENSE](./LICENSE)。使用的第三方开源组件协议见 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)；其中 AstrBot、NapCat 等组件遵循 GPL 相关协议，已在该文件中明确标注并保留原文。
+MIT License，见 [LICENSE](./LICENSE)。使用的第三方开源组件协议见 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)；其中 **AstrBot 为 AGPL-3.0**、**NapCatQQ 为 GPL-3.0**，各自的 copyleft 边界在该文件 A 节说明，使用前请先阅读。

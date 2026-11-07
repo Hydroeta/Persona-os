@@ -48,8 +48,9 @@
 - 路径解析：`MEMORY_DB` > `PERSONA_OS_ROOT` > 沿 `__file__` 向上找 > `LOCAL_FALLBACK_ROOTS`（源项目根）。
 - 启动（用自带 fastapi/uvicorn 的 venv）：
   ```
-  & "c:\Users\user\Desktop\projects (2)\ohwhale-deploy\.venv\Scripts\python.exe" "c:\Users\user\Desktop\projects (2)\github-release\persona-os\core-services\memory\main.py"
+  & "%USERPROFILE%\.venvs\ohwhale\Scripts\python.exe" "%PROJECT_ROOT%\core-services\memory\main.py"
   ```
+  例：`D:\persona-os\core-services\memory\main.py`
 - 端口冲突则退出 1；沙箱/Trae shell 拉起的进程可能被回收，常驻请在用户自己的终端跑上面的绝对路径命令。
 
 ### 2. `plugins/dsh-memory-bus`（TS 插件）
@@ -120,7 +121,7 @@
 
 ## 老记忆档案接入（鲸鱼 · 2026-11-06）
 
-**数据源**：`C:\Users\user\Documents\档案\鲸鱼`（**非 SQLite**，绝不写源文件）：
+**数据源**：`%USERPROFILE%\Documents\档案\鲸鱼`（本机示例；**非 SQLite**，绝不写源文件）：
 - `记忆卡.md`（157KB / 291 行）：从 meow-memory 导出的长期记忆——261 条 `- ` 子弹条目，分六章（我是谁 / 底线与约定 / 在忙的项目 / 经历过的事 / 学到的 / 一起走过的事），每条末尾带 `⟨簇:标签⟩`，共 29 个不同簇标签；另含第三章 5 段加粗项目概述（persona-os / douyin-whale / dsh-pet / dsh / minecraft）。
 - `日记/2026-11-05.md`：1 篇日记。
 - `.xingxi/*`：旧聚类实验的中间产物，已随星图功能一并弃用。
