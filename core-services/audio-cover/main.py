@@ -41,6 +41,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from rvc_client import RvcWorkerClient
+
 try:  # sounddevice 缺失时服务仍可启动，只是 /start 会明确报错
     import sounddevice as sd
 except Exception as _e:  # pragma: no cover - 环境相关
@@ -100,6 +102,7 @@ class Engine:
         self._out_q: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=QUEUE_MAX)
         self._worker: Optional[threading.Thread] = None
         self._worker_stop = threading.Event()
+        self._rvc_worker: Optional[RvcWorkerClient] = None
         self._infer_ms = 0.0
 
     # ------------------------------------------------------------------
@@ -196,27 +199,32 @@ class Engine:
                     self._dropped += 1
 
     def _process_block(self, block: np.ndarray) -> np.ndarray:
-        """真正的变声处理。真实 RVC 接入点就在这个函数里。"""
-        if self._engine == "rvc":
-            # 真实模型：RVC 内部一般要求 16k 输入 / 40k 输出，这里做重采样对齐
+        """真正的变声处理：真实 RVC 走常驻 worker（svc 环境），否则 mock 变调。"""
+        if self._engine == "rvc" and self._rvc_worker is not None and self._rvc_worker.state == "ready":
             x16 = _resample(block, self._samplerate, 16000)
-            # TODO: y = self._rvc.infer(x16, f0_up_key=self._pitch)
-            y = self._rvc_infer(x16)
-            return _resample(y, 40000, self._samplerate)[: block.size] if y.size else block
+            pcm16 = np.clip(x16 * 32767.0, -32768, 32767).astype(np.int16)
+            try:
+                out16 = self._rvc_worker.process(pcm16)
+            except Exception as exc:
+                # 超时/崩溃：重启 worker（后台），本块回退直通，音频不断
+                self._last_error = f"RVC worker 失败，已回退直通：{type(exc).__name__}: {exc}"
+                threading.Thread(target=self._rvc_worker.restart, daemon=True).start()
+                return block
+            tgt = self._rvc_worker.tgt_sr or 40000
+            y = np.asarray(out16, dtype=np.float32) / 32768.0
+            if tgt != 16000:
+                y = _resample(y, tgt, self._samplerate)
+            else:
+                y = _resample(y, 16000, self._samplerate)
+            if y.size < block.size:
+                y = np.pad(y, (0, block.size - y.size))
+            return y[: block.size]
         # mock-rvc：用变调证明队列与重采样链路
         return _pitch_shift_mock(block, self._samplerate, self._pitch)
-
-    def _rvc_infer(self, x16: np.ndarray) -> np.ndarray:
-        """真实 RVC 推理的占位实现：没有 rvc 库时返回空，让上层回退 mock。"""
-        rvc = getattr(self, "_rvc", None)
-        if rvc is None:
-            raise RuntimeError("未加载真实 RVC 引擎（mock 变调）")
-        return rvc.infer(x16)
 
     def _fallback(self, msg: str) -> None:
         self._last_error = msg
         self._engine = "mock-rvc"
-        self._rvc = None
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -316,6 +324,7 @@ class Engine:
             "underrun": self._underrun,
             "infer_ms": round(self._infer_ms, 1),
             "model": self._model or None,
+            "worker": self._rvc_worker.info() if self._rvc_worker else None,
             "backend": "sounddevice" if sd is not None else f"unavailable: {_SD_IMPORT_ERROR}",
             "last_error": self._last_error or None,
         }
@@ -379,6 +388,11 @@ def stop():
 
 @app.post("/load_model")
 def load_model(body: ModelBody):
+    """加载模型：走 svc 环境里的常驻 worker（rvc_worker.py）。
+
+    失败（worker 起不来 / 加载超时 / 模型不兼容）一律降级为 mock 变调，
+    音频链路继续可用，错误写进 /health 的 last_error 与 worker.last_error。
+    """
     path = os.path.abspath(os.path.expanduser(body.model_path))
     if not os.path.isfile(path):
         raise HTTPException(status_code=400, detail=f"模型文件不存在：{path}")
@@ -388,27 +402,27 @@ def load_model(body: ModelBody):
         if not os.path.isfile(index):
             raise HTTPException(status_code=400, detail=f"index 文件不存在：{index}")
 
-    # 真实 RVC 引擎探测：装了 rvc-python / fairseq 才能真跑，否则进 mock-rvc
-    engine = "mock-rvc"
-    note = "未检测到可用的 RVC 推理库，已登记模型路径并进入 mock 变调（链路可用，音色不变）"
-    try:  # pragma: no cover - 依赖环境
-        import torch  # noqa: F401
-        has_torch = True
-    except Exception:
-        has_torch = False
-    if has_torch:
-        try:  # pragma: no cover
-            from rvc_python.infer import RVCInference  # type: ignore
-            ENGINE._rvc = RVCInference(device="cuda:0" if os.environ.get("RVC_CUDA", "0") == "1" else "cpu")
-            engine = "rvc"
-            note = "已加载 rvc-python 引擎"
-        except Exception as exc:
-            note = f"torch 可用但 RVC 库不可用（{type(exc).__name__}: {exc}），进 mock 变调"
+    if ENGINE._rvc_worker is None:
+        ENGINE._rvc_worker = RvcWorkerClient()
 
+    cli = ENGINE._rvc_worker
+    if not cli.available():
+        ENGINE._engine = "mock-rvc"
+        ENGINE._model = {"model_path": path, "index_path": index, "loaded_at": time.time()}
+        return {"ok": False, "engine": "mock-rvc",
+                "note": f"找不到 worker 的 python 或脚本（{cli.python} / {cli.script}）",
+                "model": ENGINE._model}
+
+    rsp = cli.load(path, index or "", pitch=ENGINE._pitch)
     ENGINE._model = {"model_path": path, "index_path": index, "loaded_at": time.time()}
-    ENGINE._engine = engine
-    return {"ok": True, "engine": engine, "model": ENGINE._model, "note": note,
-            "health": ENGINE.info()}
+    if rsp.get("ok") and not rsp.get("mock"):
+        ENGINE._engine = "rvc"
+    else:
+        ENGINE._engine = "mock-rvc"
+        ENGINE._last_error = rsp.get("error") or rsp.get("note") or "worker 降级 mock"
+    return {"ok": bool(rsp.get("ok")), "engine": ENGINE._engine,
+            "worker": cli.info(), "model": ENGINE._model,
+            "note": rsp.get("note") or rsp.get("error") or ""}
 
 
 if __name__ == "__main__":
