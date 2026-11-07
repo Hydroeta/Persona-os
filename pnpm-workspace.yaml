@@ -5,3 +5,4 @@ packages:
 # 允许 esbuild 运行 postinstall（校验/放置平台二进制），避免 pnpm install 报 ERR_PNPM_IGNORED_BUILDS
 allowBuilds:
   esbuild: true
+  sharp: true
