@@ -141,6 +141,7 @@ persona-os/
 │  ├─ painter/  main.py      #   生图 :8002
 │  ├─ game-bot/ main.py      #   虚拟手柄 :8003（vgamepad + ViGEmBus）
 │  └─ audio-cover/ main.py   #   实时翻唱 :8005（sounddevice 音频闭环）
+│     └─ rvc/                #   RVC 常驻推理 worker + 训练流水线（train_rvc.py）
 ├─ dsh/                      # DSH 工作区（home/cordis.patch.yml）
 ├─ config/                   # master.json / personas / 密钥占位
 ├─ Tulpa/                    # 副人格 Tulpa（独立进程 / MCP）

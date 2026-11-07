@@ -18,15 +18,33 @@ import struct
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 DEFAULT_PY = r"C:\Users\79365\Desktop\新建文件夹 (2)\index-tts\.venv\Scripts\python.exe"
-DEFAULT_SCRIPT = r"C:\Users\79365\Desktop\新建文件夹 (2)\svc\Retrieval-based-Voice-Conversion-WebUI-main\rvc_worker.py"
+DEFAULT_SCRIPT = str(Path(__file__).resolve().parent / "rvc" / "rvc_worker.py")
 
 TAG_J = b"J"
 TAG_A = b"A"
+
+def resolve_rvc_repo() -> Path:
+    """RVC 仓库位置：RVC_REPO > 常见路径（脚本自身目录反向找 infer/rtrvc.py）。"""
+    env = os.environ.get("RVC_REPO")
+    if env and (Path(env) / "infer" / "rtrvc.py").is_file():
+        return Path(env)
+    here = Path(__file__).resolve()
+    for parent in [here, *here.parents]:
+        for cand in (parent, parent / "svc" / "Retrieval-based-Voice-Conversion-WebUI-main"):
+            if (cand / "infer" / "rtrvc.py").is_file():
+                return cand
+    for cand in (Path(r"C:\svc\Retrieval-based-Voice-Conversion-WebUI-main"),
+                 Path.home() / "svc" / "Retrieval-based-Voice-Conversion-WebUI-main"):
+        if (cand / "infer" / "rtrvc.py").is_file():
+            return cand
+    return here.parent
+
 
 
 class RvcWorkerClient:
@@ -83,7 +101,7 @@ class RvcWorkerClient:
     def _spawn(self) -> None:
         self.state = "starting"
         self._raw = queue.Queue(maxsize=64)
-        cwd = os.path.dirname(self.script)
+        cwd = str(resolve_rvc_repo())
         env = dict(os.environ)
         # 默认跳过预热：底模预热在这台机器上会挂住（0 CPU），跳过才能验证协议
         env.setdefault('RVC_NO_WARMUP', '1')
