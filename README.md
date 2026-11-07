@@ -49,6 +49,7 @@
 - 🖌️ **逐帧作画**（`dsh-painter`）：扫描线/网格遮罩逐帧显影，原子写入覆盖 OBS 监听图片，模拟人类手绘节奏，支持并发取消。
 - 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
 - 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
+- 🎤 **实时 AI 翻唱**（`dsh-audio-cover` + `audio-cover` :8005）：弹幕 `!翻唱 <歌名>` 开唱、`!停唱` 收工；音频走 `VB-CABLE` 闭环，OBS 伴奏可联动；RVC 推理放在独立常驻 worker 里，模型缺失/超时一律回退直通不停播。
 - 🎮 **虚拟手柄游戏代理**（`dsh-game-agent`）：截屏 → 多模态 VLM 决策下一步宏观动作 → HTTP 转发 game-bot 微服务（:8003）调 `vgamepad` 虚拟 Xbox 手柄；默认 `dry_run` 安全预览不操作手柄，Python 端 2s 看门狗无指令自动松杆防失控，任一环节离线/超时均安全降级不阻断 DSH。
 
 ---
@@ -134,7 +135,7 @@ persona-os/
 │  ├─ dsh-service-manager/   #   微服务生命周期
 │  ├─ dsh-self-play/         #   人格自进化（半夜复盘去 AI 味）
 │  ├─ dsh-game-agent/        #   游戏代理大脑（截屏→VLM→虚拟手柄 :8003）
-│  └─ dsh-audio-cover/       #   实时翻唱开关（调 :8005）
+│  └─ dsh-audio-cover/       #   实时翻唱开关（调 :8005，含 RVC worker 客户端）
 ├─ core-services/            # Python 微服务层
 │  ├─ memory/   main.py      #   记忆存取 :8001
 │  ├─ painter/  main.py      #   生图 :8002
