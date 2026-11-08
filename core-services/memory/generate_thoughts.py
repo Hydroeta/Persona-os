@@ -65,6 +65,16 @@ def build_prompt(events: list[str]) -> str:
 
 
 def ollama_generate(base: str, model: str, prompt: str, timeout: int = 120) -> str:
+    # 模型可能没拉过（默认 7b 常缺席）→ 退到本地已有的任意模型，避免定时任务直接失败
+    try:
+        tags = http_json(f"{base}/api/tags", timeout=5)
+        names = [m.get("name") for m in (tags.get("models") or []) if m.get("name")]
+        if names and model not in names:
+            fallback = next((n for n in names if "qwen" in n), names[0])
+            print(f"⚠ 模型 {model} 不在本地，改用 {fallback}", file=sys.stderr)
+            model = fallback
+    except Exception:
+        pass
     res = http_json(
         f"{base}/api/generate",
         {"model": model, "prompt": prompt, "stream": False,
