@@ -1,10 +1,80 @@
 // src/index.ts
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 var LOG_TAG = "[dsh-persona-core]";
 var LOCAL_FALLBACK_ROOTS = [];
 var SECTION_ORDER = 100;
+var ENV_SECTION_ORDER = SECTION_ORDER + 5;
+var ENV_CITY = process.env.PERSONA_ENV_CITY || "\u4E0A\u6D77";
+var WEATHER_INTERVAL_MS = 2 * 60 * 60 * 1e3;
+var GPU_INTERVAL_MS = 60 * 1e3;
+var envState = {
+  weather: "",
+  gpu: "",
+  city: ENV_CITY,
+  weatherAt: 0,
+  gpuAt: 0
+};
+function envText() {
+  const now = /* @__PURE__ */ new Date();
+  const clock = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const parts = [`\u73B0\u5728\u65F6\u95F4\uFF1A${clock}`];
+  parts.push(envState.weather || `\u5929\u6C14\uFF1A${envState.city}\uFF08\u6682\u672A\u53D6\u5230\uFF09`);
+  parts.push(envState.gpu || "\u663E\u5361\uFF1A\u672A\u53D6\u5230");
+  return `\u3010\u6B64\u523B\u7684\u771F\u5B9E\u73AF\u5883\u3011\uFF08\u8FD9\u4E9B\u662F\u4F60\u6B64\u523B\u771F\u5B9E\u6240\u5904\u7684\u73AF\u5883\uFF0C\u4E0D\u662F\u865A\u6784\u8BBE\u5B9A\uFF09
+` + parts.join("\n");
+}
+async function refreshWeather() {
+  const url = `https://wttr.in/${encodeURIComponent(ENV_CITY)}?format=j1&lang=zh`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8e3);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "accept-language": "zh-CN,zh" } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    const cur = j?.current_condition?.[0];
+    if (!cur) throw new Error("\u54CD\u5E94\u91CC\u6CA1\u6709 current_condition");
+    const desc = cur.lang_zh?.[0]?.value || cur.weatherDesc?.[0]?.value || "\u672A\u77E5";
+    const temp = cur.temp_C ?? "?";
+    const feels = cur.FeelsLikeC ?? "?";
+    const humid = cur.humidity ?? "?";
+    envState.weather = `\u5929\u6C14\uFF1A${ENV_CITY} ${temp}\u2103\uFF08\u4F53\u611F ${feels}\u2103\uFF0C\u6E7F\u5EA6 ${humid}%\uFF09${desc}`;
+    envState.weatherAt = Date.now();
+  } catch (e) {
+    if (!envState.weather) envState.weather = `\u5929\u6C14\uFF1A${ENV_CITY}\uFF08\u53D6\u4E0D\u5230\uFF0C\u7F51\u7EDC\u6216\u63A5\u53E3\u4E0D\u53EF\u7528\uFF09`;
+    console.error(`${LOG_TAG} \u53D6\u5929\u6C14\u5931\u8D25\uFF1A${e.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function refreshGpu() {
+  return new Promise((resolve2) => {
+    execFile(
+      "nvidia-smi",
+      ["--query-gpu=temperature.gpu,memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
+      { timeout: 3e3 },
+      (err, stdout) => {
+        if (err) {
+          envState.gpu = "\u663E\u5361\uFF1A\u4E0D\u53EF\u7528\uFF08\u65E0 NVIDIA \u9A71\u52A8\u6216\u8BFB\u53D6\u5931\u8D25\uFF09";
+        } else {
+          const line = String(stdout).trim().split(/\r?\n/)[0] || "";
+          const [temp, used, total, util] = line.split(",").map((s) => Number(s.trim()));
+          if (Number.isFinite(temp) && Number.isFinite(used) && Number.isFinite(total) && total > 0) {
+            const pct = Math.round(used / total * 100);
+            const load = pct >= 80 ? "\u9AD8\u8D1F\u8F7D" : pct >= 40 ? "\u4E2D\u7B49\u8D1F\u8F7D" : "\u7A7A\u95F2";
+            envState.gpu = `\u663E\u5361\uFF1A${temp}\u2103\u3001\u663E\u5B58 ${pct}%\uFF08${used}/${total} MB\uFF09\u3001GPU \u5229\u7528\u7387 ${Number.isFinite(util) ? util : "?"}% \u2014\u2014 ${load}`;
+          } else {
+            envState.gpu = "\u663E\u5361\uFF1A\u6570\u636E\u683C\u5F0F\u5F02\u5E38";
+          }
+        }
+        envState.gpuAt = Date.now();
+        resolve2();
+      }
+    );
+  });
+}
 function resolvePersonasRoot() {
   if (process.env.PERSONA_CONFIG_DIR) {
     if (existsSync(process.env.PERSONA_CONFIG_DIR)) return process.env.PERSONA_CONFIG_DIR;
@@ -191,6 +261,50 @@ var index_default = {
     let currentId = "";
     let sectionDispose = null;
     let guideTimer = null;
+    let envSectionDispose = null;
+    const envTimers = [];
+    const refreshEnvSection = () => {
+      const svc = ctx.get?.("systemPrompt");
+      if (!svc || typeof svc.section !== "function") return;
+      if (envSectionDispose) {
+        try {
+          envSectionDispose();
+        } catch {
+        }
+        envSectionDispose = null;
+      }
+      try {
+        envSectionDispose = svc.section({
+          name: "persona-core:env",
+          order: ENV_SECTION_ORDER,
+          text: envText()
+        });
+      } catch (e) {
+        console.error(`${LOG_TAG} \u73AF\u5883\u65F6\u949F\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
+      }
+    };
+    const startEnvClock = () => {
+      void refreshGpu().then(refreshEnvSection);
+      void refreshWeather().then(refreshEnvSection);
+      envTimers.push(setInterval(() => {
+        void refreshGpu().then(refreshEnvSection);
+      }, GPU_INTERVAL_MS));
+      envTimers.push(setInterval(() => {
+        void refreshWeather().then(refreshEnvSection);
+      }, WEATHER_INTERVAL_MS));
+      console.log(`${LOG_TAG} \u73AF\u5883\u65F6\u949F\u5DF2\u542F\u52A8\uFF08\u57CE\u5E02=${ENV_CITY}\uFF0C\u663E\u5361 60s / \u5929\u6C14 2h\uFF09`);
+    };
+    const stopEnvClock = () => {
+      for (const t of envTimers) clearInterval(t);
+      envTimers.length = 0;
+      if (envSectionDispose) {
+        try {
+          envSectionDispose();
+        } catch {
+        }
+        envSectionDispose = null;
+      }
+    };
     const disposers = [];
     const getActiveId = () => {
       try {
@@ -245,6 +359,7 @@ var index_default = {
       }
     };
     tryInject();
+    startEnvClock();
     const switchTool = {
       name: "switch_persona",
       description: "\u70ED\u5207\u6362\u5F53\u524D\u4EBA\u683C\u89D2\u8272\u3002\u5207\u6362\u540E\u65B0\u89D2\u8272\u7684\u4EBA\u8BBE\u4E0E\u89C4\u5219\u4F1A\u7ACB\u5373\u6CE8\u5165\u4E0B\u4E00\u8F6E\u5BF9\u8BDD\u7684 system prompt\uFF0C\u5E76\u56DE\u5199 config/personas/active.json \u4F7F\u5207\u6362\u5BF9\u6574\u4E2A\u7CFB\u7EDF\u751F\u6548\u3002\u5148\u7528 list_personas \u67E5\u770B\u53EF\u7528 id\u3002",
@@ -327,6 +442,7 @@ var index_default = {
       }
     }
     ctx.on("dispose", () => {
+      stopEnvClock();
       if (guideTimer) clearTimeout(guideTimer);
       if (sectionDispose) {
         try {

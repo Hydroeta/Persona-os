@@ -42,6 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from rvc_client import RvcWorkerClient
+import voice_fx
 
 try:  # sounddevice 缺失时服务仍可启动，只是 /start 会明确报错
     import sounddevice as sd
@@ -348,6 +349,19 @@ class ModelBody(BaseModel):
     index_path: Optional[str] = None
 
 
+class FxPlanBody(BaseModel):
+    text: str
+    energy: Optional[float] = Field(default=None, description="当前精力 0~1，越低越容易触发哈欠")
+
+
+class FxApplyBody(BaseModel):
+    voice_path: str = Field(description="待处理的语音 wav 路径")
+    effect: str = Field(description="气口类型：sigh / giggle / yawn")
+    out_path: Optional[str] = Field(default=None, description="输出路径，缺省为 <voice>_<effect>.wav")
+    ms: int = Field(default=30, description="交叉淡化毫秒数")
+    gain: float = Field(default=0.9)
+
+
 @app.get("/health")
 def health():
     return ENGINE.info()
@@ -384,6 +398,38 @@ def start(body: StartBody):
 @app.post("/stop")
 def stop():
     return ENGINE.stop()
+
+
+
+@app.post("/voice_fx/plan")
+def voice_fx_plan(body: FxPlanBody):
+    """按文本（和可选精力值）判断该配哪种气口，不落盘。"""
+    return {"ok": True, **voice_fx.plan(body.text, body.energy)}
+
+
+@app.post("/voice_fx/apply")
+def voice_fx_apply(body: FxApplyBody):
+    """把气口插到语音前面，做交叉淡化后写文件。"""
+    path = os.path.abspath(os.path.expanduser(body.voice_path))
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=400, detail=f"语音文件不存在：{path}")
+    try:
+        out = os.path.abspath(os.path.expanduser(body.out_path)) if body.out_path else None
+        return voice_fx.prepend(path, body.effect, out, ms=int(body.ms), gain=float(body.gain))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}")
+
+
+@app.get("/voice_fx/assets")
+def voice_fx_assets():
+    """列出已就位的气口素材（不存在时自动生成占位音）。"""
+    voice_fx.ensure_placeholders()
+    items = []
+    for k in voice_fx.FX_KINDS:
+        p = voice_fx.FX_DIR / f"{k}.wav"
+        items.append({"effect": k, "path": str(p), "exists": p.is_file(),
+                      "bytes": p.stat().st_size if p.is_file() else 0})
+    return {"ok": True, "dir": str(voice_fx.FX_DIR), "items": items}
 
 
 @app.post("/load_model")

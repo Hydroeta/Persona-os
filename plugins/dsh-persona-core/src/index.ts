@@ -22,6 +22,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { join, dirname, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,6 +34,87 @@ const LOCAL_FALLBACK_ROOTS: string[] = []
 
 // system prompt 段落排序：比 meow-memory 的记忆手册(order=130)更靠前，人格是更基础的设定。
 const SECTION_ORDER = 100
+
+// ---------------------------------------------------------------------------
+// 赛博环境时钟（天气 + 显卡 + 时间）
+//   目的：让她知道「外面在下雨」「我这块显卡快烧了」这类真实世界信息。
+//   实现：一个独立 system prompt section，按周期刷新后重新注册（section 不支持原地更新）。
+//   失败策略：任何一路取不到就降级为「未知」，绝不阻塞人格注入。
+// ---------------------------------------------------------------------------
+
+const ENV_SECTION_ORDER = SECTION_ORDER + 5
+const ENV_CITY = process.env.PERSONA_ENV_CITY || '上海'
+const WEATHER_INTERVAL_MS = 2 * 60 * 60 * 1000
+const GPU_INTERVAL_MS = 60 * 1000
+
+const envState = {
+  weather: '',
+  gpu: '',
+  city: ENV_CITY,
+  weatherAt: 0,
+  gpuAt: 0,
+}
+
+function envText(): string {
+  const now = new Date()
+  const clock = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  const parts = [`现在时间：${clock}`]
+  parts.push(envState.weather || `天气：${envState.city}（暂未取到）`)
+  parts.push(envState.gpu || '显卡：未取到')
+  return `【此刻的真实环境】（这些是你此刻真实所处的环境，不是虚构设定）\n` + parts.join('\n')
+}
+
+async function refreshWeather(): Promise<void> {
+  const url = `https://wttr.in/${encodeURIComponent(ENV_CITY)}?format=j1&lang=zh`
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { 'accept-language': 'zh-CN,zh' } })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    const j: any = await r.json()
+    const cur = j?.current_condition?.[0]
+    if (!cur) throw new Error('响应里没有 current_condition')
+    const desc = (cur.lang_zh?.[0]?.value || cur.weatherDesc?.[0]?.value || '未知') as string
+    const temp = cur.temp_C ?? '?'
+    const feels = cur.FeelsLikeC ?? '?'
+    const humid = cur.humidity ?? '?'
+    envState.weather = `天气：${ENV_CITY} ${temp}℃（体感 ${feels}℃，湿度 ${humid}%）${desc}`
+    envState.weatherAt = Date.now()
+  } catch (e) {
+    if (!envState.weather) envState.weather = `天气：${ENV_CITY}（取不到，网络或接口不可用）`
+    console.error(`${LOG_TAG} 取天气失败：${(e as Error).message}`)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function refreshGpu(): Promise<void> {
+  return new Promise((resolve) => {
+    execFile(
+      'nvidia-smi',
+      ['--query-gpu=temperature.gpu,memory.used,memory.total,utilization.gpu', '--format=csv,noheader,nounits'],
+      { timeout: 3000 },
+      (err, stdout) => {
+        if (err) {
+          envState.gpu = '显卡：不可用（无 NVIDIA 驱动或读取失败）'
+        } else {
+          const line = String(stdout).trim().split(/\r?\n/)[0] || ''
+          const [temp, used, total, util] = line.split(',').map((s) => Number(s.trim()))
+          if (Number.isFinite(temp) && Number.isFinite(used) && Number.isFinite(total) && total > 0) {
+            const pct = Math.round((used / total) * 100)
+            const load = pct >= 80 ? '高负载' : pct >= 40 ? '中等负载' : '空闲'
+            envState.gpu = `显卡：${temp}℃、显存 ${pct}%（${used}/${total} MB）、GPU 利用率 ${Number.isFinite(util) ? util : '?'}% —— ${load}`
+          } else {
+            envState.gpu = '显卡：数据格式异常'
+          }
+        }
+        envState.gpuAt = Date.now()
+        resolve()
+      },
+    )
+  })
+}
+
 
 // ---------------------------------------------------------------------------
 // 路径解析
@@ -263,6 +345,42 @@ export default {
     let currentId = ''
     let sectionDispose: (() => void) | null = null
     let guideTimer: ReturnType<typeof setTimeout> | null = null
+
+    // ---- 环境时钟：独立 section，按周期刷新后重建 ----
+    let envSectionDispose: (() => void) | null = null
+    const envTimers: Array<ReturnType<typeof setInterval>> = []
+    const refreshEnvSection = (): void => {
+      const svc = ctx.get?.('systemPrompt')
+      if (!svc || typeof svc.section !== 'function') return
+      if (envSectionDispose) {
+        try { envSectionDispose() } catch { /* ignore */ }
+        envSectionDispose = null
+      }
+      try {
+        envSectionDispose = svc.section({
+          name: 'persona-core:env',
+          order: ENV_SECTION_ORDER,
+          text: envText(),
+        })
+      } catch (e) {
+        console.error(`${LOG_TAG} 环境时钟注入失败：${(e as Error).message}`)
+      }
+    }
+    const startEnvClock = (): void => {
+      void refreshGpu().then(refreshEnvSection)
+      void refreshWeather().then(refreshEnvSection)
+      envTimers.push(setInterval(() => { void refreshGpu().then(refreshEnvSection) }, GPU_INTERVAL_MS))
+      envTimers.push(setInterval(() => { void refreshWeather().then(refreshEnvSection) }, WEATHER_INTERVAL_MS))
+      console.log(`${LOG_TAG} 环境时钟已启动（城市=${ENV_CITY}，显卡 60s / 天气 2h）`)
+    }
+    const stopEnvClock = (): void => {
+      for (const t of envTimers) clearInterval(t)
+      envTimers.length = 0
+      if (envSectionDispose) {
+        try { envSectionDispose() } catch { /* ignore */ }
+        envSectionDispose = null
+      }
+    }
     const disposers: Array<() => void> = []
 
     const getActiveId = (): string => {
@@ -318,6 +436,7 @@ export default {
       }
     }
     tryInject()
+    startEnvClock()
 
     // ---- 工具：switch_persona ----
     const switchTool: DshTool = {
@@ -413,6 +532,7 @@ export default {
     }
 
     ctx.on('dispose', () => {
+      stopEnvClock()
       if (guideTimer) clearTimeout(guideTimer)
       if (sectionDispose) {
         try { sectionDispose() } catch { /* ignore */ }

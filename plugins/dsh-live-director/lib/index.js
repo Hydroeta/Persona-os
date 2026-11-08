@@ -4467,6 +4467,25 @@ function buildChatMessages(opts) {
 function speak(text, meta = {}) {
   console.log(`${LOG_TAG6} \u{1F50A} speak\uFF1A${text}`, Object.keys(meta).length ? meta : "");
   director?.markInteraction();
+  void planVoiceFx(text);
+}
+async function planVoiceFx(text) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 500);
+  try {
+    const r = await fetch(`${AUDIO_COVER_URL}/voice_fx/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: ctrl.signal
+    });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (j?.effect) console.log(`${LOG_TAG6} \u{1F399}\uFE0F \u62DF\u58F0\u8BCD\u5EFA\u8BAE\uFF1A${j.effect}\uFF08${j.reason}\uFF09`);
+  } catch {
+  } finally {
+    clearTimeout(timer);
+  }
 }
 var AUDIO_COVER_URL = (process.env.AUDIO_COVER_URL || "http://127.0.0.1:8005").replace(/\/$/, "");
 async function handleCoverCommand(text) {

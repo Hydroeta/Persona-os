@@ -50,6 +50,8 @@
 - 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
 - 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
 - 🎤 **实时 AI 翻唱**（`dsh-audio-cover` + `audio-cover` :8005）：弹幕 `!翻唱 <歌名>` 开唱、`!停唱` 收工；音频走 `VB-CABLE` 闭环，OBS 伴奏可联动；RVC 推理放在独立常驻 worker 里，模型缺失/超时一律回退直通不停播。
+- 🌦️ **环境感知**（`dsh-persona-core`）：每 2 小时取天气、每 60 秒读显卡温度/显存，作为隐藏上下文注入——她知道外面在下雨、也知道自己这块卡快烧了。
+- 🎙️ **拟声词引擎**（`voice_fx.py`）：叹气/轻笑/哈欠与语音 30ms 交叉淡化后拼接，给 TTS 补上「呼吸感」。
 - 🎮 **虚拟手柄游戏代理**（`dsh-game-agent`）：截屏 → 多模态 VLM 决策下一步宏观动作 → HTTP 转发 game-bot 微服务（:8003）调 `vgamepad` 虚拟 Xbox 手柄；默认 `dry_run` 安全预览不操作手柄，Python 端 2s 看门狗无指令自动松杆防失控，任一环节离线/超时均安全降级不阻断 DSH。
 
 ---

@@ -145,7 +145,30 @@ export function buildChatMessages(opts: {
 function speak(text: string, meta: Record<string, unknown> = {}): void {
   console.log(`${LOG_TAG} 🔊 speak：${text}`, Object.keys(meta).length ? meta : '')
   director?.markInteraction()
+  // 拟声词前置判断：命中叹气/轻笑/哈欠时，TTS 接线后应在语音前插入气口（30ms 交叉淡化）
+  void planVoiceFx(text)
   // TODO(模块 5)：调用真实 TTS 服务播放 audio
+}
+
+/** 问一次 audio-cover 的拟声词引擎：这句该配哪种气口（失败静默，绝不阻塞播报） */
+async function planVoiceFx(text: string): Promise<void> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 500)
+  try {
+    const r = await fetch(`${AUDIO_COVER_URL}/voice_fx/plan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal: ctrl.signal,
+    })
+    if (!r.ok) return
+    const j: any = await r.json()
+    if (j?.effect) console.log(`${LOG_TAG} 🎙️ 拟声词建议：${j.effect}（${j.reason}）`)
+  } catch {
+    /* 服务没起就算了 */
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /** 实时翻唱命令：`!翻唱 <歌名>` 开唱、`!停唱` 收工（调 audio-cover 微服务 :8005） */
