@@ -54,6 +54,8 @@ LOG_TAG = "[memory]"
 LOCAL_FALLBACK_ROOTS: list[str] = []
 
 MEOW_TABLES = ("soul", "user", "project", "fact", "lesson", "topic", "rules")
+# 内心戏独立表：刻意不混进 MEOW_TABLES，避免被 /recent、/recall 当成「事实」召回
+THOUGHT_TABLE = "inner_thoughts"
 DB_REL = Path("dsh") / "workspace" / ".dsh-meow" / "memory.db"
 
 
@@ -170,6 +172,59 @@ def _table_columns(table: str) -> list[str]:
         finally:
             conn.close()
     return cache[table]
+
+
+def ensure_thought_table() -> None:
+    """内心戏单独一张表：内容 + 归属日期 + 来源。"""
+    conn = connect()
+    try:
+        conn.execute(
+            f"CREATE TABLE IF NOT EXISTS {THOUGHT_TABLE} ("
+            "id TEXT PRIMARY KEY, content TEXT NOT NULL, day TEXT NOT NULL, "
+            "source TEXT, created_at INTEGER NOT NULL)"
+        )
+        conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{THOUGHT_TABLE}_day ON {THOUGHT_TABLE}(day)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_thought(content: str, day: Optional[str] = None, source: str = "ollama") -> dict:
+    content = (content or "").strip()
+    if not content:
+        raise ValueError("content 不能为空")
+    ensure_thought_table()
+    d = (day or time.strftime("%Y-%m-%d")).strip()
+    mid = new_id()
+    now = int(time.time() * 1000)
+    conn = connect()
+    try:
+        conn.execute(
+            f"INSERT INTO {THOUGHT_TABLE}(id, content, day, source, created_at) VALUES(?,?,?,?,?)",
+            (mid, content[:500], d, source, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "id": mid, "day": d, "content": content[:500]}
+
+
+def recent_thoughts(days: int = 3, limit: int = 10) -> list[dict]:
+    ensure_thought_table()
+    cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
+    conn = connect()
+    try:
+        rows = conn.execute(
+            f"SELECT id, content, day, source, created_at FROM {THOUGHT_TABLE} "
+            "WHERE day >= ? ORDER BY created_at DESC LIMIT ?",
+            (cutoff, int(limit)),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {"id": r[0], "content": r[1], "day": r[2], "source": r[3], "created_at": r[4]}
+        for r in rows
+    ]
 
 
 def write_memory(text: str, tags: Optional[list[str]] = None, level: str = "fact") -> dict:
@@ -339,6 +394,12 @@ class RememberIn(BaseModel):
     level: str = Field(default="fact", description="记忆层，默认 fact")
 
 
+class ThoughtIn(BaseModel):
+    content: str = Field(..., description="内心戏正文，第一人称")
+    day: Optional[str] = Field(default=None, description="归属日期 YYYY-MM-DD，缺省今天")
+    source: str = Field(default="ollama", description="生成来源")
+
+
 @app.get("/health")
 def api_health():
     try:
@@ -355,6 +416,26 @@ def api_remember(body: RememberIn):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+@app.post("/thoughts/save")
+def api_thought_save(body: ThoughtIn):
+    try:
+        return save_thought(body.content, body.day, body.source)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+@app.get("/thoughts/recent")
+def api_thought_recent(days: int = Query(3, ge=1, le=365), limit: int = Query(10, ge=1, le=100)):
+    """最近的内心戏（供 dsh-persona-core 做语气参考，禁止当事实引用）。"""
+    try:
+        items = recent_thoughts(days, limit)
+        return {"ok": True, "days": days, "count": len(items), "thoughts": items}
+    finally:
+        pass
 
 
 @app.get("/recall")

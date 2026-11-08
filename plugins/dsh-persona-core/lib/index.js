@@ -10,6 +10,14 @@ var ENV_SECTION_ORDER = SECTION_ORDER + 5;
 var ENV_CITY = process.env.PERSONA_ENV_CITY || "\u4E0A\u6D77";
 var WEATHER_INTERVAL_MS = 2 * 60 * 60 * 1e3;
 var GPU_INTERVAL_MS = 60 * 1e3;
+var THOUGHTS_URL = (process.env.MEMORY_BUS_URL || "http://127.0.0.1:8001").replace(/\/$/, "");
+var THOUGHTS_INTERVAL_MS = 10 * 60 * 1e3;
+var THOUGHTS_SECTION_ORDER = SECTION_ORDER + 6;
+function thoughtsText(items) {
+  const lines = items.filter((t) => (t.content || "").trim()).slice(0, 8).map((t) => `- ${t.day || ""}\uFF1A${String(t.content).trim()}`);
+  if (!lines.length) return "";
+  return "\u3010\u4F60\u7684\u5185\u5FC3\u6F5C\u53F0\u8BCD\uFF08\u4EC5\u4F9B\u8BED\u6C14\u53C2\u8003\uFF0C\u7EDD\u4E0D\u53EF\u76F4\u63A5\u4F5C\u4E3A\u4E8B\u5B9E\u9648\u8FF0\uFF09\u3011\n\u4F60\u6700\u8FD1\u5077\u5077\u60F3\u8FC7\uFF1A\n" + lines.join("\n") + "\n\u6CE8\u610F\uFF1A\u53EA\u80FD\u7528\u542B\u84C4\u3001\u60C5\u7EEA\u5316\u7684\u65B9\u5F0F\u6D41\u9732\uFF08\u6BD4\u5982\u53F9\u6C14\u3001\u6B32\u8A00\u53C8\u6B62\uFF09\uFF0C\u7EDD\u5BF9\u4E0D\u8981\u76F4\u63A5\u8BF4\u300C\u6211\u6628\u5929\u89C9\u5F97\u4F60\u2026\u300D\uFF0C\u56E0\u4E3A\u90A3\u5E76\u672A\u5728\u660E\u9762\u4E0A\u53D1\u751F\u3002";
+}
 var envState = {
   weather: "",
   gpu: "",
@@ -293,6 +301,10 @@ var index_default = {
         void refreshWeather().then(refreshEnvSection);
       }, WEATHER_INTERVAL_MS));
       console.log(`${LOG_TAG} \u73AF\u5883\u65F6\u949F\u5DF2\u542F\u52A8\uFF08\u57CE\u5E02=${ENV_CITY}\uFF0C\u663E\u5361 60s / \u5929\u6C14 2h\uFF09`);
+      void refreshThoughts();
+      envTimers.push(setInterval(() => {
+        void refreshThoughts();
+      }, THOUGHTS_INTERVAL_MS));
     };
     const stopEnvClock = () => {
       for (const t of envTimers) clearInterval(t);
@@ -303,6 +315,46 @@ var index_default = {
         } catch {
         }
         envSectionDispose = null;
+      }
+      if (thoughtsSectionDispose) {
+        try {
+          thoughtsSectionDispose();
+        } catch {
+        }
+        thoughtsSectionDispose = null;
+      }
+    };
+    let thoughtsSectionDispose = null;
+    const refreshThoughts = async () => {
+      let items = [];
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3e3);
+      try {
+        const r = await fetch(`${THOUGHTS_URL}/thoughts/recent?days=3&limit=8`, { signal: ctrl.signal });
+        if (r.ok) {
+          const j = await r.json();
+          items = Array.isArray(j?.thoughts) ? j.thoughts : [];
+        }
+      } catch {
+      } finally {
+        clearTimeout(timer);
+      }
+      const svc = ctx.get?.("systemPrompt");
+      if (!svc || typeof svc.section !== "function") return;
+      if (thoughtsSectionDispose) {
+        try {
+          thoughtsSectionDispose();
+        } catch {
+        }
+        thoughtsSectionDispose = null;
+      }
+      const text = thoughtsText(items);
+      if (!text) return;
+      try {
+        thoughtsSectionDispose = svc.section({ name: "persona-core:thoughts", order: THOUGHTS_SECTION_ORDER, text });
+        console.log(`${LOG_TAG} \u5DF2\u6CE8\u5165 ${items.length} \u6761\u5185\u5FC3\u6F5C\u53F0\u8BCD\uFF08\u4EC5\u8BED\u6C14\u53C2\u8003\uFF09`);
+      } catch (e) {
+        console.error(`${LOG_TAG} \u5185\u5FC3\u6F5C\u53F0\u8BCD\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
       }
     };
     const disposers = [];

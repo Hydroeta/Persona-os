@@ -47,6 +47,30 @@ const ENV_CITY = process.env.PERSONA_ENV_CITY || '上海'
 const WEATHER_INTERVAL_MS = 2 * 60 * 60 * 1000
 const GPU_INTERVAL_MS = 60 * 1000
 
+// ---------------------------------------------------------------------------
+// 内心潜台词（inner_thoughts）
+//   来源：记忆微服务 /thoughts/recent（独立表，不参与 /recall 的事实召回）
+//   铁律：只当语气参考，绝不能当事实陈述——否则会把她半夜编的当成真发生过。
+// ---------------------------------------------------------------------------
+const THOUGHTS_URL = (process.env.MEMORY_BUS_URL || 'http://127.0.0.1:8001').replace(/\/$/, '')
+const THOUGHTS_INTERVAL_MS = 10 * 60 * 1000
+const THOUGHTS_SECTION_ORDER = SECTION_ORDER + 6
+
+function thoughtsText(items: Array<{ day?: string; content?: string }>): string {
+  const lines = items
+    .filter((t) => (t.content || '').trim())
+    .slice(0, 8)
+    .map((t) => `- ${t.day || ''}：${String(t.content).trim()}`)
+  if (!lines.length) return ''
+  return (
+    '【你的内心潜台词（仅供语气参考，绝不可直接作为事实陈述）】\n' +
+    '你最近偷偷想过：\n' + lines.join('\n') + '\n' +
+    '注意：只能用含蓄、情绪化的方式流露（比如叹气、欲言又止），' +
+    '绝对不要直接说「我昨天觉得你…」，因为那并未在明面上发生。'
+  )
+}
+
+
 const envState = {
   weather: '',
   gpu: '',
@@ -372,6 +396,8 @@ export default {
       envTimers.push(setInterval(() => { void refreshGpu().then(refreshEnvSection) }, GPU_INTERVAL_MS))
       envTimers.push(setInterval(() => { void refreshWeather().then(refreshEnvSection) }, WEATHER_INTERVAL_MS))
       console.log(`${LOG_TAG} 环境时钟已启动（城市=${ENV_CITY}，显卡 60s / 天气 2h）`)
+      void refreshThoughts()
+      envTimers.push(setInterval(() => { void refreshThoughts() }, THOUGHTS_INTERVAL_MS))
     }
     const stopEnvClock = (): void => {
       for (const t of envTimers) clearInterval(t)
@@ -379,6 +405,43 @@ export default {
       if (envSectionDispose) {
         try { envSectionDispose() } catch { /* ignore */ }
         envSectionDispose = null
+      }
+      if (thoughtsSectionDispose) {
+        try { thoughtsSectionDispose() } catch { /* ignore */ }
+        thoughtsSectionDispose = null
+      }
+    }
+
+    // ---- 内心潜台词 section：拉 /thoughts/recent 后重建 ----
+    let thoughtsSectionDispose: (() => void) | null = null
+    const refreshThoughts = async (): Promise<void> => {
+      let items: Array<{ day?: string; content?: string }> = []
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 3000)
+      try {
+        const r = await fetch(`${THOUGHTS_URL}/thoughts/recent?days=3&limit=8`, { signal: ctrl.signal })
+        if (r.ok) {
+          const j: any = await r.json()
+          items = Array.isArray(j?.thoughts) ? j.thoughts : []
+        }
+      } catch {
+        /* 记忆服务没起就算了，不注入 */
+      } finally {
+        clearTimeout(timer)
+      }
+      const svc = ctx.get?.('systemPrompt')
+      if (!svc || typeof svc.section !== 'function') return
+      if (thoughtsSectionDispose) {
+        try { thoughtsSectionDispose() } catch { /* ignore */ }
+        thoughtsSectionDispose = null
+      }
+      const text = thoughtsText(items)
+      if (!text) return
+      try {
+        thoughtsSectionDispose = svc.section({ name: 'persona-core:thoughts', order: THOUGHTS_SECTION_ORDER, text })
+        console.log(`${LOG_TAG} 已注入 ${items.length} 条内心潜台词（仅语气参考）`)
+      } catch (e) {
+        console.error(`${LOG_TAG} 内心潜台词注入失败：${(e as Error).message}`)
       }
     }
     const disposers: Array<() => void> = []
