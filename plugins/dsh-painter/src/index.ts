@@ -67,6 +67,45 @@ interface BaseImage {
   width: number
   height: number
   source: string
+  /** 微服务 X-Painter-Msg（已 percent-decode）：生图侧给的人类可读说明，如「画好啦！」 */
+  message?: string
+}
+
+/**
+ * 读 HTTP 响应头里的 X-Painter-* 字段。
+ * painter 微服务用 `urllib.parse.quote` 转义过（HTTP 头只能 latin-1，中文写进去会让服务器 500），
+ * 所以这里必须 percent-decode，直接拿来展示会看到 `%E7%94%BB...` 这种乱码串。
+ */
+/**
+ * 安全 decodeURIComponent：并非所有 percent 序列都合法（比如别人塞了个裸 %），
+ * 坏一个字段不该让整条作画链路报错，解不开就原样返回。
+ */
+function decodeURIComponentSafe(v: string): string {
+  try {
+    return decodeURIComponent(v)
+  } catch {
+    return v
+  }
+}
+
+function readPainterHeaders(headers: Record<string, any>): { msg?: string; outPath?: string; provider?: string } {
+  const get = (k: string): string => {
+    const v = headers?.[k]
+    return Array.isArray(v) ? String(v[0] ?? '') : String(v ?? '')
+  }
+  const decode = (v: string): string => {
+    if (!v) return ''
+    try {
+      return decodeURIComponent(v)
+    } catch {
+      return v // 不是合法 percent 编码就原样返回，不让一个坏头把整条链路搞崩
+    }
+  }
+  return {
+    msg: decode(get('x-painter-msg')),
+    outPath: decode(get('x-painter-path')),
+    provider: get('x-painter-provider'),
+  }
 }
 
 /** 从 IMAGE_GEN_URL 拉取底图：POST {prompt}，期望返回图片字节；若返回 JSON 含 url 则再下载。带超时 + 重试。 */
@@ -102,7 +141,14 @@ async function fetchRemoteImage(prompt: string): Promise<BaseImage> {
       }
       const meta = await sharp(buf).metadata()
       if (!meta.width || !meta.height) throw new Error('图片尺寸无效')
-      return { buffer: buf, width: meta.width, height: meta.height, source: `remote:${url}` }
+      const hdr = readPainterHeaders(resp.headers as Record<string, any>)
+      return {
+        buffer: buf,
+        width: meta.width,
+        height: meta.height,
+        source: hdr.provider ? `remote:${hdr.provider}` : `remote:${url}`,
+        message: hdr.msg || undefined,
+      }
     } catch (e) {
       lastErr = e
       if (attempt < env.imageGenRetries) {
@@ -368,6 +414,7 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
   const t0 = performance.now()
   let framesWritten = 0
   let source = 'unknown'
+  let painterMsg = ''
 
   try {
     // 步骤一：获取底图
@@ -380,7 +427,7 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       w = got.width
       h = got.height
       source = got.source
-    } catch (e) {
+      painterMsg = got.message ? decodeURIComponentSafe(got.message) : ''    } catch (e) {
       return { ok: false, error: `获取底图失败：${(e as Error).message}`, elapsed_ms: Math.round(performance.now() - t0) }
     }
     if (job.abort.signal.aborted) {
@@ -461,6 +508,7 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       frames: framesWritten,
       elapsed_ms: Math.round(performance.now() - t0),
       source,
+      message: painterMsg || undefined,
     }
   } catch (e) {
     return {
@@ -517,6 +565,7 @@ const paintTool: DshTool = {
         frames: { type: 'number' },
         elapsed_ms: { type: 'number' },
         source: { type: 'string' },
+        message: { type: 'string', description: '生图侧给的人类可读说明（已解码），如「画好啦！」' },
         error: { type: 'string' },
       },
     },
@@ -524,7 +573,8 @@ const paintTool: DshTool = {
       {
         type: 'text',
         text: value?.ok
-          ? `🎨 作画完成 → ${value.path ?? ''}\n帧数：${value.frames ?? 0}　耗时：${value.elapsed_ms ?? 0}ms　底图源：${value.source ?? ''}`
+          ? `🎨 作画完成 → ${value.path ?? ''}\n帧数：${value.frames ?? 0}　耗时：${value.elapsed_ms ?? 0}ms　底图源：${value.source ?? ''}` +
+            (value?.message ? `\n${value.message}` : '')
           : `❌ 作画失败：${value?.error ?? '未知'}${value?.cancelled ? '（已被新任务打断）' : ''}`,
       },
     ],

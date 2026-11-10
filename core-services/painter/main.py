@@ -25,6 +25,8 @@ dsh-painter 插件侧设：
 """
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import json
 import os
 import socket
@@ -196,8 +198,8 @@ def api_generate(body: GenIn):
         media_type="image/jpeg",
         headers={
             "X-Painter-Provider": provider,
-            "X-Painter-Msg": msg,
-            "X-Painter-Path": str(src),
+            "X-Painter-Msg": quote(str(msg or ""), safe=""),  # HTTP 头只能 latin-1，中文必须转义
+            "X-Painter-Path": quote(str(src), safe=""),  # 中文路径也必须转义
             "X-Painter-Elapsed-S": str(elapsed),
         },
     )

@@ -25,6 +25,32 @@ function clampInt(raw, min, max, fallback) {
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
 }
+function decodeURIComponentSafe(v) {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+function readPainterHeaders(headers) {
+  const get = (k) => {
+    const v = headers?.[k];
+    return Array.isArray(v) ? String(v[0] ?? "") : String(v ?? "");
+  };
+  const decode = (v) => {
+    if (!v) return "";
+    try {
+      return decodeURIComponent(v);
+    } catch {
+      return v;
+    }
+  };
+  return {
+    msg: decode(get("x-painter-msg")),
+    outPath: decode(get("x-painter-path")),
+    provider: get("x-painter-provider")
+  };
+}
 async function fetchRemoteImage(prompt) {
   const url = env.imageGenUrl;
   let lastErr = null;
@@ -54,7 +80,14 @@ async function fetchRemoteImage(prompt) {
       }
       const meta = await sharp(buf).metadata();
       if (!meta.width || !meta.height) throw new Error("\u56FE\u7247\u5C3A\u5BF8\u65E0\u6548");
-      return { buffer: buf, width: meta.width, height: meta.height, source: `remote:${url}` };
+      const hdr = readPainterHeaders(resp.headers);
+      return {
+        buffer: buf,
+        width: meta.width,
+        height: meta.height,
+        source: hdr.provider ? `remote:${hdr.provider}` : `remote:${url}`,
+        message: hdr.msg || void 0
+      };
     } catch (e) {
       lastErr = e;
       if (attempt < env.imageGenRetries) {
@@ -240,6 +273,7 @@ async function generatePaintProcess(args) {
   const t0 = performance.now();
   let framesWritten = 0;
   let source = "unknown";
+  let painterMsg = "";
   try {
     let base;
     let w;
@@ -250,6 +284,7 @@ async function generatePaintProcess(args) {
       w = got.width;
       h = got.height;
       source = got.source;
+      painterMsg = got.message ? decodeURIComponentSafe(got.message) : "";
     } catch (e) {
       return { ok: false, error: `\u83B7\u53D6\u5E95\u56FE\u5931\u8D25\uFF1A${e.message}`, elapsed_ms: Math.round(performance.now() - t0) };
     }
@@ -316,7 +351,8 @@ async function generatePaintProcess(args) {
       path: obsPath,
       frames: framesWritten,
       elapsed_ms: Math.round(performance.now() - t0),
-      source
+      source,
+      message: painterMsg || void 0
     };
   } catch (e) {
     return {
@@ -359,6 +395,7 @@ var paintTool = {
         frames: { type: "number" },
         elapsed_ms: { type: "number" },
         source: { type: "string" },
+        message: { type: "string", description: "\u751F\u56FE\u4FA7\u7ED9\u7684\u4EBA\u7C7B\u53EF\u8BFB\u8BF4\u660E\uFF08\u5DF2\u89E3\u7801\uFF09\uFF0C\u5982\u300C\u753B\u597D\u5566\uFF01\u300D" },
         error: { type: "string" }
       }
     },
@@ -366,7 +403,8 @@ var paintTool = {
       {
         type: "text",
         text: value?.ok ? `\u{1F3A8} \u4F5C\u753B\u5B8C\u6210 \u2192 ${value.path ?? ""}
-\u5E27\u6570\uFF1A${value.frames ?? 0}\u3000\u8017\u65F6\uFF1A${value.elapsed_ms ?? 0}ms\u3000\u5E95\u56FE\u6E90\uFF1A${value.source ?? ""}` : `\u274C \u4F5C\u753B\u5931\u8D25\uFF1A${value?.error ?? "\u672A\u77E5"}${value?.cancelled ? "\uFF08\u5DF2\u88AB\u65B0\u4EFB\u52A1\u6253\u65AD\uFF09" : ""}`
+\u5E27\u6570\uFF1A${value.frames ?? 0}\u3000\u8017\u65F6\uFF1A${value.elapsed_ms ?? 0}ms\u3000\u5E95\u56FE\u6E90\uFF1A${value.source ?? ""}` + (value?.message ? `
+${value.message}` : "") : `\u274C \u4F5C\u753B\u5931\u8D25\uFF1A${value?.error ?? "\u672A\u77E5"}${value?.cancelled ? "\uFF08\u5DF2\u88AB\u65B0\u4EFB\u52A1\u6253\u65AD\uFF09" : ""}`
       }
     ]
   },
