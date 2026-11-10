@@ -178,6 +178,58 @@ async function runWebTask(args) {
     }
   }
 }
+var MEMORY_URL = (process.env.MEMORY_BUS_URL || "http://127.0.0.1:8001").replace(/\/$/, "");
+var SAVE_MAX_CHARS = 300;
+var SAVE_COOLDOWN_MS = 10 * 60 * 1e3;
+var lastSaveByHost = /* @__PURE__ */ new Map();
+function hostOf(url) {
+  try {
+    return new URL(url).host || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+function toFact(url, title, text) {
+  const host = hostOf(url);
+  const body = (text || "").replace(/\s+/g, " ").trim().slice(0, SAVE_MAX_CHARS);
+  const head = title ? `\u300A${title.slice(0, 60)}\u300B` : "";
+  return `\u7F51\u9875\u6293\u53D6 ${host}\uFF1A${head}${body}`.slice(0, SAVE_MAX_CHARS);
+}
+async function saveToMemory(url, title, text) {
+  const body = (text || "").trim();
+  if (body.length < 80) return false;
+  const host = hostOf(url);
+  const now = Date.now();
+  const last = lastSaveByHost.get(host) ?? 0;
+  if (now - last < SAVE_COOLDOWN_MS) return false;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3e3);
+  try {
+    const r = await fetch(`${MEMORY_URL}/remember`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: toFact(url, title, body),
+        tags: ["\u7F51\u9875\u6293\u53D6", host],
+        level: "fact",
+        project: `\u7F51\u9875\u6293\u53D6/${host}`
+      }),
+      signal: ctrl.signal
+    });
+    if (!r.ok) {
+      console.error(`${LOG_TAG} \u5199\u8BB0\u5FC6\u5931\u8D25\uFF1AHTTP ${r.status}`);
+      return false;
+    }
+    lastSaveByHost.set(host, now);
+    console.log(`${LOG_TAG} \u{1F4DD} \u5DF2\u5199\u5165\u4E8B\u5B9E\u8BB0\u5FC6\uFF1A${host}\u300A${String(title).slice(0, 30)}\u300B`);
+    return true;
+  } catch (e) {
+    console.error(`${LOG_TAG} \u5199\u8BB0\u5FC6\u5931\u8D25\uFF1A${e.message}`);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 var index_default = {
   name: "dsh-web-agent",
   apply(ctx) {
@@ -203,7 +255,11 @@ var index_default = {
             description: "\u52A8\u4F5C\uFF1Aextract_text\uFF08\u9ED8\u8BA4\uFF09/ click_selector / extract_links",
             enum: ["extract_text", "click_selector", "extract_links"]
           },
-          selector: { type: "string", description: "click_selector \u7528\u7684 CSS \u9009\u62E9\u5668" }
+          selector: { type: "string", description: "click_selector \u7528\u7684 CSS \u9009\u62E9\u5668" },
+          save_to_memory: {
+            type: "boolean",
+            description: "\u6293\u6210\u529F\u540E\u628A\u6B63\u6587\u538B\u6210\u4E00\u6761 fact \u5199\u8FDB\u8BB0\u5FC6\u603B\u7EBF\uFF08\u9ED8\u8BA4 false\uFF09\u3002\u540C\u57DF\u540D 10 \u5206\u949F\u5185\u53EA\u5B58\u4E00\u6B21\u3002"
+          }
         }
       },
       output: {
@@ -215,7 +271,8 @@ var index_default = {
             action: { type: "string" },
             title: { type: "string" },
             text: { type: "string" },
-            error: { type: "string" }
+            error: { type: "string" },
+            memory_saved: { type: "boolean" }
           }
         },
         render: (_args, value) => [
@@ -223,12 +280,17 @@ var index_default = {
             type: "text",
             text: value?.ok ? `\u{1F310} ${value.action} ${value.url}
 \u6807\u9898\uFF1A${value.title ?? ""}
-${value.text ?? ""}`.slice(0, 1500) : `\u274C web_agent \u5931\u8D25\uFF1A${value?.error ?? "\u672A\u77E5"}\uFF08${value?.url ?? ""}\uFF09`
+${value.text ?? ""}`.slice(0, 1500) + (value?.memory_saved ? "\n\u{1F4DD} \u5DF2\u5B58\u5165\u4E8B\u5B9E\u8BB0\u5FC6" : "") : `\u274C web_agent \u5931\u8D25\uFF1A${value?.error ?? "\u672A\u77E5"}\uFF08${value?.url ?? ""}\uFF09`
           }
         ]
       },
       async execute(args) {
-        return runWebTask({ url: args?.url, action: args?.action, selector: args?.selector });
+        const res = await runWebTask({ url: args?.url, action: args?.action, selector: args?.selector });
+        let saved = false;
+        if (args?.save_to_memory && res?.ok && res?.action === "extract_text") {
+          saved = await saveToMemory(String(args?.url ?? ""), String(res?.title ?? ""), String(res?.text ?? ""));
+        }
+        return { ...res, memory_saved: saved };
       },
       presentCall(args) {
         return { card: "generic", title: `web_agent \u2192 ${String(args?.action ?? "extract_text")} ${String(args?.url ?? "")}`, kind: "read" };
@@ -264,6 +326,7 @@ ${value.text ?? ""}`.slice(0, 1500) : `\u274C web_agent \u5931\u8D25\uFF1A${valu
 };
 export {
   index_default as default,
-  runWebTask
+  runWebTask,
+  saveToMemory
 };
 //# sourceMappingURL=index.js.map

@@ -258,6 +258,78 @@ export async function runWebTask(args: WebTaskArgs): Promise<WebTaskResult> {
 }
 
 // ---------------------------------------------------------------------------
+// 抓取结果 → 记忆总线（:8001 /remember）
+//   level 固定 fact；project 用「网页抓取/<域名>」，这样 /recall 能带出处，
+//   不会被当成"她自己知道的事"。写入失败一律静默，绝不阻塞抓取。
+// ---------------------------------------------------------------------------
+
+const MEMORY_URL = (process.env.MEMORY_BUS_URL || 'http://127.0.0.1:8001').replace(/\/$/, '')
+const SAVE_MAX_CHARS = 300 // 单条 fact 不超过 300 字，避免污染记忆库
+const SAVE_COOLDOWN_MS = 10 * 60 * 1000 // 同一域名 10 分钟内只存一次，防止刷库
+
+const lastSaveByHost = new Map<string, number>()
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host || 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/** 把抓取正文压成一条可读的 fact：标题 + 摘要首段，超长截断。 */
+function toFact(url: string, title: string, text: string): string {
+  const host = hostOf(url)
+  const body = (text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, SAVE_MAX_CHARS)
+  const head = title ? `《${title.slice(0, 60)}》` : ''
+  return `网页抓取 ${host}：${head}${body}`.slice(0, SAVE_MAX_CHARS)
+}
+
+/**
+ * 抓取成功后写一条 fact。返回是否真的写入。
+ * 规则：正文太短（<80 字）视为无内容不存；同域名 10 分钟内不重复存。
+ */
+export async function saveToMemory(url: string, title: string, text: string): Promise<boolean> {
+  const body = (text || '').trim()
+  if (body.length < 80) return false
+  const host = hostOf(url)
+  const now = Date.now()
+  const last = lastSaveByHost.get(host) ?? 0
+  if (now - last < SAVE_COOLDOWN_MS) return false
+
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 3000)
+  try {
+    const r = await fetch(`${MEMORY_URL}/remember`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: toFact(url, title, body),
+        tags: ['网页抓取', host],
+        level: 'fact',
+        project: `网页抓取/${host}`,
+      }),
+      signal: ctrl.signal,
+    })
+    if (!r.ok) {
+      console.error(`${LOG_TAG} 写记忆失败：HTTP ${r.status}`)
+      return false
+    }
+    lastSaveByHost.set(host, now)
+    console.log(`${LOG_TAG} 📝 已写入事实记忆：${host}《${String(title).slice(0, 30)}》`)
+    return true
+  } catch (e) {
+    console.error(`${LOG_TAG} 写记忆失败：${(e as Error).message}`)
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // DSH 工具类型（最小子集，参照 dsh-memory-bus / meow-memory 实测结构）
 // ---------------------------------------------------------------------------
 
@@ -303,6 +375,10 @@ export default {
             enum: ['extract_text', 'click_selector', 'extract_links'],
           },
           selector: { type: 'string', description: 'click_selector 用的 CSS 选择器' },
+          save_to_memory: {
+            type: 'boolean',
+            description: '抓成功后把正文压成一条 fact 写进记忆总线（默认 false）。同域名 10 分钟内只存一次。',
+          },
         },
       },
       output: {
@@ -315,19 +391,26 @@ export default {
             title: { type: 'string' },
             text: { type: 'string' },
             error: { type: 'string' },
+            memory_saved: { type: 'boolean' },
           },
         },
         render: (_args: any, value: any) => [
           {
             type: 'text',
             text: value?.ok
-              ? `🌐 ${value.action} ${value.url}\n标题：${value.title ?? ''}\n${value.text ?? ''}`.slice(0, 1500)
+              ? `🌐 ${value.action} ${value.url}\n标题：${value.title ?? ''}\n${value.text ?? ''}`.slice(0, 1500) +
+                (value?.memory_saved ? '\n📝 已存入事实记忆' : '')
               : `❌ web_agent 失败：${value?.error ?? '未知'}（${value?.url ?? ''}）`,
           },
         ],
       },
       async execute(args: any) {
-        return runWebTask({ url: args?.url, action: args?.action, selector: args?.selector })
+        const res: any = await runWebTask({ url: args?.url, action: args?.action, selector: args?.selector })
+        let saved = false
+        if (args?.save_to_memory && res?.ok && res?.action === 'extract_text') {
+          saved = await saveToMemory(String(args?.url ?? ''), String(res?.title ?? ''), String(res?.text ?? ''))
+        }
+        return { ...res, memory_saved: saved }
       },
       presentCall(args: any) {
         return { card: 'generic', title: `web_agent → ${String(args?.action ?? 'extract_text')} ${String(args?.url ?? '')}`, kind: 'read' }
