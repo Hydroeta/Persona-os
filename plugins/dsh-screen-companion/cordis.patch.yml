@@ -1,0 +1,14 @@
+# dsh-screen-companion —— DSH bundle patch
+# 把读屏陪伴插件插进 profile 配置树。安装：
+#   dsh plugin --profile web add "<仓库>\plugins\dsh-screen-companion"
+#
+# 运行前提：
+#   1) 先起「绿眼睛」悬浮窗（关掉它插件就不截屏了）：
+#        python core-services\screen-indicator\main.py
+#   2) 配视觉接口（GLM-4V）：VISION_API_BASE / VISION_API_KEY / VISION_MODEL
+#   3) 有游戏在跑会自动暂停，进程名单可用 DSH_SCREEN_GAME_PROCS 覆盖
+#
+# ⚠️ name 必须与包名完全一致，否则表现为「装上了但不加载」。
+- insert:
+    - id: dsh-screen-companion
+      name: 'dsh-screen-companion'

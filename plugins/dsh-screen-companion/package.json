@@ -1,0 +1,39 @@
+{
+  "name": "dsh-screen-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：读屏陪伴。绿眼睛悬浮窗在跑时才每 60 秒截一次屏，用视觉模型判断「在干什么 / 什么情绪」，每天最多主动关心 3 次；有游戏在跑自动暂停。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./analyze": "./lib/analyze.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs",
+    "test": "node test-mock.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "node-screenshots": "^0.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0"
+  }
+}
