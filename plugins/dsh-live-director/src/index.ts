@@ -460,7 +460,7 @@ export default {
       danmakuServer = await startDanmakuServer({
         port: DANMAKU_PORT,
         // 每条弹幕到达（放行或拦截）都刷新 director 冷场计时
-        onMessage: (msg?: any) => {
+        onMessage: (_item?: any, msg?: any) => {
           if (msg && typeof msg.text === 'string') noteDanmaku(msg.text)
           director?.markInteraction()
         },

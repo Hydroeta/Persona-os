@@ -4721,7 +4721,7 @@ var index_default = {
       danmakuServer = await startDanmakuServer({
         port: DANMAKU_PORT,
         // 每条弹幕到达（放行或拦截）都刷新 director 冷场计时
-        onMessage: (msg) => {
+        onMessage: (_item, msg) => {
           if (msg && typeof msg.text === "string") noteDanmaku(msg.text);
           director?.markInteraction();
         }
