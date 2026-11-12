@@ -142,6 +142,90 @@ export function buildChatMessages(opts: {
  * TTS 播报占位（模块 5 实现真实 TTS 时替换内部）。
  * 每次主动发言后刷新 director 冷场计时，避免刚说完又触发冷场。
  */
+// ---------------------------------------------------------------------------
+// 杂谈素材：弹幕关键词环 + 外部注入（环境 / 记忆）
+// ---------------------------------------------------------------------------
+const RECENT_DANMAKU: string[] = []
+const ENV_LINES: string[] = []
+const MEMORY_LINES: string[] = []
+
+/** 宿主接线：把 persona-core:env 的天气/时间塞进来（没有就不塞，杂谈会退回默认话题） */
+export function setEnvLines(lines: string[]): void {
+  ENV_LINES.length = 0
+  ENV_LINES.push(...lines.filter(Boolean).slice(0, 5))
+}
+
+/** 宿主接线：把内心戏 / 最近记忆塞进来当吐槽素材 */
+export function setMemoryLines(lines: string[]): void {
+  MEMORY_LINES.length = 0
+  MEMORY_LINES.push(...lines.filter(Boolean).slice(0, 5))
+}
+
+/** 记一条弹幕原文，供"缝合流"取词 */
+export function noteDanmaku(text: string): void {
+  const s = (text || '').trim()
+  if (!s) return
+  RECENT_DANMAKU.push(s)
+  if (RECENT_DANMAKU.length > 20) RECENT_DANMAKU.shift()
+}
+
+/**
+ * 从最近弹幕里挑高频词：中文没做分词，用「2~4 字 n-gram 在几条不同弹幕里重复出现」来近似。
+ * 只靠切标点会把「原神好玩吗」整句当成一个词，那样缝合就变成复读了。
+ */
+export function recentDanmakuWords(limit = 3): string[] {
+  const seen = new Map<string, Set<number>>()
+  RECENT_DANMAKU.forEach((text, idx) => {
+    const runs = text.split(/[^\u4e00-\u9fa5A-Za-z0-9]+/).filter((r) => r.length >= 2)
+    for (const run of runs) {
+      for (let len = 2; len <= 4; len++) {
+        for (let i = 0; i + len <= run.length; i++) {
+          const gram = run.slice(i, i + len)
+          if (/^[0-9]+$/.test(gram)) continue
+          if (!seen.has(gram)) seen.set(gram, new Set())
+          seen.get(gram)!.add(idx)
+        }
+      }
+    }
+  })
+  const ranked = [...seen.entries()]
+    .filter(([, ids]) => ids.size >= 2) // 至少在两条不同弹幕里出现过
+    .sort((a, b) => b[1].size - a[1].size || b[0].length - a[0].length)
+  const picked: string[] = []
+  for (const [gram] of ranked) {
+    if (picked.some((p) => p.includes(gram) || gram.includes(p))) continue // 去掉互相包含的
+    picked.push(gram)
+    if (picked.length >= limit) break
+  }
+  return picked
+}
+
+/**
+ * 纯函数：组装杂谈提示词（导出供测试断言）。
+ * 规则来自用户对直播的要求：像水友群聊天、能自己接话、别说教、别总结。
+ */
+export function buildChitchatPrompt(opts: {
+  topic: string
+  envLines?: string[]
+  memoryLines?: string[]
+  danmakuWords?: string[]
+}): string {
+  const parts: string[] = []
+  parts.push(`你现在在直播间杂谈，没有任何人发弹幕。顺手抛出的由头是「${opts.topic}」。`)
+  if (opts.envLines?.length) parts.push(`环境/时间：${opts.envLines.join('；')}`)
+  if (opts.memoryLines?.length) parts.push(`你脑子里刚冒出来的事：${opts.memoryLines.join('；')}`)
+  if (opts.danmakuWords?.length) parts.push(`刚才弹幕里出现过这些词：${opts.danmakuWords.join('、')}`)
+  parts.push(
+    '要求：' +
+      '① 60~120 字，一口气说完，别只丢一句就停；' +
+      '② 顺着上一句的末尾自然延展话题，最后抛一个问题给观众；' +
+      '③ 口语，允许「其实吧」「然后呢」「你们知道吗」这类语气词，可以主观，甚至双标；' +
+      '④ 禁止总结陈词（比如「所以综上所述」「总之」），你不是在开讲座，是在水友群聊天；' +
+      '⑤ 弹幕里那词如果出现，用「诶，刚好说到这个」这种句式缝进来，不要生硬改口。',
+  )
+  return parts.join('\n')
+}
+
 function speak(text: string, meta: Record<string, unknown> = {}): void {
   console.log(`${LOG_TAG} 🔊 speak：${text}`, Object.keys(meta).length ? meta : '')
   director?.markInteraction()
@@ -217,7 +301,12 @@ async function handleSysAction(ctx: any, action: SysAction): Promise<void> {
     return
   }
   // cold_break
-  const prompt = `直播间冷场了，用话题「${action.topic}」主动跟观众搭话，一句轻松口语（不超过 30 字）。`
+  const prompt = buildChitchatPrompt({
+    topic: action.topic,
+    envLines: ENV_LINES,
+    memoryLines: MEMORY_LINES,
+    danmakuWords: recentDanmakuWords(),
+  })
   const fallback = `${action.topic} 来聊聊天呀～别让我一个人尬住！`
   const text = await generateReply(ctx, prompt, fallback)
   speak(text, { action: 'cold_break', topic: action.topic })
@@ -354,6 +443,12 @@ export default {
 
     // 2) 启动 Rundown 状态机 + 心跳（director 独立于弹幕服务，即使弹幕没起来也要跑）
     director = new Director({
+      // 杂谈素材：环境/记忆/弹幕词动态拼进话题池（拿不到就是空，退回默认话题）
+      sources: {
+        env: () => ENV_LINES,
+        memory: () => MEMORY_LINES,
+        danmaku: () => recentDanmakuWords(3).map((w) => `弹幕里有人在聊「${w}」，你接一句你自己的想法？`),
+      },
       onActionNeeded: (action) => {
         void handleSysAction(ctx, action)
       },
@@ -365,7 +460,10 @@ export default {
       danmakuServer = await startDanmakuServer({
         port: DANMAKU_PORT,
         // 每条弹幕到达（放行或拦截）都刷新 director 冷场计时
-        onMessage: () => director?.markInteraction(),
+        onMessage: (msg?: any) => {
+          if (msg && typeof msg.text === 'string') noteDanmaku(msg.text)
+          director?.markInteraction()
+        },
       })
       console.log(
         `${LOG_TAG} 弹幕服务就绪（端口 ${DANMAKU_PORT}），优先级：礼物=${Priority.GIFT} 画图=${Priority.DRAW} 对话=${Priority.CHAT}`,

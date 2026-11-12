@@ -51,6 +51,7 @@ var Director = class {
   lastInteractionTime;
   timer = null;
   topicIndex = 0;
+  recentTopics = [];
   /** 启动心跳定时器（每 tickIntervalMs 跑一次 tick）。重复调用安全。 */
   start() {
     if (this.timer) return;
@@ -120,12 +121,36 @@ var Director = class {
       this.opts.onActionNeeded?.({ type: "cold_break", topic });
     }
   }
-  /** 取下一条话题（轮询，保证不连续重复同一句） */
+  /** 取下一条话题：动态源优先（环境→记忆→弹幕），再轮询默认池，且避开最近用过的 */
   pickTopic() {
-    const pool = this.opts.topics && this.opts.topics.length > 0 ? this.opts.topics : DEFAULT_TOPICS;
-    const topic = pool[this.topicIndex % pool.length];
+    const pool = [];
+    const safe = (fn) => {
+      if (!fn) return [];
+      try {
+        return (fn() || []).filter((s) => typeof s === "string" && s.trim().length > 0);
+      } catch {
+        return [];
+      }
+    };
+    pool.push(...safe(this.opts.sources?.env));
+    pool.push(...safe(this.opts.sources?.memory));
+    pool.push(...safe(this.opts.sources?.danmaku));
+    const dynamicCount = pool.length;
+    pool.push(...this.opts.topics && this.opts.topics.length > 0 ? this.opts.topics : DEFAULT_TOPICS);
+    const fresh = pool.filter((t) => !this.recentTopics.includes(t));
+    const candidates = fresh.length > 0 ? fresh : pool;
+    const topic = candidates[this.topicIndex % candidates.length];
     this.topicIndex++;
+    this.recentTopics.push(topic);
+    if (this.recentTopics.length > 3) this.recentTopics.shift();
+    if (dynamicCount > 0) {
+      console.log(`${LOG_TAG} \u8BDD\u9898\u6E90\uFF1A\u52A8\u6001 ${dynamicCount} \u6761\uFF08\u73AF\u5883/\u8BB0\u5FC6/\u5F39\u5E55\uFF09\uFF0C\u5019\u9009\u6C60 ${pool.length} \u6761`);
+    }
     return topic;
+  }
+  /** 最近说过的话题（测试用） */
+  get lastTopics() {
+    return [...this.recentTopics];
   }
 };
 export {

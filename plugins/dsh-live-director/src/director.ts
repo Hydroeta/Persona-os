@@ -78,6 +78,20 @@ const DEFAULT_TOPICS = [
   '来个人跟我聊聊天呀，别让我一个人尬住～',
 ]
 
+/**
+ * 动态话题源：冷场时把「环境 / 记忆 / 近期弹幕词」拼进话题池。
+ * 全部用回调注入，director 自己不去请求任何服务——拿不到就返回空数组，不影响默认话题。
+ */
+export interface TopicSources {
+  /** 环境流：天气、时间、机器负载等（如 ['上海现在 17 度，下着小雨']） */
+  env?: () => string[]
+  /** 记忆流：内心戏 / 最近记忆（如 ['昨天主人被那个大头怪虐了半小时']） */
+  memory?: () => string[]
+  /** 弹幕缝合流：近期弹幕里的高频词（如 ['原神', '粽子']） */
+  danmaku?: () => string[]
+}
+
+
 // ---------------------------------------------------------------------------
 // Director 选项
 // ---------------------------------------------------------------------------
@@ -93,6 +107,8 @@ export interface DirectorOptions {
   tickIntervalMs?: number
   /** 自定义话题池（不传用内置） */
   topics?: string[]
+  /** 动态话题源（环境 / 记忆 / 弹幕词） */
+  sources?: TopicSources
 }
 
 const DEFAULT_COLD_THRESHOLD_MS = 120_000
@@ -110,6 +126,7 @@ export class Director {
   private lastInteractionTime: number
   private timer: NodeJS.Timeout | null = null
   private topicIndex = 0
+  private recentTopics: string[] = []
 
   constructor(private readonly opts: DirectorOptions = {}) {
     const now = Date.now()
@@ -200,11 +217,38 @@ export class Director {
     }
   }
 
-  /** 取下一条话题（轮询，保证不连续重复同一句） */
+  /** 取下一条话题：动态源优先（环境→记忆→弹幕），再轮询默认池，且避开最近用过的 */
   private pickTopic(): string {
-    const pool = this.opts.topics && this.opts.topics.length > 0 ? this.opts.topics : DEFAULT_TOPICS
-    const topic = pool[this.topicIndex % pool.length]
+    const pool: string[] = []
+    const safe = (fn?: () => string[]) => {
+      if (!fn) return []
+      try {
+        return (fn() || []).filter((s) => typeof s === 'string' && s.trim().length > 0)
+      } catch {
+        return []
+      }
+    }
+    pool.push(...safe(this.opts.sources?.env))
+    pool.push(...safe(this.opts.sources?.memory))
+    pool.push(...safe(this.opts.sources?.danmaku))
+    const dynamicCount = pool.length
+    pool.push(...(this.opts.topics && this.opts.topics.length > 0 ? this.opts.topics : DEFAULT_TOPICS))
+
+    // 避开最近用过的 3 条，避免连着说同一句
+    const fresh = pool.filter((t) => !this.recentTopics.includes(t))
+    const candidates = fresh.length > 0 ? fresh : pool
+    const topic = candidates[this.topicIndex % candidates.length]
     this.topicIndex++
+    this.recentTopics.push(topic)
+    if (this.recentTopics.length > 3) this.recentTopics.shift()
+    if (dynamicCount > 0) {
+      console.log(`${LOG_TAG} 话题源：动态 ${dynamicCount} 条（环境/记忆/弹幕），候选池 ${pool.length} 条`)
+    }
     return topic
+  }
+
+  /** 最近说过的话题（测试用） */
+  get lastTopics(): string[] {
+    return [...this.recentTopics]
   }
 }

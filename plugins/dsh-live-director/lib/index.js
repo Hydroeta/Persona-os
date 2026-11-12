@@ -3953,6 +3953,7 @@ var Director = class {
   lastInteractionTime;
   timer = null;
   topicIndex = 0;
+  recentTopics = [];
   /** 启动心跳定时器（每 tickIntervalMs 跑一次 tick）。重复调用安全。 */
   start() {
     if (this.timer) return;
@@ -4022,12 +4023,36 @@ var Director = class {
       this.opts.onActionNeeded?.({ type: "cold_break", topic });
     }
   }
-  /** 取下一条话题（轮询，保证不连续重复同一句） */
+  /** 取下一条话题：动态源优先（环境→记忆→弹幕），再轮询默认池，且避开最近用过的 */
   pickTopic() {
-    const pool = this.opts.topics && this.opts.topics.length > 0 ? this.opts.topics : DEFAULT_TOPICS;
-    const topic = pool[this.topicIndex % pool.length];
+    const pool = [];
+    const safe = (fn) => {
+      if (!fn) return [];
+      try {
+        return (fn() || []).filter((s) => typeof s === "string" && s.trim().length > 0);
+      } catch {
+        return [];
+      }
+    };
+    pool.push(...safe(this.opts.sources?.env));
+    pool.push(...safe(this.opts.sources?.memory));
+    pool.push(...safe(this.opts.sources?.danmaku));
+    const dynamicCount = pool.length;
+    pool.push(...this.opts.topics && this.opts.topics.length > 0 ? this.opts.topics : DEFAULT_TOPICS);
+    const fresh = pool.filter((t) => !this.recentTopics.includes(t));
+    const candidates = fresh.length > 0 ? fresh : pool;
+    const topic = candidates[this.topicIndex % candidates.length];
     this.topicIndex++;
+    this.recentTopics.push(topic);
+    if (this.recentTopics.length > 3) this.recentTopics.shift();
+    if (dynamicCount > 0) {
+      console.log(`${LOG_TAG2} \u8BDD\u9898\u6E90\uFF1A\u52A8\u6001 ${dynamicCount} \u6761\uFF08\u73AF\u5883/\u8BB0\u5FC6/\u5F39\u5E55\uFF09\uFF0C\u5019\u9009\u6C60 ${pool.length} \u6761`);
+    }
     return topic;
+  }
+  /** 最近说过的话题（测试用） */
+  get lastTopics() {
+    return [...this.recentTopics];
   }
 };
 
@@ -4464,6 +4489,58 @@ function buildChatMessages(opts) {
     { role: "user", content: userParts.join(" ") }
   ];
 }
+var RECENT_DANMAKU = [];
+var ENV_LINES = [];
+var MEMORY_LINES = [];
+function setEnvLines(lines) {
+  ENV_LINES.length = 0;
+  ENV_LINES.push(...lines.filter(Boolean).slice(0, 5));
+}
+function setMemoryLines(lines) {
+  MEMORY_LINES.length = 0;
+  MEMORY_LINES.push(...lines.filter(Boolean).slice(0, 5));
+}
+function noteDanmaku(text) {
+  const s = (text || "").trim();
+  if (!s) return;
+  RECENT_DANMAKU.push(s);
+  if (RECENT_DANMAKU.length > 20) RECENT_DANMAKU.shift();
+}
+function recentDanmakuWords(limit = 3) {
+  const seen = /* @__PURE__ */ new Map();
+  RECENT_DANMAKU.forEach((text, idx) => {
+    const runs = text.split(/[^\u4e00-\u9fa5A-Za-z0-9]+/).filter((r) => r.length >= 2);
+    for (const run of runs) {
+      for (let len = 2; len <= 4; len++) {
+        for (let i = 0; i + len <= run.length; i++) {
+          const gram = run.slice(i, i + len);
+          if (/^[0-9]+$/.test(gram)) continue;
+          if (!seen.has(gram)) seen.set(gram, /* @__PURE__ */ new Set());
+          seen.get(gram).add(idx);
+        }
+      }
+    }
+  });
+  const ranked = [...seen.entries()].filter(([, ids]) => ids.size >= 2).sort((a, b) => b[1].size - a[1].size || b[0].length - a[0].length);
+  const picked = [];
+  for (const [gram] of ranked) {
+    if (picked.some((p) => p.includes(gram) || gram.includes(p))) continue;
+    picked.push(gram);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+function buildChitchatPrompt(opts) {
+  const parts = [];
+  parts.push(`\u4F60\u73B0\u5728\u5728\u76F4\u64AD\u95F4\u6742\u8C08\uFF0C\u6CA1\u6709\u4EFB\u4F55\u4EBA\u53D1\u5F39\u5E55\u3002\u987A\u624B\u629B\u51FA\u7684\u7531\u5934\u662F\u300C${opts.topic}\u300D\u3002`);
+  if (opts.envLines?.length) parts.push(`\u73AF\u5883/\u65F6\u95F4\uFF1A${opts.envLines.join("\uFF1B")}`);
+  if (opts.memoryLines?.length) parts.push(`\u4F60\u8111\u5B50\u91CC\u521A\u5192\u51FA\u6765\u7684\u4E8B\uFF1A${opts.memoryLines.join("\uFF1B")}`);
+  if (opts.danmakuWords?.length) parts.push(`\u521A\u624D\u5F39\u5E55\u91CC\u51FA\u73B0\u8FC7\u8FD9\u4E9B\u8BCD\uFF1A${opts.danmakuWords.join("\u3001")}`);
+  parts.push(
+    "\u8981\u6C42\uFF1A\u2460 60~120 \u5B57\uFF0C\u4E00\u53E3\u6C14\u8BF4\u5B8C\uFF0C\u522B\u53EA\u4E22\u4E00\u53E5\u5C31\u505C\uFF1B\u2461 \u987A\u7740\u4E0A\u4E00\u53E5\u7684\u672B\u5C3E\u81EA\u7136\u5EF6\u5C55\u8BDD\u9898\uFF0C\u6700\u540E\u629B\u4E00\u4E2A\u95EE\u9898\u7ED9\u89C2\u4F17\uFF1B\u2462 \u53E3\u8BED\uFF0C\u5141\u8BB8\u300C\u5176\u5B9E\u5427\u300D\u300C\u7136\u540E\u5462\u300D\u300C\u4F60\u4EEC\u77E5\u9053\u5417\u300D\u8FD9\u7C7B\u8BED\u6C14\u8BCD\uFF0C\u53EF\u4EE5\u4E3B\u89C2\uFF0C\u751A\u81F3\u53CC\u6807\uFF1B\u2463 \u7981\u6B62\u603B\u7ED3\u9648\u8BCD\uFF08\u6BD4\u5982\u300C\u6240\u4EE5\u7EFC\u4E0A\u6240\u8FF0\u300D\u300C\u603B\u4E4B\u300D\uFF09\uFF0C\u4F60\u4E0D\u662F\u5728\u5F00\u8BB2\u5EA7\uFF0C\u662F\u5728\u6C34\u53CB\u7FA4\u804A\u5929\uFF1B\u2464 \u5F39\u5E55\u91CC\u90A3\u8BCD\u5982\u679C\u51FA\u73B0\uFF0C\u7528\u300C\u8BF6\uFF0C\u521A\u597D\u8BF4\u5230\u8FD9\u4E2A\u300D\u8FD9\u79CD\u53E5\u5F0F\u7F1D\u8FDB\u6765\uFF0C\u4E0D\u8981\u751F\u786C\u6539\u53E3\u3002"
+  );
+  return parts.join("\n");
+}
 function speak(text, meta = {}) {
   console.log(`${LOG_TAG6} \u{1F50A} speak\uFF1A${text}`, Object.keys(meta).length ? meta : "");
   director?.markInteraction();
@@ -4525,7 +4602,12 @@ async function handleSysAction(ctx, action) {
     speak(text2, { action: "switch_state", from: action.from, to: action.to });
     return;
   }
-  const prompt = `\u76F4\u64AD\u95F4\u51B7\u573A\u4E86\uFF0C\u7528\u8BDD\u9898\u300C${action.topic}\u300D\u4E3B\u52A8\u8DDF\u89C2\u4F17\u642D\u8BDD\uFF0C\u4E00\u53E5\u8F7B\u677E\u53E3\u8BED\uFF08\u4E0D\u8D85\u8FC7 30 \u5B57\uFF09\u3002`;
+  const prompt = buildChitchatPrompt({
+    topic: action.topic,
+    envLines: ENV_LINES,
+    memoryLines: MEMORY_LINES,
+    danmakuWords: recentDanmakuWords()
+  });
   const fallback = `${action.topic} \u6765\u804A\u804A\u5929\u5440\uFF5E\u522B\u8BA9\u6211\u4E00\u4E2A\u4EBA\u5C2C\u4F4F\uFF01`;
   const text = await generateReply(ctx, prompt, fallback);
   speak(text, { action: "cold_break", topic: action.topic });
@@ -4624,6 +4706,12 @@ var index_default = {
     memoryClient = memoryClientOverride ?? new MemoryClient();
     perception = perceptionOverride ?? new Perception();
     director = new Director({
+      // 杂谈素材：环境/记忆/弹幕词动态拼进话题池（拿不到就是空，退回默认话题）
+      sources: {
+        env: () => ENV_LINES,
+        memory: () => MEMORY_LINES,
+        danmaku: () => recentDanmakuWords(3).map((w) => `\u5F39\u5E55\u91CC\u6709\u4EBA\u5728\u804A\u300C${w}\u300D\uFF0C\u4F60\u63A5\u4E00\u53E5\u4F60\u81EA\u5DF1\u7684\u60F3\u6CD5\uFF1F`)
+      },
       onActionNeeded: (action) => {
         void handleSysAction(ctx, action);
       }
@@ -4633,7 +4721,10 @@ var index_default = {
       danmakuServer = await startDanmakuServer({
         port: DANMAKU_PORT,
         // 每条弹幕到达（放行或拦截）都刷新 director 冷场计时
-        onMessage: () => director?.markInteraction()
+        onMessage: (msg) => {
+          if (msg && typeof msg.text === "string") noteDanmaku(msg.text);
+          director?.markInteraction();
+        }
       });
       console.log(
         `${LOG_TAG6} \u5F39\u5E55\u670D\u52A1\u5C31\u7EEA\uFF08\u7AEF\u53E3 ${DANMAKU_PORT}\uFF09\uFF0C\u4F18\u5148\u7EA7\uFF1A\u793C\u7269=${3 /* GIFT */} \u753B\u56FE=${2 /* DRAW */} \u5BF9\u8BDD=${1 /* CHAT */}`
@@ -4674,6 +4765,11 @@ var index_default = {
 export {
   __injectForTest,
   buildChatMessages,
-  index_default as default
+  buildChitchatPrompt,
+  index_default as default,
+  noteDanmaku,
+  recentDanmakuWords,
+  setEnvLines,
+  setMemoryLines
 };
 //# sourceMappingURL=index.js.map
