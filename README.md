@@ -20,20 +20,22 @@
                 ┌───────────────────────┼────────────────────────┐
                 │                       │                        │
         ┌───────▼────────┐      ┌───────▼─────────┐      ┌───────▼──────────┐
-        │ TS 插件层 (9)  │      │  Python 微服务   │      │   外部能力        │
+        │ TS 插件层 (11) │      │  Python 微服务   │      │   外部能力        │
         │  plugins/*     │      │  core-services/* │      │                  │
         ├────────────────┤      ├─────────────────┤      ├──────────────────┤
         │ dsh-live-director│    │ memory  :8001   │      │ DeepSeek / Gemini │
         │   (弹幕WS:9001) │    │ painter :8002   │      │ Ollama (本地)     │
         │                 │    │ game-bot :8003  │      │ ViGEmBus 虚拟手柄 │
-        │ dsh-persona-core│    │ IndexTTS2(由     │      │ QQ / QQ频道      │
-        │ dsh-memory-bus │      │  service-manager│      │ NapCat / go-cqhttp│
-        │ dsh-painter    │      └─────────────────┘      └──────────────────┘
+        │ dsh-persona-core│    │ audio-cover:8005│      │ QQ / QQ频道      │
+        │ dsh-memory-bus │      │ screen-indicator│      │ NapCat / go-cqhttp│
+        │ dsh-painter    │      │  (绿眼睛悬浮窗)  │      └──────────────────┘
+        │ dsh-screen-companion│ └─────────────────┘
         │ dsh-web-agent  │
         │ dsh-llm-router │
         │ dsh-service-mgr│
         │ dsh-self-play  │
         │ dsh-game-agent │
+        │ dsh-audio-cover│
         └────────────────┘
 ```
 
@@ -46,7 +48,7 @@
 - 🎬 **Rundown 自主直播**（`dsh-live-director`）：弹幕 WebSocket 接入 → 优先级队列（礼物>画图>对话）→ 状态机（闲聊 3min → 你画我猜 5min → 自由点单 5min 循环）→ 20s 心跳自动切环节 / 冷场破冰；观众记忆注入 System Prompt；命中“在干嘛/画了什么”自动截屏喂多模态视觉。
 - 🌐 **Playwright 无头浏览器**（`dsh-web-agent`）：后台静默抓网页正文/链接/点击，**不抢占物理鼠标**，带超时防挂死。
 - 🎭 **多角色热切换**（`dsh-persona-core`）：`switch_persona` 即时切换人格，回写 `active.json` 无需重启。
-- 🖌️ **逐帧作画**（`dsh-painter`）：扫描线/网格遮罩逐帧显影，原子写入覆盖 OBS 监听图片，模拟人类手绘节奏，支持并发取消。
+- 🖌️ **逐笔作画**（`dsh-painter`）：两种模式——`stages` 三阶段显影（勾线→铺色→细节，本地派生，不重复生图）；`strokes` 真逐笔（涂色本线稿 → 细化 → 沿骨架追踪 → 相邻碎片两轮拼接 → 按条带排序 → 逐帧推进 `dashoffset`），画一只戴帽子的鲸鱼约 26 笔；笔画不足或追踪失败自动退回三阶段。
 - 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
 - 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
 - 🎤 **实时 AI 翻唱**（`dsh-audio-cover` + `audio-cover` :8005）：弹幕 `!翻唱 <歌名>` 开唱、`!停唱` 收工；音频走 `VB-CABLE` 闭环，OBS 伴奏可联动；RVC 推理放在独立常驻 worker 里，模型缺失/超时一律回退直通不停播。
@@ -54,6 +56,8 @@
 - 🎙️ **拟声词引擎**（`voice_fx.py`）：叹气/轻笑/哈欠与语音 30ms 交叉淡化后拼接，给 TTS 补上「呼吸感」。
 - 💭 **内心潜台词**（`inner_thoughts` 独立表）：夜间用本地 Ollama 复盘当天素材，生成第一人称「没说出口的心里话」；只影响语气、禁止当事实转述，第二天她会用欲言又止的方式流露。
 - 🎮 **虚拟手柄游戏代理**（`dsh-game-agent`）：截屏 → 多模态 VLM 决策下一步宏观动作 → HTTP 转发 game-bot 微服务（:8003）调 `vgamepad` 虚拟 Xbox 手柄；默认 `dry_run` 安全预览不操作手柄，Python 端 2s 看门狗无指令自动松杆防失控，任一环节离线/超时均安全降级不阻断 DSH。
+- 👁️ **读屏陪伴**（`dsh-screen-companion`）：右上角「绿眼睛」悬浮窗（`core-services/screen-indicator`）每 2 秒写心跳，**心跳一停就立刻不截屏**；在跑时每 60 秒截一次主屏交给视觉模型判断「在干什么 / 什么情绪」，只在「有报错且焦虑」或「连续 2 小时工作」时开口，**每天最多 3 次、间隔 ≥45 分钟**；检测到游戏进程自动暂停，失败静默。
+- 🔎 **参考搜索**（`dsh-web-agent` 的 `search_reference`）：动手造轮子前先搜开源/网页方案（GitHub 仓库 + README 片段 / Bing 技术文章），网络不可用时返回 `ok:false` 让主脑降级为自己写，**不允许反复重试**。
 
 ---
 
@@ -171,6 +175,20 @@ persona-os/
 | `9881` | IndexTTS2 | TTS（由 service-manager 拉起） |
 | `11434` | Ollama | 本地 LLM（可选） |
 | `8080` | Tulpa MCP | 副人格 MCP（可选，`TULPA_MCP_URL`） |
+
+---
+
+## 网络受限时的降级行为
+
+设计前提：**依赖不上就降级，绝不卡死、绝不死循环重试**。
+
+| 依赖 | 不可用时的行为 |
+| --- | --- |
+| GitHub API / github.com | `search_reference` 退回 Bing；仍失败则返回 `ok:false`，主脑改为自己写方案 |
+| 视觉模型（`VISION_API_BASE/KEY`） | 读屏陪伴跳过本次观察；直播画面感知降级为只用文字上下文 |
+| 生图服务（GLM / 万相） | 作画退回内置测试图，链路不中断 |
+| RVC 模型 / 音频设备 | 翻唱回退直通（bypass），不停播 |
+| Ollama 离线 | `dsh-self-play` 放弃今晚复盘；`dsh-llm-router` 转云端 |
 
 ---
 

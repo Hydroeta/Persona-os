@@ -14,6 +14,9 @@
 
 import { existsSync } from 'node:fs'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import { searchReference } from './reference.js'
+
+export { searchReference } from './reference.js'
 
 const LOG_TAG = '[dsh-web-agent]'
 
@@ -417,6 +420,62 @@ export default {
       },
     }
 
+    // 第二个工具：动手造轮子之前先看别人怎么写的
+    const refTool: DshTool = {
+      name: 'search_reference',
+      description:
+        '开工前先参考开源/网页方案：source=github 搜仓库（按 star 排，带回前两名的 README 片段），source=web 搜技术文章（标题+摘要）。网络失败会返回 ok:false，这时应降级为自己写方案，别反复重试。',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['query'],
+        properties: {
+          query: { type: 'string', description: '检索词，建议英文技术词，如 "nodejs audio queue optimization"' },
+          source: { type: 'string', enum: ['github', 'web'], description: 'github=开源仓库（默认）｜web=技术文章' },
+          limit: { type: 'number', description: '返回条数，1~5，默认 3' },
+          readme_chars: { type: 'number', description: 'github 模式下 README 截取长度，默认 1200' },
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            ok: { type: 'boolean' },
+            query: { type: 'string' },
+            source: { type: 'string' },
+            items: { type: 'array' },
+            error: { type: 'string' },
+            elapsed_ms: { type: 'number' },
+          },
+        },
+        render: (_args: any, value: any) => [
+          {
+            type: 'text',
+            text: value?.ok
+              ? `🔎 ${value.source} 参考（${value.query}，${value.elapsed_ms}ms）\n` +
+                value.items
+                  .map(
+                    (it: any, i: number) =>
+                      `${i + 1}. ${it.title}${it.stars != null ? ` ⭐${it.stars}` : ''}\n   ${it.url}\n   ${(it.description || '').slice(0, 120)}${it.readme ? `\n   README：${it.readme.replace(/\s+/g, ' ').slice(0, 400)}…` : ''}`,
+                  )
+                  .join('\n')
+              : `⚠️ 参考搜索失败（${value?.error ?? '未知'}），建议直接自己写方案，不要重试`,
+          },
+        ],
+      },
+      async execute(args: any) {
+        return await searchReference({
+          query: String(args?.query ?? ''),
+          source: args?.source === 'web' ? 'web' : 'github',
+          limit: Number(args?.limit ?? 3),
+          readmeChars: Number(args?.readme_chars ?? 1200),
+        })
+      },
+      presentCall(args: any) {
+        return { card: 'generic', title: `参考搜索 → ${String(args?.query ?? '')}`, kind: 'read' }
+      },
+    }
+
     let toolDispose: (() => void) | null = null
     try {
       const d = ctx.tools.register(tool)
@@ -426,7 +485,19 @@ export default {
       console.error(`${LOG_TAG} 注册 run_web_task 失败：`, e)
     }
 
+    let refDispose: (() => void) | null = null
+    try {
+      const d = ctx.tools.register(refTool)
+      if (typeof d === 'function') refDispose = d
+      console.log(`${LOG_TAG} 已注册工具 search_reference`)
+    } catch (e) {
+      console.error(`${LOG_TAG} 注册 search_reference 失败：`, e)
+    }
+
     ctx.on('dispose', async () => {
+      if (refDispose) {
+        try { refDispose() } catch { /* ignore */ }
+      }
       if (toolDispose) {
         try {
           toolDispose()

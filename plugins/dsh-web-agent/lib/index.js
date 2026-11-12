@@ -1,6 +1,164 @@
 // src/index.ts
 import { existsSync } from "node:fs";
 import { chromium } from "playwright";
+
+// src/reference.ts
+var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36";
+async function fetchText(url, timeoutMs = 12e3, headers = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "user-agent": UA, ...headers } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function decodeEntities(s) {
+  return s.replace(/&#(\d+);/g, (_m, d) => String.fromCharCode(Number(d))).replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
+}
+async function searchGithubApi(query, limit, readmeChars) {
+  const q = encodeURIComponent(query);
+  const body = await fetchText(
+    `https://api.github.com/search/repositories?q=${q}&sort=stars&order=desc&per_page=${Math.max(1, Math.min(5, limit))}`,
+    1e4,
+    { accept: "application/vnd.github+json" }
+  );
+  const j = JSON.parse(body);
+  const repos = Array.isArray(j?.items) ? j.items.slice(0, limit) : [];
+  const items = repos.map((r) => ({
+    title: r.full_name || r.name || "(unknown)",
+    url: r.html_url || "",
+    stars: typeof r.stargazers_count === "number" ? r.stargazers_count : void 0,
+    description: (r.description || "").slice(0, 200),
+    via: "api"
+  }));
+  for (const it of items.slice(0, 2)) {
+    try {
+      const rb = await fetchText(`https://api.github.com/repos/${it.title}/readme`, 1e4, {
+        accept: "application/vnd.github+json"
+      });
+      const rj = JSON.parse(rb);
+      const text = Buffer.from(String(rj?.content || ""), String(rj?.encoding || "base64")).toString("utf8");
+      it.readme = text.replace(/\r/g, "").slice(0, readmeChars);
+    } catch {
+    }
+  }
+  return items;
+}
+async function bingSearch(q, limit) {
+  const html = await fetchText(`https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=zh-CN`, 12e3);
+  const items = [];
+  for (const block of html.match(/<li class="b_algo"[\s\S]*?<\/li>/g) || []) {
+    const m = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+    if (!m) continue;
+    const url = m[1];
+    const title = decodeEntities(m[2].replace(/<[^>]+>/g, "")).trim();
+    const snip = decodeEntities((block.match(/<p[^>]*>([\s\S]*?)<\/p>/) || [, ""])[1].replace(/<[^>]+>/g, "")).trim();
+    if (!url.startsWith("http")) continue;
+    items.push({ title, url, description: snip.slice(0, 220) });
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+async function searchGitee(query, limit) {
+  const body = await fetchText(
+    `https://gitee.com/api/v5/search/repositories?q=${encodeURIComponent(query)}&per_page=${Math.max(1, Math.min(5, limit))}`,
+    1e4
+  );
+  const arr = JSON.parse(body);
+  return (Array.isArray(arr) ? arr : []).slice(0, limit).map((r) => ({
+    title: r.full_name || r.path || "(unknown)",
+    url: r.html_url || "",
+    stars: typeof r.stargazers_count === "number" ? r.stargazers_count : void 0,
+    description: String(r.description || "").slice(0, 200),
+    via: "gitee"
+  }));
+}
+async function searchGithubViaBing(query, limit) {
+  const hits = await bingSearch(`${query} site:github.com`, Math.max(limit * 2, 6));
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const h of hits) {
+    const m = h.url.match(/^https?:\/\/github\.com\/([^/?#]+)\/([^/?#]+)/);
+    if (!m) continue;
+    const repo = `${m[1]}/${m[2].replace(/\.git$/, "")}`;
+    if (seen.has(repo)) continue;
+    seen.add(repo);
+    out.push({
+      title: repo,
+      url: `https://github.com/${repo}`,
+      description: h.description,
+      via: "bing"
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+async function searchWeb(query, limit) {
+  const hits = await bingSearch(`${query} \u6700\u4F73\u5B9E\u8DF5 \u5F00\u6E90\u65B9\u6848`, Math.max(limit * 2, 6));
+  const useful = hits.filter((h) => {
+    try {
+      const u = new URL(h.url);
+      return u.pathname !== "/" || u.search.length > 1;
+    } catch {
+      return false;
+    }
+  });
+  return (useful.length ? useful : hits).slice(0, limit);
+}
+async function searchReference(opts) {
+  const t0 = Date.now();
+  const query = (opts.query || "").trim();
+  const source = opts.source === "web" ? "web" : "github";
+  const limit = Math.max(1, Math.min(5, opts.limit ?? 3));
+  if (!query) return { ok: false, query, source, items: [], error: "query \u4E0D\u80FD\u4E3A\u7A7A", elapsed_ms: 0 };
+  if (source === "web") {
+    try {
+      const items = await searchWeb(query, limit);
+      if (!items.length) return { ok: false, query, source, items: [], error: "\u6CA1\u6709\u641C\u5230\u7ED3\u679C", elapsed_ms: Date.now() - t0 };
+      return { ok: true, query, source, items, elapsed_ms: Date.now() - t0 };
+    } catch (e) {
+      return { ok: false, query, source, items: [], error: `\u641C\u7D22\u5931\u8D25\uFF1A${e.message}`, elapsed_ms: Date.now() - t0 };
+    }
+  }
+  try {
+    const items = await searchGithubApi(query, limit, opts.readmeChars ?? 1200);
+    if (items.length) return { ok: true, query, source, items, elapsed_ms: Date.now() - t0 };
+  } catch {
+  }
+  try {
+    const gitems = await searchGitee(query, limit);
+    if (gitems.length) return { ok: true, query, source, items: gitems, elapsed_ms: Date.now() - t0 };
+  } catch {
+  }
+  try {
+    const items = await searchGithubViaBing(query, limit);
+    if (items.length) {
+      return {
+        ok: true,
+        query,
+        source,
+        items,
+        error: void 0,
+        elapsed_ms: Date.now() - t0
+      };
+    }
+    return { ok: false, query, source, items: [], error: "GitHub API \u4E0D\u53EF\u8FBE\uFF0CBing \u4E5F\u6CA1\u641C\u5230\u4ED3\u5E93", elapsed_ms: Date.now() - t0 };
+  } catch (e) {
+    return {
+      ok: false,
+      query,
+      source,
+      items: [],
+      error: `GitHub \u4E0D\u53EF\u8FBE\u4E14\u9000\u8DEF\u5931\u8D25\uFF1A${e.message}`,
+      elapsed_ms: Date.now() - t0
+    };
+  }
+}
+
+// src/index.ts
 var LOG_TAG = "[dsh-web-agent]";
 var DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 var NAV_TIMEOUT = 15e3;
@@ -296,6 +454,57 @@ ${value.text ?? ""}`.slice(0, 1500) + (value?.memory_saved ? "\n\u{1F4DD} \u5DF2
         return { card: "generic", title: `web_agent \u2192 ${String(args?.action ?? "extract_text")} ${String(args?.url ?? "")}`, kind: "read" };
       }
     };
+    const refTool = {
+      name: "search_reference",
+      description: "\u5F00\u5DE5\u524D\u5148\u53C2\u8003\u5F00\u6E90/\u7F51\u9875\u65B9\u6848\uFF1Asource=github \u641C\u4ED3\u5E93\uFF08\u6309 star \u6392\uFF0C\u5E26\u56DE\u524D\u4E24\u540D\u7684 README \u7247\u6BB5\uFF09\uFF0Csource=web \u641C\u6280\u672F\u6587\u7AE0\uFF08\u6807\u9898+\u6458\u8981\uFF09\u3002\u7F51\u7EDC\u5931\u8D25\u4F1A\u8FD4\u56DE ok:false\uFF0C\u8FD9\u65F6\u5E94\u964D\u7EA7\u4E3A\u81EA\u5DF1\u5199\u65B9\u6848\uFF0C\u522B\u53CD\u590D\u91CD\u8BD5\u3002",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["query"],
+        properties: {
+          query: { type: "string", description: '\u68C0\u7D22\u8BCD\uFF0C\u5EFA\u8BAE\u82F1\u6587\u6280\u672F\u8BCD\uFF0C\u5982 "nodejs audio queue optimization"' },
+          source: { type: "string", enum: ["github", "web"], description: "github=\u5F00\u6E90\u4ED3\u5E93\uFF08\u9ED8\u8BA4\uFF09\uFF5Cweb=\u6280\u672F\u6587\u7AE0" },
+          limit: { type: "number", description: "\u8FD4\u56DE\u6761\u6570\uFF0C1~5\uFF0C\u9ED8\u8BA4 3" },
+          readme_chars: { type: "number", description: "github \u6A21\u5F0F\u4E0B README \u622A\u53D6\u957F\u5EA6\uFF0C\u9ED8\u8BA4 1200" }
+        }
+      },
+      output: {
+        schema: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            query: { type: "string" },
+            source: { type: "string" },
+            items: { type: "array" },
+            error: { type: "string" },
+            elapsed_ms: { type: "number" }
+          }
+        },
+        render: (_args, value) => [
+          {
+            type: "text",
+            text: value?.ok ? `\u{1F50E} ${value.source} \u53C2\u8003\uFF08${value.query}\uFF0C${value.elapsed_ms}ms\uFF09
+` + value.items.map(
+              (it, i) => `${i + 1}. ${it.title}${it.stars != null ? ` \u2B50${it.stars}` : ""}
+   ${it.url}
+   ${(it.description || "").slice(0, 120)}${it.readme ? `
+   README\uFF1A${it.readme.replace(/\s+/g, " ").slice(0, 400)}\u2026` : ""}`
+            ).join("\n") : `\u26A0\uFE0F \u53C2\u8003\u641C\u7D22\u5931\u8D25\uFF08${value?.error ?? "\u672A\u77E5"}\uFF09\uFF0C\u5EFA\u8BAE\u76F4\u63A5\u81EA\u5DF1\u5199\u65B9\u6848\uFF0C\u4E0D\u8981\u91CD\u8BD5`
+          }
+        ]
+      },
+      async execute(args) {
+        return await searchReference({
+          query: String(args?.query ?? ""),
+          source: args?.source === "web" ? "web" : "github",
+          limit: Number(args?.limit ?? 3),
+          readmeChars: Number(args?.readme_chars ?? 1200)
+        });
+      },
+      presentCall(args) {
+        return { card: "generic", title: `\u53C2\u8003\u641C\u7D22 \u2192 ${String(args?.query ?? "")}`, kind: "read" };
+      }
+    };
     let toolDispose = null;
     try {
       const d = ctx.tools.register(tool);
@@ -304,7 +513,21 @@ ${value.text ?? ""}`.slice(0, 1500) + (value?.memory_saved ? "\n\u{1F4DD} \u5DF2
     } catch (e) {
       console.error(`${LOG_TAG} \u6CE8\u518C run_web_task \u5931\u8D25\uFF1A`, e);
     }
+    let refDispose = null;
+    try {
+      const d = ctx.tools.register(refTool);
+      if (typeof d === "function") refDispose = d;
+      console.log(`${LOG_TAG} \u5DF2\u6CE8\u518C\u5DE5\u5177 search_reference`);
+    } catch (e) {
+      console.error(`${LOG_TAG} \u6CE8\u518C search_reference \u5931\u8D25\uFF1A`, e);
+    }
     ctx.on("dispose", async () => {
+      if (refDispose) {
+        try {
+          refDispose();
+        } catch {
+        }
+      }
       if (toolDispose) {
         try {
           toolDispose();
@@ -327,6 +550,7 @@ ${value.text ?? ""}`.slice(0, 1500) + (value?.memory_saved ? "\n\u{1F4DD} \u5DF2
 export {
   index_default as default,
   runWebTask,
-  saveToMemory
+  saveToMemory,
+  searchReference
 };
 //# sourceMappingURL=index.js.map
