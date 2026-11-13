@@ -1,0 +1,19 @@
+{
+  "name": "dsh-autopilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：自进化总控。save_proposal 存方案；execute_evolution 按方案改代码（校验/备份/编译/敏感词扫描/提交推送，失败自动回滚）。默认 dry_run。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./guard": "./lib/guard.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "files": ["lib", "src", "cordis.patch.yml"],
+  "scripts": { "build": "node build.mjs", "prepare": "node build.mjs", "test": "node test-mock.js" },
+  "engines": { "node": ">=22.13.0" },
+  "license": "MIT",
+  "devDependencies": { "@types/node": "^22.10.0", "esbuild": "^0.25.0" }
+}

@@ -1,0 +1,12 @@
+# dsh-autopilot —— DSH bundle patch
+# 安装：dsh plugin --profile web add "<仓库>\plugins\dsh-autopilot"
+#
+# 两个工具：
+#   save_proposal     方案写进 data/proposals/YYYY-MM-DD_标题.md
+#   execute_evolution 按方案改文件（默认 dry_run=true；真执行必须 dry_run:false + confirm:true）
+#
+# 安全：只改仓库内路径；扫描 sk-/密码/本机用户目录/私钥；逐插件 node build.mjs；
+#       任一步失败 git 回滚；推送失败不回滚但明确报错。
+- insert:
+    - id: dsh-autopilot
+      name: 'dsh-autopilot'
