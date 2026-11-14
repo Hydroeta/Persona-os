@@ -194,6 +194,8 @@ export interface DrawRunnerDeps {
   speak?: (text: string) => void
   /** 桥地址覆盖（默认读 PAINTER_BRIDGE_URL 环境变量，测试时直接传） */
   bridgeUrl?: string
+  /** 画布显隐（OBS）；不传 = 不做显隐 */
+  panel?: { showArt: (ms?: number) => Promise<unknown>; hideArt: () => Promise<void> }
 }
 
 export interface DrawHandleResult {
@@ -220,6 +222,11 @@ export function handleDrawCommand(text: string, user: string, deps: DrawRunnerDe
 
   const start = announceStart(cmd, user)
   deps.speak?.(start)
+
+  // OBS 画布：作画开始就亮起来（失败只是 no-op，不影响接单）
+  if (deps.panel) {
+    void deps.panel.showArt().catch((e) => console.error(`${LOG_TAG} OBS 显示异常：${(e as Error).message}`))
+  }
 
   // fire-and-forget：任何异常都在内部吞掉，只打日志
   void runDraw(cmd, user, deps).catch((e) => {
@@ -259,6 +266,17 @@ async function runDraw(cmd: DrawCommand, user: string, deps: DrawRunnerDeps): Pr
   }
   const done = announceDone(cmd, user, !!res.ok)
   deps.speak?.(done)
+
+  // 头像单：画成了才交付（QQ hook 现在是占位，内部永不抛异常）
+  if (res.ok && cmd.kind === 'avatar') {
+    try {
+      const { sendFanArtToQQ } = await import('./fan-art.js')
+      await sendFanArtToQQ(user, png)
+    } catch (e) {
+      console.error(`${LOG_TAG} 头像交付异常（不影响作画）：${(e as Error).message}`)
+    }
+  }
+
   console.log(`${LOG_TAG} ${cmd.kind} 完成 user=${user} mode=${cmd.mode} aspect=${cmd.aspect} ok=${res.ok} -> ${png}`)
 }
 

@@ -3894,7 +3894,11 @@ async function stopBgm() {
   }
 }
 export {
+  OBS_WS_PASSWORD,
+  OBS_WS_URL,
+  ObsClient,
   playBgm,
+  obs as sharedObsClient,
   stopBgm
 };
 //# sourceMappingURL=bgm.js.map

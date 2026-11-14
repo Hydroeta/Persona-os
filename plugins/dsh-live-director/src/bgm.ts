@@ -48,8 +48,8 @@ function findSongFile(song: string): string | undefined {
   return hit ? path.join(BGM_DIR, hit) : undefined
 }
 
-/** obs-websocket v5 最小客户端：connect → auth → 发请求 */
-class ObsClient {
+/** obs-websocket v5 最小客户端：connect → auth → 发请求（导出给 art.ts 复用，避免两份连接逻辑） */
+export class ObsClient {
   private ws: WebSocket | null = null
   private reqId = 0
   private pending = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>()
@@ -126,6 +126,8 @@ class ObsClient {
 }
 
 const obs = new ObsClient()
+
+export { obs as sharedObsClient, OBS_WS_URL, OBS_WS_PASSWORD }
 
 /** 播一首伴奏：优先 OBS，失败降级 mock */
 export async function playBgm(song: string): Promise<BgmResult> {

@@ -1,7 +1,51 @@
 import { createRequire } from 'module'; const require = createRequire(import.meta.url);
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// src/fan-art.ts
+var fan_art_exports = {};
+__export(fan_art_exports, {
+  sendFanArtToQQ: () => sendFanArtToQQ,
+  setFanArtSender: () => setFanArtSender
+});
+import { existsSync } from "node:fs";
+function setFanArtSender(fn) {
+  sender = fn;
+}
+async function sendFanArtToQQ(userId, filePath) {
+  if (!userId || !filePath) return false;
+  if (!existsSync(filePath)) {
+    console.error(`${LOG_TAG} \u6587\u4EF6\u4E0D\u5B58\u5728\uFF0C\u8DF3\u8FC7\u4EA4\u4ED8\uFF1A${filePath}`);
+    return false;
+  }
+  try {
+    return await sender(userId, filePath);
+  } catch (e) {
+    console.error(`${LOG_TAG} \u4EA4\u4ED8\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F5C\u753B\uFF09\uFF1A${e.message}`);
+    return false;
+  }
+}
+var LOG_TAG, sender;
+var init_fan_art = __esm({
+  "src/fan-art.ts"() {
+    "use strict";
+    LOG_TAG = "[dsh-live-director/fan-art]";
+    sender = async (userId, filePath) => {
+      console.log(`${LOG_TAG} [QQ Hook] \u51C6\u5907\u5C06 ${filePath} \u53D1\u9001\u7ED9 ${userId}`);
+      return false;
+    };
+  }
+});
 
 // src/draw.ts
-import { mkdirSync, existsSync, readdirSync, copyFileSync } from "node:fs";
+import { mkdirSync, existsSync as existsSync2, readdirSync, copyFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // src/painter-bridge.ts
@@ -29,7 +73,7 @@ async function requestPaint(req, opts = {}) {
 }
 
 // src/draw.ts
-var LOG_TAG = "[dsh-live-director/draw]";
+var LOG_TAG2 = "[dsh-live-director/draw]";
 var COOLDOWN_REPLY = "\u522B\u6025\uFF0C\u753B\u7B14\u8FD8\u6CA1\u5E72\u5462";
 function pickMode(text) {
   const t = String(text || "").toLowerCase();
@@ -125,7 +169,7 @@ function framesDirFor(root, now = /* @__PURE__ */ new Date()) {
   return p;
 }
 function latestArt(dir, limit = 5) {
-  if (!existsSync(dir)) return [];
+  if (!existsSync2(dir)) return [];
   try {
     return readdirSync(dir).filter((f) => /\.png$/i.test(f)).sort().slice(-limit).map((f) => join(dir, f));
   } catch {
@@ -143,8 +187,11 @@ function handleDrawCommand(text, user, deps) {
   cd.mark(user);
   const start = announceStart(cmd, user);
   deps.speak?.(start);
+  if (deps.panel) {
+    void deps.panel.showArt().catch((e) => console.error(`${LOG_TAG2} OBS \u663E\u793A\u5F02\u5E38\uFF1A${e.message}`));
+  }
   void runDraw(cmd, user, deps).catch((e) => {
-    console.error(`${LOG_TAG} \u4F5C\u753B\u4EFB\u52A1\u5F02\u5E38\uFF1A${e.message}`);
+    console.error(`${LOG_TAG2} \u4F5C\u753B\u4EFB\u52A1\u5F02\u5E38\uFF1A${e.message}`);
   });
   return { handled: true, reply: start };
 }
@@ -169,20 +216,28 @@ async function runDraw(cmd, user, deps) {
     try {
       copyFileSync(res.path, png);
     } catch (e) {
-      console.error(`${LOG_TAG} \u843D\u76D8\u5931\u8D25\uFF08\u4ECD\u5728\u539F\u8DEF\u5F84\uFF09\uFF1A${e.message}`);
+      console.error(`${LOG_TAG2} \u843D\u76D8\u5931\u8D25\uFF08\u4ECD\u5728\u539F\u8DEF\u5F84\uFF09\uFF1A${e.message}`);
     }
   } else {
-    console.error(`${LOG_TAG} \u4F5C\u753B\u5931\u8D25\uFF1A${res.error || "\u672A\u77E5"}`);
+    console.error(`${LOG_TAG2} \u4F5C\u753B\u5931\u8D25\uFF1A${res.error || "\u672A\u77E5"}`);
   }
   const done = announceDone(cmd, user, !!res.ok);
   deps.speak?.(done);
-  console.log(`${LOG_TAG} ${cmd.kind} \u5B8C\u6210 user=${user} mode=${cmd.mode} aspect=${cmd.aspect} ok=${res.ok} -> ${png}`);
+  if (res.ok && cmd.kind === "avatar") {
+    try {
+      const { sendFanArtToQQ: sendFanArtToQQ2 } = await Promise.resolve().then(() => (init_fan_art(), fan_art_exports));
+      await sendFanArtToQQ2(user, png);
+    } catch (e) {
+      console.error(`${LOG_TAG2} \u5934\u50CF\u4EA4\u4ED8\u5F02\u5E38\uFF08\u4E0D\u5F71\u54CD\u4F5C\u753B\uFF09\uFF1A${e.message}`);
+    }
+  }
+  console.log(`${LOG_TAG2} ${cmd.kind} \u5B8C\u6210 user=${user} mode=${cmd.mode} aspect=${cmd.aspect} ok=${res.ok} -> ${png}`);
 }
 export {
   COOLDOWN_REPLY,
   DEFAULT_DRAW_COOLDOWN,
   DrawCooldown,
-  LOG_TAG,
+  LOG_TAG2 as LOG_TAG,
   announceDone,
   announceDoneFor,
   announceStart,

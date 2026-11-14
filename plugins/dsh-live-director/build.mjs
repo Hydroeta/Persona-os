@@ -29,3 +29,6 @@ await build({ ...common, entryPoints: ['src/perception.ts'], outfile: 'lib/perce
 await build({ ...common, entryPoints: ['src/bgm.ts'], outfile: 'lib/bgm.js' })
 await build({ ...common, entryPoints: ['src/draw.ts'], outfile: 'lib/draw.js' })
 await build({ ...common, entryPoints: ['src/painter-bridge.ts'], outfile: 'lib/painter-bridge.js' })
+await build({ ...common, entryPoints: ['src/art-panel.ts'], outfile: 'lib/art-panel.js' })
+await build({ ...common, entryPoints: ['src/tts.ts'], outfile: 'lib/tts.js' })
+await build({ ...common, entryPoints: ['src/fan-art.ts'], outfile: 'lib/fan-art.js' })
