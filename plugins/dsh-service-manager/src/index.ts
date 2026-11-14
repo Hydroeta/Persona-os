@@ -41,6 +41,7 @@ import { existsSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startControlApi } from './control-api.js'
 
 const LOG_TAG = '[dsh-service-manager]'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -224,6 +225,7 @@ async function portInUseRobust(port: number, host = '127.0.0.1'): Promise<boolea
 
 const children = new Map<string, ChildProcess>()
 let disposed = false
+let controlApi: import('./control-api.js').ControlApiServer | null = null
 
 function killTreeSync(pid: number): void {
   if (process.platform === 'win32') {
@@ -369,5 +371,50 @@ export default {
       }
       children.clear()
     })
+
+    // 控制接口（:8010）：让总控面板能真按"重启/停止"。只监听回环地址，
+    // 且只允许操作 SERVICES 白名单里的名字。启动失败不影响插件本身。
+    if (sourceRoot) {
+      const hookCtx = { sourceRoot, releaseRoot }
+      startControlApi({
+        names: SERVICES.map((s) => s.name),
+        isRunning: async (name) => {
+          const svc = SERVICES.find((s) => s.name === name)
+          if (!svc) return false
+          return portInUseRobust(Number(process.env[svc.portEnv] || svc.portDefault))
+        },
+        stop: async (name) => {
+          const svc = SERVICES.find((s) => s.name === name)
+          if (!svc) return { ok: false, detail: `未知服务 ${name}` }
+          const child = children.get(name)
+          if (child?.pid) {
+            killTreeSync(child.pid)
+            children.delete(name)
+            return { ok: true, detail: `已终止进程树 pid=${child.pid}` }
+          }
+          // 不是本插件拉起的：按端口找不到 pid，只能如实说明
+          const port = Number(process.env[svc.portEnv] || svc.portDefault)
+          if (await portInUseRobust(port)) {
+            return { ok: false, detail: `服务在跑（port=${port}）但不是本插件拉起的，无法安全终止` }
+          }
+          return { ok: true, detail: '本来就没在跑' }
+        },
+        start: async (name) => {
+          const svc = SERVICES.find((s) => s.name === name)
+          if (!svc) return { ok: false, detail: `未知服务 ${name}` }
+          try {
+            await startService(svc, sourceRoot, releaseRoot)
+            return { ok: true, detail: '已尝试拉起（健康检查在后台跑）' }
+          } catch (e) {
+            return { ok: false, detail: (e as Error).message }
+          }
+        },
+      })
+        .then((s) => {
+          console.log(`${LOG_TAG} 控制接口就绪：http://127.0.0.1:${s.port}`)
+          controlApi = s
+        })
+        .catch((e) => console.error(`${LOG_TAG} 控制接口启动失败（不影响服务拉起）：${(e as Error).message}`))
+    }
   },
 }

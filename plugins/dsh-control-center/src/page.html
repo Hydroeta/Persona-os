@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PERSONA-OS // 鲸鱼指挥舱</title>
+<style>
+  :root{
+    --deep:#0A1128;      /* 深空蓝底 */
+    --panel:#1B263B;     /* 面板 */
+    --cyan:#00F0FF;      /* 赛博青（发光边框） */
+    --white:#FFFFFF;     /* 女仆白 */
+    --sea:#5BC0BE;       /* 浅海蓝强调 */
+    --ok:#3ef0a0; --bad:#ff4d6d; --dim:#6b7f99;
+  }
+  *{box-sizing:border-box;image-rendering:pixelated}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--deep);color:var(--white);
+    font-family:"VT323","Zpix","Cascadia Mono",Consolas,"Microsoft YaHei",monospace;
+    font-size:16px;letter-spacing:.02em;overflow-x:hidden;
+    background-image:
+      repeating-linear-gradient(0deg,rgba(0,240,255,.035) 0 1px,transparent 1px 3px),
+      radial-gradient(900px 500px at 15% -10%,#122a52 0%,transparent 60%),
+      radial-gradient(700px 400px at 100% 0%,#1a1a4a 0%,transparent 55%);
+  }
+  /* 像素噪点 */
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;opacity:.05;z-index:9999;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'><rect width='1' height='1' fill='white'/><rect x='2' y='2' width='1' height='1' fill='white'/></svg>");
+  }
+
+  /* ---------- 顶栏 ---------- */
+  header{
+    display:flex;align-items:center;gap:12px;padding:10px 16px;
+    border-bottom:4px solid var(--cyan);background:rgba(27,38,59,.85);
+    box-shadow:0 0 18px rgba(0,240,255,.35);
+  }
+  .burger{
+    width:38px;height:34px;display:flex;flex-direction:column;justify-content:center;gap:5px;
+    padding:0 8px;border:2px solid var(--cyan);background:transparent;cursor:pointer;
+  }
+  .burger span{display:block;height:3px;background:var(--cyan)}
+  .burger:active{transform:translate(2px,2px)}
+  h1{margin:0;font-size:20px;letter-spacing:.22em;color:var(--cyan);text-shadow:0 0 10px rgba(0,240,255,.6)}
+  header .spacer{flex:1}
+  header .clock{color:var(--sea);font-size:15px}
+
+  /* ---------- 菜单抽屉（☰ 里的两个按钮） ---------- */
+  #drawer{
+    position:fixed;left:0;top:54px;width:280px;z-index:1000;display:none;
+    border:4px solid var(--cyan);border-left:none;background:rgba(10,17,40,.97);
+    box-shadow:6px 6px 0 rgba(0,240,255,.25);padding:12px;
+  }
+  #drawer.open{display:block}
+  #drawer h3{margin:0 0 10px;font-size:14px;letter-spacing:.18em;color:var(--sea)}
+  .dbtn{
+    display:block;width:100%;text-align:left;margin-bottom:8px;padding:9px 10px;cursor:pointer;
+    border:2px solid var(--cyan);background:rgba(0,240,255,.08);color:var(--white);font:inherit;font-size:15px;
+  }
+  .dbtn:hover{background:rgba(0,240,255,.2)}
+  .dbtn:active{transform:translate(2px,2px)}
+  .dbtn small{display:block;color:var(--dim);font-size:12px;margin-top:2px}
+  .dbtn.danger{border-color:var(--bad);background:rgba(255,77,109,.1)}
+  .dbtn.danger:hover{background:rgba(255,77,109,.25)}
+  #drawer .note{font-size:12px;color:var(--dim);line-height:1.5;margin-top:8px}
+
+  /* ---------- 主布局 ---------- */
+  main{
+    display:grid;grid-template-columns:minmax(320px,42%) 1fr;
+    grid-template-rows:auto 1fr;gap:14px;padding:14px;
+  }
+  .box{border:4px solid var(--cyan);background:var(--panel);box-shadow:0 0 14px rgba(0,240,255,.18);position:relative}
+  .box .cap{
+    position:absolute;top:-2px;left:10px;transform:translateY(-50%);
+    background:var(--deep);padding:0 8px;font-size:13px;color:var(--sea);letter-spacing:.16em;
+  }
+
+  /* 左上：立绘舱 */
+  #avatarBox{grid-column:1;grid-row:1;min-height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  #avatarBox img{width:100%;height:100%;object-fit:contain}
+  #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
+  @keyframes speakPulse{
+    0%,100%{box-shadow:0 0 10px rgba(0,240,255,.35)}
+    50%{box-shadow:0 0 26px 6px rgba(255,255,255,.75)}
+  }
+  #avatarBox .fallback{color:var(--dim);font-size:14px;text-align:center;padding:20px}
+
+  /* 左下：状态与操作 */
+  #statusBox{grid-column:1;grid-row:2;padding:22px 14px 14px}
+  .leds{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .led{display:flex;align-items:center;gap:8px;padding:6px 8px;border:2px solid rgba(0,240,255,.25);background:rgba(0,0,0,.25)}
+  .led i{width:10px;height:10px;background:var(--bad);flex:none}
+  .led i.up{background:var(--ok);animation:ledBreath 1.8s steps(2,end) infinite}
+  .led i.down{animation:ledBlink 1.2s steps(2,end) infinite}
+  @keyframes ledBreath{0%,100%{box-shadow:0 0 0 rgba(62,240,160,.8)}50%{box-shadow:0 0 10px 2px rgba(62,240,160,.8)}}
+  @keyframes ledBlink{50%{opacity:.2}}
+  .led b{font-weight:400;font-size:14px}
+  .led em{font-style:normal;color:var(--dim);font-size:12px;margin-left:auto}
+  .meters{margin-top:12px}
+  .meter{margin-top:8px}
+  .meter .lbl{display:flex;justify-content:space-between;font-size:13px;color:var(--dim);margin-bottom:3px}
+  .meter .bar{height:10px;border:2px solid rgba(0,240,255,.4);background:#08101f}
+  .meter .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--sea),var(--cyan));width:0%}
+
+  /* 右侧：弹幕互动区 */
+  #chatBox{grid-column:2;grid-row:1;display:flex;flex-direction:column;min-height:300px;padding:18px 10px 10px}
+  #feed{flex:1;overflow:auto;background:#04070f;border:2px solid rgba(0,240,255,.22);padding:10px;font-size:14px;line-height:1.55}
+  #feed .row{margin-bottom:6px;word-break:break-all;white-space:pre-wrap}
+  #feed .me{color:var(--cyan)}
+  #feed .bot{color:var(--ok)}
+  #feed .err{color:var(--bad)}
+  #feed .sys{color:var(--dim)}
+  .cmd{display:flex;gap:8px;margin-top:8px}
+  .cmd input{
+    flex:1;font:inherit;font-size:16px;padding:9px 10px;color:var(--white);
+    background:#04070f;border:2px solid var(--cyan);outline:none;
+  }
+  .cmd input:focus{box-shadow:0 0 12px rgba(0,240,255,.45)}
+  .cmd button{
+    font:inherit;font-size:16px;padding:9px 18px;cursor:pointer;color:var(--deep);
+    background:var(--cyan);border:2px solid var(--cyan);
+  }
+  .cmd button:hover{background:var(--white)}
+  .cmd button:active{transform:translate(2px,2px)}
+  .cmd button:disabled{opacity:.45;cursor:default;transform:none}
+
+  /* 右下：CRT 画板 */
+  #crtBox{grid-column:2;grid-row:2;padding:18px 10px 10px;min-height:240px}
+  .crt{position:relative;width:100%;height:100%;min-height:200px;background:#03060c;overflow:hidden}
+  .crt img{width:100%;height:100%;object-fit:contain;display:block;filter:contrast(1.06) saturate(1.08)}
+  .crt::before{ /* 扫描线 */
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:2;opacity:.28;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.55) 0 2px,transparent 2px 4px);
+  }
+  .crt::after{ /* 暗角 */
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:3;
+    box-shadow:inset 0 0 60px rgba(0,0,0,.85);
+  }
+  .crt .hint{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);font-size:14px;letter-spacing:.14em;z-index:1;
+  }
+
+  @media (max-width:900px){
+    main{grid-template-columns:1fr;grid-template-rows:auto}
+    #chatBox,#crtBox{grid-column:1}
+  }
+</style>
+</head>
+<body>
+<header>
+  <button class="burger" id="burger" title="菜单"><span></span><span></span><span></span></button>
+  <h1>PERSONA-OS // 鲸鱼指挥舱</h1>
+  <span class="spacer"></span>
+  <span class="clock" id="clock">--:--:--</span>
+</header>
+
+<!-- ☰ 菜单：只放真能做的事 -->
+<div id="drawer">
+  <h3>// 舰桥控制</h3>
+  <button class="dbtn danger" id="btnRestart" data-name="IndexTTS2">
+    重启 TTS
+    <small>POST :8010/restart?name=IndexTTS2</small>
+  </button>
+  <button class="dbtn danger" id="btnRestartPainter" data-name="Painter">
+    重启 Painter
+    <small>POST :8010/restart?name=Painter</small>
+  </button>
+  <button class="dbtn" id="btnStartAll">
+    拉起全部微服务
+    <small>POST :8010/start-all（不会动被手动停掉的）</small>
+  </button>
+  <button class="dbtn" id="btnClearFeed">
+    清空弹幕流
+    <small>纯前端</small>
+  </button>
+  <button class="dbtn" id="btnRawStatus">
+    查看 /api/status 原始 JSON
+    <small>排查用</small>
+  </button>
+  <div class="note" id="ctlNote">控制接口未探测</div>
+</div>
+
+<main>
+  <div class="box" id="avatarBox">
+    <span class="cap">LIVE FEED</span>
+    <img id="avatar" src="/assets/avatar.png" alt="" onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
+    <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>把图放到 web/assets/avatar.png</small></div>
+  </div>
+
+  <div class="box" id="statusBox">
+    <span class="cap">SYSTEMS</span>
+    <div class="leds" id="leds"></div>
+    <div class="meters">
+      <div class="meter">
+        <div class="lbl"><span>MEMORY</span><span id="memTxt">-</span></div>
+        <div class="bar"><i id="memBar"></i></div>
+      </div>
+      <div id="gpuMeters"></div>
+    </div>
+  </div>
+
+  <div class="box" id="chatBox">
+    <span class="cap">DANMAKU // 指挥官测试台</span>
+    <div id="feed"></div>
+    <div class="cmd">
+      <input id="cmdInput" placeholder="!画 像素风的猫" autocomplete="off">
+      <button id="sendBtn">发送指令</button>
+    </div>
+  </div>
+
+  <div class="box" id="crtBox">
+    <span class="cap">PIXEL ART // 画板</span>
+    <div class="crt">
+      <div class="hint" id="crtHint">等待作画…</div>
+      <img id="paintBoard" alt="" style="display:none">
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id)
+const feed = $('feed')
+let ctlOk = false
+
+function nowStr(){ return new Date().toLocaleTimeString('zh-CN',{hour12:false}) }
+setInterval(()=>{ $('clock').textContent = nowStr() }, 1000)
+
+function pushLine(kind, text){
+  const d = document.createElement('div')
+  d.className = 'row ' + kind
+  d.textContent = text
+  feed.appendChild(d)
+  feed.scrollTop = feed.scrollHeight
+  while (feed.children.length > 400) feed.removeChild(feed.firstChild)
+}
+
+// ---------- 状态 ----------
+const LED_MAP = [
+  ['memory','Memory :8001'],['painter','Painter :8002'],
+  ['audiocover','Audio :8005'],['indextts','TTS :9881'],
+  ['live','Director :9001'],['gamebot','GameBot :8003'],
+]
+function renderLeds(services){
+  const box = $('leds')
+  if (!box.children.length) {
+    box.innerHTML = LED_MAP.map(([k,label]) => `<div class="led" data-k="${k}"><i></i><b>${label}</b><em></em></div>`).join('')
+  }
+  for (const [k] of LED_MAP){
+    const s = services.find(x => x.key === k)
+    const el = box.querySelector(`[data-k="${k}"]`)
+    if (!el || !s) continue
+    el.querySelector('i').className = s.up ? 'up' : 'down'
+    el.querySelector('em').textContent = s.up ? s.ms + 'ms' : 'off'
+  }
+}
+function renderHost(host){
+  $('memBar').style.width = host.memPct + '%'
+  $('memTxt').textContent = host.memPct + '%'
+  const g = $('gpuMeters')
+  if (!host.gpus || !host.gpus.length){
+    g.innerHTML = `<div class="meter"><div class="lbl"><span>GPU</span><span>${host.gpuError ? 'n/a' : '无'}</span></div></div>`
+    return
+  }
+  g.innerHTML = host.gpus.map(x => {
+    const pct = x.memTotalMb ? Math.round(x.memUsedMb / x.memTotalMb * 100) : 0
+    return `<div class="meter"><div class="lbl"><span>GPU ${x.name.slice(0,18)}</span><span>${x.memUsedMb}/${x.memTotalMb} MB</span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div></div>`
+  }).join('')
+}
+async function pollStatus(){
+  try{
+    const r = await fetch('/api/status',{cache:'no-store'})
+    if(!r.ok) return
+    const j = await r.json()
+    renderLeds(j.services)
+    renderHost(j.host)
+  }catch(_){}
+}
+
+// ---------- 画板 ----------
+let lastPaintTag = ''
+async function pollPaint(){
+  try{
+    const r = await fetch('/api/latest-paint?tag=' + Date.now(), {cache:'no-store'})
+    if (r.status === 404){ return }
+    if(!r.ok) return
+    const tag = r.headers.get('x-paint-mtime') || ''
+    if (tag && tag === lastPaintTag) return
+    lastPaintTag = tag
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const img = $('paintBoard')
+    const old = img.dataset.url
+    img.onload = () => { if (old) URL.revokeObjectURL(old) }
+    img.dataset.url = url
+    img.src = url
+    img.style.display = 'block'
+    $('crtHint').style.display = 'none'
+  }catch(_){}
+}
+
+// ---------- 发指令 ----------
+let sending = false
+async function sendCmd(){
+  const text = $('cmdInput').value.trim()
+  if (!text || sending) return
+  sending = true; $('sendBtn').disabled = true
+  pushLine('me', '『面板指挥官』 ' + text)
+  try{
+    const r = await fetch('/api/danmaku', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ text })
+    })
+    const j = await r.json()
+    if (j.ok) pushLine('bot', '← ' + JSON.stringify(j.reply))
+    else pushLine('err', '✗ ' + (j.error || '发送失败'))
+  }catch(e){
+    pushLine('err', '✗ 请求失败：' + e.message)
+  }finally{
+    sending = false; $('sendBtn').disabled = false; $('cmdInput').value = ''
+  }
+}
+$('sendBtn').onclick = sendCmd
+$('cmdInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendCmd() })
+
+// ---------- ☰ 菜单 ----------
+const drawer = $('drawer')
+$('burger').onclick = (e) => { e.stopPropagation(); drawer.classList.toggle('open') }
+document.addEventListener('click', (e) => { if (!drawer.contains(e.target) && e.target !== $('burger')) drawer.classList.remove('open') })
+
+async function ctl(path, label){
+  pushLine('sys', '› ' + label)
+  try{
+    const r = await fetch('/api/control' + path, { method:'POST' })
+    const j = await r.json()
+    pushLine(j.ok ? 'bot' : 'err', '← ' + JSON.stringify(j))
+  }catch(e){
+    pushLine('err', '✗ 控制接口不可用：' + e.message)
+  }
+}
+document.querySelectorAll('[data-name]').forEach(b => {
+  b.onclick = () => ctl('/restart?name=' + encodeURIComponent(b.dataset.name), '重启 ' + b.dataset.name)
+})
+$('btnStartAll').onclick = () => ctl('/start-all', '拉起全部微服务')
+$('btnClearFeed').onclick = () => { feed.innerHTML = ''; pushLine('sys','// 已清空') }
+$('btnRawStatus').onclick = async () => {
+  const j = await fetch('/api/status').then(r=>r.json())
+  pushLine('sys', JSON.stringify(j, null, 1))
+}
+
+async function probeCtl(){
+  try{
+    const r = await fetch('/api/control/health')
+    const j = await r.json()
+    ctlOk = !!j.ok
+    $('ctlNote').textContent = ctlOk ? '✅ 控制接口在线（' + (j.services||[]).join(' / ') + '）' : '⚠️ 控制接口返回异常'
+  }catch(_){
+    $('ctlNote').textContent = '⚠️ 控制接口 :8010 未启动（重启/拉起按钮会失败）'
+  }
+}
+
+// TTS 播放时立绘框闪：目前 TTS 在别的进程，这里只能由弹幕回包临时触发
+function flashAvatar(ms){
+  const b = $('avatarBox')
+  b.classList.add('speaking')
+  setTimeout(()=>b.classList.remove('speaking'), ms || 1600)
+}
+
+pushLine('sys','// 鲸鱼指挥舱已就绪')
+probeCtl()
+pollStatus()
+pollPaint()
+setInterval(pollStatus, 2000)
+setInterval(pollPaint, 100)
+setInterval(probeCtl, 15000)
+</script>
+</body>
+</html>

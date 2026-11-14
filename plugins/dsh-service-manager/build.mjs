@@ -2,12 +2,12 @@
 import { build } from 'esbuild'
 
 await build({
-  entryPoints: ['src/index.ts'],
+  entryPoints: ['src/index.ts', 'src/control-api.ts'],
   bundle: true,
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  outfile: 'lib/index.js',
+  outdir: 'lib',
   sourcemap: true,
   logLevel: 'info',
 })
