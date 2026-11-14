@@ -58,7 +58,8 @@ def sobel(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return gx, gy
 
 
-def build_strokes(im: Image.Image, step: int, mode: str, seed: int = 7):
+def build_strokes(im: Image.Image, step: int, mode: str, seed: int = 7,
+                  layers: int = 1, length_k: float = 1.0, pen: float = 1.0):
     rnd = random.Random(seed)
     rgb = np.asarray(im, dtype=np.float32)
     gray = rgb.mean(axis=2)
@@ -68,33 +69,51 @@ def build_strokes(im: Image.Image, step: int, mode: str, seed: int = 7):
     strokes = []
     for y in range(step // 2, h, step):
         for x in range(step // 2, w, step):
-            block = rgb[max(0, y - 3): y + 4, max(0, x - 3): x + 4].reshape(-1, 3)
-            lum = block.mean(axis=1)
-            ink = block[lum < 245]
-            if len(ink) < 4 and lum.mean() > 246:  # 纯白背景不落笔
-                continue
-            src_block = ink if len(ink) >= 3 else block
-            color = tuple(int(v) for v in np.median(src_block, axis=0))
+            # 油画感：同一格**多叠几笔**（超过 1 笔时位置/角度/长度各异，互相压盖）
+            for _layer in range(max(1, layers)):
+                sx = x + rnd.uniform(-step * 0.7, step * 0.7)
+                sy = y + rnd.uniform(-step * 0.7, step * 0.7)
+                block = rgb[max(0, int(sy) - 3): int(sy) + 4,
+                            max(0, int(sx) - 3): int(sx) + 4].reshape(-1, 3)
+                lum = block.mean(axis=1)
+                ink = block[lum < 245]
+                if len(ink) < 4 and lum.mean() > 246:  # 纯白背景不落笔
+                    continue
+                src_block = ink if len(ink) >= 3 else block
+                color = tuple(int(v) for v in np.median(src_block, axis=0))
+                yy, xx = int(min(max(sy, 0), h - 1)), int(min(max(sx, 0), w - 1))
 
-            ang_grad = math.atan2(gy[y, x], gx[y, x])
-            ang = ang_grad + (math.pi / 2 if mode == "tangent" else 0)
-            mag = math.hypot(gx[y, x], gy[y, x])
-            base = step * (2.0 if mag < 8 else 2.6)
-            length = base * rnd.uniform(0.7, 1.3)
-            cx = x + rnd.uniform(-1.5, 1.5)
-            cy = y + rnd.uniform(-1.5, 1.5)
-            dx = math.cos(ang) * length / 2
-            dy = math.sin(ang) * length / 2
-            k = rnd.uniform(0.94, 1.06)
-            col = tuple(max(0, min(255, int(c * k))) for c in color)
-            strokes.append((cx - dx, cy - dy, cx + dx, cy + dy, col))
+                ang_grad = math.atan2(gy[yy, xx], gx[yy, xx])
+                ang_base = ang_grad + (math.pi / 2 if mode == "tangent" else 0)
+                # 方向随机：在纹理方向基础上抖动，三成笔完全随机（交错感）
+                r = rnd.random()
+                if r < 0.12:
+                    ang = ang_base + rnd.uniform(-math.pi, math.pi)     # 全随机
+                elif r < 0.42:
+                    ang = ang_base + rnd.uniform(-0.9, 0.9)             # 大抖动 ±52°
+                else:
+                    ang = ang_base + rnd.uniform(-0.18, 0.18)           # 小幅抖动 ±10°
+                mag = math.hypot(gx[yy, xx], gy[yy, xx])
+                # 长度随机：基础长度 ± 大量随机，短线出细节、长线出铺色
+                base = step * (2.0 if mag < 8 else 2.6)
+                length = base * rnd.uniform(0.35, 2.4) * length_k
+                cx = sx + rnd.uniform(-1.5, 1.5)
+                cy = sy + rnd.uniform(-1.5, 1.5)
+                dx = math.cos(ang) * length / 2
+                dy = math.sin(ang) * length / 2
+                # 油画的"颜料浓淡"：每笔明暗略变，叠起来有层次
+                k = rnd.uniform(0.86, 1.14)
+                col = tuple(max(0, min(255, int(c * k))) for c in color)
+                # 统一笔宽（用户反馈"有粗有细"反而更乱，回到等宽）
+                lw = int(round(SS * step * pen))
+                strokes.append((cx - dx, cy - dy, cx + dx, cy + dy, col, max(2, lw)))
 
     band = step * 6
     strokes.sort(key=lambda s: (int(s[1] // band), rnd.random()))
     return strokes, (w, h)
 
 
-def render(strokes, size, out_dir: str, fps: int, seconds: float, step: int):
+def render(strokes, size, out_dir: str, fps: int, seconds: float, step: int, pen: float = 1.0):
     w, h = size
     canvas = Image.new("RGB", (w * SS, h * SS), (255, 255, 255))
     draw = ImageDraw.Draw(canvas)
@@ -105,11 +124,16 @@ def render(strokes, size, out_dir: str, fps: int, seconds: float, step: int):
     total = len(strokes)
     target_frames = max(1, int(fps * seconds))
     every = max(1, total // target_frames)   # 不设上限：笔多就多存帧，靠 seconds 定节奏
-    width = max(3, int(round(SS * step)))
+    width = max(2, int(round(SS * step * pen)))
+    w_max = max(width + 1, int(round(SS * step * pen * 3.5)))   # 粗笔上限
     n = 0
     fi = 0
-    for i, (x0, y0, x1, y1, col) in enumerate(strokes, 1):
-        draw.line((x0 * SS, y0 * SS, x1 * SS, y1 * SS), fill=col, width=width, joint="curve")
+    for i, s in enumerate(strokes, 1):
+        x0, y0, x1, y1, col = s[:5]
+        # 每笔自己的宽度（由 build_strokes 决定：有粗有细）
+        lw = int(s[5]) if len(s) > 5 else width
+        lw = max(2, min(w_max, lw))
+        draw.line((x0 * SS, y0 * SS, x1 * SS, y1 * SS), fill=col, width=lw, joint="curve")
         n += 1
         if n >= every or i == total:
             n = 0
@@ -143,13 +167,17 @@ def main() -> int:
     ap.add_argument("--mode", choices=["tangent", "grad"], default="tangent")
     ap.add_argument("--fps", type=int, default=20)
     ap.add_argument("--seconds", type=float, default=20)
+    ap.add_argument("--pen", type=float, default=1.0, help="笔宽系数，0.5=细笔，1.0=原样")
+    ap.add_argument("--layers", type=int, default=1, help="每格叠几笔，>1 出油画厚涂感")
+    ap.add_argument("--length-k", type=float, default=1.0, help="笔长整体系数")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
     im = load_source(args.src, args.size)
     im.save(os.path.join(args.out, "source.png"))
-    strokes, size = build_strokes(im, args.step, args.mode)
-    frames_dir = render(strokes, size, args.out, args.fps, args.seconds, args.step)
+    strokes, size = build_strokes(im, args.step, args.mode,
+                                  layers=args.layers, length_k=args.length_k, pen=args.pen)
+    frames_dir = render(strokes, size, args.out, args.fps, args.seconds, args.step, args.pen)
     encode(frames_dir, args.out, args.fps)
     return 0
 
