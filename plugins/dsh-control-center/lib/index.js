@@ -4364,7 +4364,7 @@ var PAGE_HTML = `<!doctype html>
   <div class="box" id="avatarBox">
     <span class="cap">LIVE FEED</span>
     <div id="avatarStage">
-      <img id="avatarImg" src="/assets/expr/pixel_content.png" alt=""
+      <img id="avatarImg" src="/assets/expr/pixel_smile.png" alt=""
            onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
     </div>
     <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u68C0\u67E5 web/assets/expr/pixel_*.png</small></div>
@@ -4586,9 +4586,10 @@ async function probeCtl(){
 
 // ---------- \u7ACB\u7ED8\uFF1A\u8868\u60C5\u72B6\u6001\u673A\uFF08\u5168\u90E8\u8D70\u6574\u56FE\u5207\u6362\uFF0C\u7EDD\u4E0D scale\uFF09 ----------
 const EXPR_BASE = '/assets/expr/pixel_';
-const EXPR_DEFAULT = 'content';       // \u5F85\u673A
+// \u5F85\u673A\uFF1Asmile = shy \u7684\u7741\u773C + content \u7684\u5FAE\u7B11\u5634\uFF08\u50CF\u7D20\u7F51\u683C\u4E0A\u5408\u6210\u7684\uFF0C\u89C1 tools/make_smile_pixel.py\uFF09
+const EXPR_DEFAULT = 'smile';
 const EXPR_LIST = ['aggrieved','blush','content','giggle','joy','nervous','pout','puzzled',
-                   'sad','scared','shy','sleepy','smug','starry','surprise','wink'];
+                   'sad','scared','shy','sleepy','smile','smug','starry','surprise','wink'];
 const img = $('avatarImg')
 const stage = $('avatarStage')
 

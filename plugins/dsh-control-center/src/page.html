@@ -241,7 +241,7 @@
   <div class="box" id="avatarBox">
     <span class="cap">LIVE FEED</span>
     <div id="avatarStage">
-      <img id="avatarImg" src="/assets/expr/pixel_content.png" alt=""
+      <img id="avatarImg" src="/assets/expr/pixel_smile.png" alt=""
            onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
     </div>
     <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>检查 web/assets/expr/pixel_*.png</small></div>
@@ -463,9 +463,10 @@ async function probeCtl(){
 
 // ---------- 立绘：表情状态机（全部走整图切换，绝不 scale） ----------
 const EXPR_BASE = '/assets/expr/pixel_';
-const EXPR_DEFAULT = 'content';       // 待机
+// 待机：smile = shy 的睁眼 + content 的微笑嘴（像素网格上合成的，见 tools/make_smile_pixel.py）
+const EXPR_DEFAULT = 'smile';
 const EXPR_LIST = ['aggrieved','blush','content','giggle','joy','nervous','pout','puzzled',
-                   'sad','scared','shy','sleepy','smug','starry','surprise','wink'];
+                   'sad','scared','shy','sleepy','smile','smug','starry','surprise','wink'];
 const img = $('avatarImg')
 const stage = $('avatarStage')
 

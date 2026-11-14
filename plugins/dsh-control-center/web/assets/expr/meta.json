@@ -1,0 +1,24 @@
+{
+  "grid": 128,
+  "size": 512,
+  "person_h": 0.92,
+  "crop_bottom": 0.74,
+  "names": [
+    "aggrieved",
+    "blush",
+    "content",
+    "giggle",
+    "joy",
+    "nervous",
+    "pout",
+    "puzzled",
+    "sad",
+    "scared",
+    "shy",
+    "sleepy",
+    "smug",
+    "starry",
+    "surprise",
+    "wink"
+  ]
+}
