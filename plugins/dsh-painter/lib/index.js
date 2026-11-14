@@ -983,6 +983,40 @@ function abortCurrentJob() {
 function cancelPaint() {
   abortCurrentJob();
 }
+function parseAspect(a) {
+  if (!a) return null;
+  if (typeof a === "object") {
+    const w = Number(a.width);
+    const h = Number(a.height);
+    if (w > 0 && h > 0) return { rw: w, rh: h };
+    return null;
+  }
+  const m = /^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/.exec(String(a).trim());
+  if (!m) return null;
+  const rw = Number(m[1]);
+  const rh = Number(m[2]);
+  if (rw <= 0 || rh <= 0) return null;
+  return { rw, rh };
+}
+async function cropToAspect(buf, aspect) {
+  const meta = await sharp3(buf).metadata();
+  const W = meta.width || 0;
+  const H = meta.height || 0;
+  if (!W || !H) throw new Error("\u5E95\u56FE\u5C3A\u5BF8\u65E0\u6548\uFF0C\u65E0\u6CD5\u6309\u753B\u5E45\u88C1\u526A");
+  const target = aspect.rw / aspect.rh;
+  const cur = W / H;
+  if (Math.abs(cur - target) < 0.01) return { buffer: buf, width: W, height: H };
+  let cw = W;
+  let ch = H;
+  if (cur > target) cw = Math.round(H * target);
+  else ch = Math.round(W / target);
+  cw = Math.max(2, Math.min(W, cw));
+  ch = Math.max(2, Math.min(H, ch));
+  const left = Math.floor((W - cw) / 2);
+  const top = Math.floor((H - ch) / 2);
+  const out = await sharp3(buf).extract({ left, top, width: cw, height: ch }).png().toBuffer();
+  return { buffer: out, width: cw, height: ch };
+}
 async function generatePaintProcess(args) {
   const prompt = (args.prompt || "").trim();
   const obsPath = (args.obs_output_path || "").trim();
@@ -1017,6 +1051,19 @@ async function generatePaintProcess(args) {
       painterMsg = got.message ? decodeURIComponentSafe(got.message) : "";
     } catch (e) {
       return { ok: false, error: `\u83B7\u53D6\u5E95\u56FE\u5931\u8D25\uFF1A${e.message}`, elapsed_ms: Math.round(performance.now() - t0) };
+    }
+    const aspectArg = parseAspect(args.aspect);
+    if (aspectArg) {
+      try {
+        const cut = await cropToAspect(base, aspectArg);
+        base = cut.buffer;
+        w = cut.width;
+        h = cut.height;
+        baseFmt = "png";
+        console.log(`${LOG_TAG} \u6309\u753B\u5E45 ${aspectArg.rw}:${aspectArg.rh} \u88C1\u526A \u2192 ${w}\xD7${h}`);
+      } catch (e) {
+        console.error(`${LOG_TAG} \u753B\u5E45\u88C1\u526A\u5931\u8D25\uFF0C\u6CBF\u7528\u539F\u56FE ${w}\xD7${h}\uFF1A${e.message}`);
+      }
     }
     if (job.abort.signal.aborted) {
       return { ok: false, cancelled: true, error: "\u5DF2\u53D6\u6D88", elapsed_ms: Math.round(performance.now() - t0), source };
@@ -1139,6 +1186,9 @@ async function generatePaintProcess(args) {
       mode: pixelRes ? "pixel" : strokeRes ? "strokes" : stages ? "stages" : "scanline",
       strokes: strokeRes ? strokeRes.strokes.length : void 0,
       grid_size: pixelRes ? pixelRes.grid.n : void 0,
+      aspect: aspectArg ? `${aspectArg.rw}:${aspectArg.rh}` : void 0,
+      width: w,
+      height: h,
       message: painterMsg || void 0
     };
   } catch (e) {

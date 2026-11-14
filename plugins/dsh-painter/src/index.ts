@@ -686,6 +686,49 @@ export interface PaintArgs {
   palette?: string[]
   /** pixel 模式的网格边长（格子数），默认 64。常用 32（块大）/ 64（稳）/ 128（细） */
   grid_size?: number
+  /**
+   * 目标画幅：'1:1' | '16:9' | '9:16' | { width, height }。
+   * 只做**本地居中裁剪**——生图 API 不接收尺寸参数，让它重新生成更不可控。
+   */
+  aspect?: '1:1' | '16:9' | '9:16' | { width: number; height: number }
+}
+
+/** 把 '16:9' / '1:1' / {width,height} 解析成宽高比；无效返回 null */
+function parseAspect(a: any): { rw: number; rh: number } | null {
+  if (!a) return null
+  if (typeof a === 'object') {
+    const w = Number((a as any).width)
+    const h = Number((a as any).height)
+    if (w > 0 && h > 0) return { rw: w, rh: h }
+    return null
+  }
+  const m = /^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/.exec(String(a).trim())
+  if (!m) return null
+  const rw = Number(m[1])
+  const rh = Number(m[2])
+  if (rw <= 0 || rh <= 0) return null
+  return { rw, rh }
+}
+
+/** 居中裁剪到目标比例（不缩放，只削边；已经是目标比例就原样返回） */
+async function cropToAspect(buf: Buffer, aspect: { rw: number; rh: number }): Promise<{ buffer: Buffer; width: number; height: number }> {
+  const meta = await sharp(buf).metadata()
+  const W = meta.width || 0
+  const H = meta.height || 0
+  if (!W || !H) throw new Error('底图尺寸无效，无法按画幅裁剪')
+  const target = aspect.rw / aspect.rh
+  const cur = W / H
+  if (Math.abs(cur - target) < 0.01) return { buffer: buf, width: W, height: H }
+  let cw = W
+  let ch = H
+  if (cur > target) cw = Math.round(H * target) // 太宽，削左右
+  else ch = Math.round(W / target) // 太高，削上下
+  cw = Math.max(2, Math.min(W, cw))
+  ch = Math.max(2, Math.min(H, ch))
+  const left = Math.floor((W - cw) / 2)
+  const top = Math.floor((H - ch) / 2)
+  const out = await sharp(buf).extract({ left, top, width: cw, height: ch }).png().toBuffer()
+  return { buffer: out, width: cw, height: ch }
 }
 
 export interface PaintResult {
@@ -700,6 +743,8 @@ export interface PaintResult {
   strokes?: number
   /** pixel 模式：实际网格边长 */
   grid_size?: number
+  /** 目标画幅（本地居中裁剪，不依赖生图 API 的尺寸参数） */
+  aspect?: string
   mode?: string
 }
 
@@ -744,8 +789,25 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       h = got.height
       source = got.source
       baseFmt = String(got.format || '')
-      painterMsg = got.message ? decodeURIComponentSafe(got.message) : ''    } catch (e) {
+      painterMsg = got.message ? decodeURIComponentSafe(got.message) : ''
+    } catch (e) {
       return { ok: false, error: `获取底图失败：${(e as Error).message}`, elapsed_ms: Math.round(performance.now() - t0) }
+    }
+
+    // 步骤一·五：按目标画幅本地居中裁剪（生图 API 不收尺寸，让它重生成不可控）。
+    // 裁剪失败不算致命——退回原图继续画，只是比例不对。
+    const aspectArg = parseAspect(args.aspect)
+    if (aspectArg) {
+      try {
+        const cut = await cropToAspect(base, aspectArg)
+        base = cut.buffer
+        w = cut.width
+        h = cut.height
+        baseFmt = 'png'
+        console.log(`${LOG_TAG} 按画幅 ${aspectArg.rw}:${aspectArg.rh} 裁剪 → ${w}×${h}`)
+      } catch (e) {
+        console.error(`${LOG_TAG} 画幅裁剪失败，沿用原图 ${w}×${h}：${(e as Error).message}`)
+      }
     }
     if (job.abort.signal.aborted) {
       return { ok: false, cancelled: true, error: '已取消', elapsed_ms: Math.round(performance.now() - t0), source }
@@ -890,6 +952,9 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       mode: pixelRes ? 'pixel' : strokeRes ? 'strokes' : stages ? 'stages' : 'scanline',
       strokes: strokeRes ? strokeRes.strokes.length : undefined,
       grid_size: pixelRes ? pixelRes.grid.n : undefined,
+      aspect: aspectArg ? `${aspectArg.rw}:${aspectArg.rh}` : undefined,
+      width: w,
+      height: h,
       message: painterMsg || undefined,
     }
   } catch (e) {
