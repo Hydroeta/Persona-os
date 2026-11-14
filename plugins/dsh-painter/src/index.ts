@@ -22,12 +22,13 @@
  */
 
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
-import { mkdir, rename, writeFile, unlink } from 'node:fs/promises'
+import { mkdir, rename, writeFile, unlink, readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import sharp from 'sharp'
 import axios from 'axios'
 import { analyzeStrokes, renderStrokeFrame } from './strokes.js'
+import { readPixelGrid, planBrickOrder, renderPixelFrame, planBrickBatches } from './pixel.js'
 
 const LOG_TAG = '[dsh-painter]'
 
@@ -73,6 +74,8 @@ interface BaseImage {
   source: string
   /** 微服务 X-Painter-Msg（已 percent-decode）：生图侧给的人类可读说明，如「画好啦！」 */
   message?: string
+  /** 底图字节的容器格式（png / jpeg / ...）。写帧时按它编码，保证 OBS 图片源能解析。 */
+  format?: string
 }
 
 /**
@@ -221,7 +224,17 @@ function makeGradientBuffer(w: number, h: number): Buffer {
   return buf
 }
 
+/** 本地底图：PAINTER_LOCAL_IMAGE=<绝对路径> 时直接读这张图（离线演示 / 端到端测试用） */
+async function readLocalImage(): Promise<BaseImage> {
+  const p = String(process.env.PAINTER_LOCAL_IMAGE || '').trim()
+  const buf = await readFile(p)
+  const meta = await sharp(buf).metadata()
+  if (!meta.width || !meta.height) throw new Error(`本地底图无效：${p}`)
+  return { buffer: buf, width: meta.width, height: meta.height, source: `local:${p}`, format: meta.format }
+}
+
 async function getBaseImage(prompt: string): Promise<BaseImage> {
+  if (process.env.PAINTER_LOCAL_IMAGE) return readLocalImage()
   if (env.imageGenUrl) return fetchRemoteImage(prompt)
   return generateLocalTestImage(prompt)
 }
@@ -667,10 +680,12 @@ export interface PaintArgs {
   obs_output_path: string
   duration_ms?: number
   fps?: number
-  /** 作画方式：'stages'（三阶段派生，默认）| 'strokes'（真逐笔勾线，需要干净线稿底图） */
-  mode?: 'stages' | 'strokes'
+  /** 作画方式：'stages'（三阶段派生，默认）| 'strokes'（真逐笔勾线，需要干净线稿底图）| 'pixel'（像素砌砖） */
+  mode?: 'stages' | 'strokes' | 'pixel'
   /** strokes 模式的配色，按笔画重心纵带取；只有一个值 = 单色 */
   palette?: string[]
+  /** pixel 模式的网格边长（格子数），默认 64。常用 32（块大）/ 64（稳）/ 128（细） */
+  grid_size?: number
 }
 
 export interface PaintResult {
@@ -683,6 +698,8 @@ export interface PaintResult {
   cancelled?: boolean
   /** strokes 模式：实际笔画数（给调用方一个可解释的量） */
   strokes?: number
+  /** pixel 模式：实际网格边长 */
+  grid_size?: number
   mode?: string
 }
 
@@ -714,6 +731,7 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
     let base: Buffer
     let w: number
     let h: number
+    let baseFmt = ''
     try {
       // strokes 模式要的是线稿：点单说「画个电饭煲」时自动补线稿风格词，避免拿到彩色图去追轮廓
       const genPrompt =
@@ -725,6 +743,7 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       w = got.width
       h = got.height
       source = got.source
+      baseFmt = String(got.format || '')
       painterMsg = got.message ? decodeURIComponentSafe(got.message) : ''    } catch (e) {
       return { ok: false, error: `获取底图失败：${(e as Error).message}`, elapsed_ms: Math.round(performance.now() - t0) }
     }
@@ -754,7 +773,22 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
         console.error(`${LOG_TAG} 笔画追踪失败，退回三阶段：${(e as Error).message}`)
       }
     }
-    if (!strokeRes && env.threeStage) {
+    // 像素砌砖：把底图读成 N×N 格子，按「暗→中→亮 + 由外到内」排序后逐批填满。
+    // 不调 Python 中转（TS 自己能读格），失败就退回三阶段。
+    let pixelRes: { grid: Awaited<ReturnType<typeof readPixelGrid>>; order: ReturnType<typeof planBrickOrder>; batch: number } | null = null
+    if (args.mode === 'pixel') {
+      try {
+        const n = clampInt(String(args.grid_size), 8, 256, 64)
+        const grid = await readPixelGrid(base, n)
+        const order = planBrickOrder(grid, { seed: 7 })
+        const { batch } = planBrickBatches(n)
+        pixelRes = { grid, order, batch }
+        console.log(`${LOG_TAG} 像素模式：${n}×${n}，每格 ${grid.cell}px，每步刷 ${batch} 格`)
+      } catch (e) {
+        console.error(`${LOG_TAG} 像素化失败，退回三阶段：${(e as Error).message}`)
+      }
+    }
+    if (!pixelRes && !strokeRes && env.threeStage) {
       try {
         stages = await prepareStages(base, env.stageLong)
       } catch (e) {
@@ -762,7 +796,6 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
         stages = null
       }
     }
-
     // 测试模式：准备中间帧保存目录
     let framesDir = ''
     if (env.testMode) {
@@ -778,7 +811,13 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       if (job.abort.signal.aborted) return
       const p = (i + 1) / totalFrames // (0, 1]，最后一帧 = 1（完整底图）
       let buf: Buffer
-      if (strokeRes) {
+      if (pixelRes) {
+        // 按批次量化进度：一批一批跳，别每帧只多一格
+        const total = pixelRes.order.length
+        const k = Math.floor((p * total) / pixelRes.batch)
+        const q = Math.min(1, (k * pixelRes.batch) / total)
+        buf = await renderPixelFrame(pixelRes.grid, pixelRes.order, q)
+      } else if (strokeRes) {
         buf = await renderStrokeFrame(strokeRes, p, env.jpegQuality)
       } else if (stages) {
         buf = await renderStageFrame(stages, p, env.jpegQuality)
@@ -791,7 +830,9 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       await atomicWrite(obsPath, buf, String(jobId))
       framesWritten++
       if (framesDir) {
-        const name = `frame_${String(i + 1).padStart(padLen, '0')}.jpg`
+        // pixel 模式出的是真 PNG 帧（砌砖必须硬边，JPEG 会把方块糊掉），文件名也如实叫 .png
+        const isPng = pixelRes && !/^jpe?g$/.test(String(baseFmt))
+        const name = `frame_${String(i + 1).padStart(padLen, '0')}.${isPng ? 'png' : 'jpg'}`
         await writeFile(join(framesDir, name), buf).catch(() => {})
       }
     }
@@ -832,10 +873,12 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
     }
 
     // 步骤五：收尾——最终文件必须是完整底图（兜底，即使最后一帧已是 p=1）
-    const finalBuf = await sharp(base)
-      .flatten({ background: { r: 255, g: 255, b: 255 } })
-      .jpeg({ quality: env.jpegQuality })
-      .toBuffer()
+    const finalBuf = pixelRes
+      ? await renderPixelFrame(pixelRes.grid, pixelRes.order, 1)
+      : await sharp(base)
+          .flatten({ background: { r: 255, g: 255, b: 255 } })
+          .jpeg({ quality: env.jpegQuality })
+          .toBuffer()
     await atomicWrite(obsPath, finalBuf, String(jobId))
 
     return {
@@ -844,8 +887,9 @@ export async function generatePaintProcess(args: PaintArgs): Promise<PaintResult
       frames: framesWritten,
       elapsed_ms: Math.round(performance.now() - t0),
       source,
-      mode: strokeRes ? 'strokes' : stages ? 'stages' : 'scanline',
+      mode: pixelRes ? 'pixel' : strokeRes ? 'strokes' : stages ? 'stages' : 'scanline',
       strokes: strokeRes ? strokeRes.strokes.length : undefined,
+      grid_size: pixelRes ? pixelRes.grid.n : undefined,
       message: painterMsg || undefined,
     }
   } catch (e) {
@@ -892,7 +936,8 @@ const paintTool: DshTool = {
       obs_output_path: { type: 'string', description: 'OBS 监听的图片绝对路径，如 C:\\live_assets\\current_paint.jpg' },
       duration_ms: { type: 'number', description: '整个作画过程持续毫秒数，默认 4000' },
       fps: { type: 'number', description: '刷新频率（帧/秒），默认 10' },
-      mode: { type: 'string', enum: ['stages', 'strokes'], description: 'stages=三阶段派生（默认）；strokes=真逐笔勾线，底图需是干净线稿' },
+      mode: { type: 'string', enum: ['stages', 'strokes', 'pixel'], description: 'stages=三阶段派生（默认）；strokes=真逐笔勾线，底图需是干净线稿；pixel=像素砌砖（N×N 格子按暗→中→亮一块块填满）' },
+      grid_size: { type: 'number', description: 'pixel 模式的网格边长（格子数），默认 64；32=块大怀旧、64=最稳、128=细腻' },
       palette: { type: 'array', items: { type: 'string' }, description: 'strokes 模式的配色（按笔画重心纵带取），如 ["#22384f","#5f9ea6"]，只给一个就是单色' },
     },
   },

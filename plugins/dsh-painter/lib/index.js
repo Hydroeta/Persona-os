@@ -1,9 +1,9 @@
 // src/index.ts
 import { mkdirSync, readdirSync } from "node:fs";
-import { mkdir, rename, writeFile, unlink } from "node:fs/promises";
+import { mkdir, rename, writeFile, unlink, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
-import sharp2 from "sharp";
+import sharp3 from "sharp";
 import axios from "axios";
 
 // src/strokes.ts
@@ -379,6 +379,112 @@ async function renderStrokeFrame(res, p, quality = 88, opts = {}) {
   return sharp(Buffer.from(svg)).jpeg({ quality }).toBuffer();
 }
 
+// src/pixel.ts
+import sharp2 from "sharp";
+async function readPixelGrid(buffer, n, size) {
+  if (n < 2) throw new Error("n \u81F3\u5C11\u4E3A 2");
+  const meta = await sharp2(buffer).metadata();
+  if (!meta.width || !meta.height) throw new Error("\u56FE\u7247\u5C3A\u5BF8\u65E0\u6548");
+  const want = size && size % n === 0 ? size : Math.round(meta.width / n) * n;
+  const side = Math.max(n, want);
+  const { data, info } = await sharp2(buffer).flatten({ background: { r: 255, g: 255, b: 255 } }).resize(side, side, { fit: "cover", kernel: "nearest" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const channels = info.channels;
+  const cell = side / n;
+  const colors = [];
+  for (let r = 0; r < n; r++) {
+    const row = [];
+    for (let c = 0; c < n; c++) {
+      const x = Math.min(side - 1, Math.floor(c * cell + cell / 2));
+      const y = Math.min(side - 1, Math.floor(r * cell + cell / 2));
+      const i = (y * side + x) * channels;
+      row.push([data[i], data[i + 1], data[i + 2], 255]);
+    }
+    colors.push(row);
+  }
+  return { n, size: side, cell, colors };
+}
+function luma(rgb) {
+  return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+}
+function makeRng(seed) {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s = s * 1664525 + 1013904223 >>> 0;
+    return s / 4294967296;
+  };
+}
+function planBrickOrder(grid, opts = {}) {
+  const n = grid.n;
+  const jitter = opts.jitter ?? 0.15;
+  const rng = makeRng(opts.seed ?? 1);
+  const cx = (n - 1) / 2;
+  const cy = (n - 1) / 2;
+  const maxR = Math.hypot(cx, cy) || 1;
+  const cells = [];
+  const lumas = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) lumas.push(luma(grid.colors[r][c]));
+  lumas.sort((a, b) => a - b);
+  const lo = lumas[Math.floor(lumas.length * 0.15)];
+  const hi = lumas[Math.floor(lumas.length * 0.85)];
+  const span = Math.max(1, hi - lo);
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const L = luma(grid.colors[r][c]);
+      const norm2 = Math.min(1, Math.max(0, (L - lo) / span));
+      const band = norm2 < 1 / 3 ? 0 : norm2 < 2 / 3 ? 1 : 2;
+      const radius = Math.hypot(c - cx, r - cy) / maxR;
+      cells.push({ r, c, band, radius, rnd: rng() });
+    }
+  }
+  cells.sort((a, b) => {
+    if (a.band !== b.band) return a.band - b.band;
+    if (Math.abs(a.radius - b.radius) > 0.02) return b.radius - a.radius;
+    return a.rnd - b.rnd;
+  });
+  const total = cells.length;
+  return cells.map((cell, i) => {
+    const base = (i + 0.5) / total;
+    const t = Math.min(0.999, Math.max(0, base + (cell.rnd - 0.5) * 2 * jitter * (1 / total) * total * 1));
+    return { r: cell.r, c: cell.c, t };
+  });
+}
+async function renderPixelFrame(grid, order, p, opts = {}) {
+  const bg = opts.background ?? { r: 255, g: 255, b: 255 };
+  const { n, size, cell } = grid;
+  const buf = Buffer.alloc(size * size * 3);
+  for (let i = 0; i < size * size; i++) {
+    buf[i * 3] = bg.r;
+    buf[i * 3 + 1] = bg.g;
+    buf[i * 3 + 2] = bg.b;
+  }
+  const filled = /* @__PURE__ */ new Set();
+  for (const o of order) {
+    if (o.t > p) continue;
+    const idx = o.r * n + o.c;
+    if (filled.has(idx)) continue;
+    filled.add(idx);
+    const [r, g, b] = grid.colors[o.r][o.c];
+    const x0 = o.c * cell;
+    const y0 = o.r * cell;
+    for (let y = y0; y < y0 + cell; y++) {
+      const rowOff = y * size;
+      for (let x = x0; x < x0 + cell; x++) {
+        const i = (rowOff + x) * 3;
+        buf[i] = r;
+        buf[i + 1] = g;
+        buf[i + 2] = b;
+      }
+    }
+  }
+  return await sharp2(buf, { raw: { width: size, height: size, channels: 3 } }).png().toBuffer();
+}
+function planBrickBatches(n) {
+  const cells = n * n;
+  const batch = cells <= 2500 ? 1 : cells <= 6400 ? 4 : Math.max(4, Math.round(cells / 1600));
+  const steps = Math.max(50, Math.min(120, Math.round(cells / batch / 60) * 60 || 60));
+  return { batch, steps: Math.max(60, Math.min(140, steps)) };
+}
+
 // src/index.ts
 var LOG_TAG = "[dsh-painter]";
 if (!process.env.IMAGE_GEN_URL && process.env.PAINTER_USE_LOCAL_IMAGE !== "1") {
@@ -456,7 +562,7 @@ async function fetchRemoteImage(prompt) {
         } catch {
         }
       }
-      const meta = await sharp2(buf).metadata();
+      const meta = await sharp3(buf).metadata();
       if (!meta.width || !meta.height) throw new Error("\u56FE\u7247\u5C3A\u5BF8\u65E0\u6548");
       const hdr = readPainterHeaders(resp.headers);
       return {
@@ -479,10 +585,10 @@ async function generateLocalTestImage(prompt) {
   const size = env.baseImageSize;
   try {
     const svg = makeTestSvg(prompt, size);
-    const buf = await sharp2(svg).resize(size, size).flatten({ background: { r: 255, g: 255, b: 255 } }).jpeg({ quality: env.jpegQuality }).toBuffer();
+    const buf = await sharp3(svg).resize(size, size).flatten({ background: { r: 255, g: 255, b: 255 } }).jpeg({ quality: env.jpegQuality }).toBuffer();
     return { buffer: buf, width: size, height: size, source: "local-test" };
   } catch {
-    const buf = await sharp2(makeGradientBuffer(size, size), { raw: { width: size, height: size, channels: 4 } }).flatten({ background: { r: 255, g: 255, b: 255 } }).jpeg({ quality: env.jpegQuality }).toBuffer();
+    const buf = await sharp3(makeGradientBuffer(size, size), { raw: { width: size, height: size, channels: 4 } }).flatten({ background: { r: 255, g: 255, b: 255 } }).jpeg({ quality: env.jpegQuality }).toBuffer();
     return { buffer: buf, width: size, height: size, source: "local-test-gradient" };
   }
 }
@@ -521,7 +627,15 @@ function makeGradientBuffer(w, h) {
   }
   return buf;
 }
+async function readLocalImage() {
+  const p = String(process.env.PAINTER_LOCAL_IMAGE || "").trim();
+  const buf = await readFile(p);
+  const meta = await sharp3(buf).metadata();
+  if (!meta.width || !meta.height) throw new Error(`\u672C\u5730\u5E95\u56FE\u65E0\u6548\uFF1A${p}`);
+  return { buffer: buf, width: meta.width, height: meta.height, source: `local:${p}`, format: meta.format };
+}
 async function getBaseImage(prompt) {
+  if (process.env.PAINTER_LOCAL_IMAGE) return readLocalImage();
   if (env.imageGenUrl) return fetchRemoteImage(prompt);
   return generateLocalTestImage(prompt);
 }
@@ -577,8 +691,8 @@ var RevealMask = class {
 async function renderFrame(base, mask, quality) {
   const w = mask.width;
   const h = mask.height;
-  const withAlpha = await sharp2(base).joinChannel(mask.toBuffer(), { raw: { width: w, height: h, channels: 1 } }).toBuffer();
-  return sharp2({ create: { width: w, height: h, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite([{ input: withAlpha, blend: "over" }]).jpeg({ quality }).toBuffer();
+  const withAlpha = await sharp3(base).joinChannel(mask.toBuffer(), { raw: { width: w, height: h, channels: 1 } }).toBuffer();
+  return sharp3({ create: { width: w, height: h, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite([{ input: withAlpha, blend: "over" }]).jpeg({ quality }).toBuffer();
 }
 var STAGE_P1 = 0.46;
 var STAGE_P2 = 0.82;
@@ -690,13 +804,13 @@ function inkDistanceField(sketch, w, h, sw, sh) {
   return { dist, sw, sh, maxDist: Math.max(1, maxDist) };
 }
 async function prepareStages(finalBuf, targetLong) {
-  const meta = await sharp2(finalBuf).metadata();
+  const meta = await sharp3(finalBuf).metadata();
   const iw = meta.width || 1024;
   const ih = meta.height || 1024;
   const scale = Math.min(1, targetLong / Math.max(iw, ih));
   const w = Math.max(64, Math.round(iw * scale));
   const h = Math.max(64, Math.round(ih * scale));
-  const { data: rgb } = await sharp2(finalBuf).flatten({ background: "#ffffff" }).resize(w, h, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { data: rgb } = await sharp3(finalBuf).flatten({ background: "#ffffff" }).resize(w, h, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const final = new Uint8Array(rgb);
   const sketch = sketchFromRgb(final, w, h);
   const flat = flatFromRgb(final, w, h);
@@ -813,7 +927,7 @@ async function renderStageFrame(st, p, quality) {
       }
     }
   }
-  return sharp2(Buffer.from(out), { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality }).toBuffer();
+  return sharp3(Buffer.from(out), { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality }).toBuffer();
 }
 async function atomicWrite(target, buf, tmpSuffix) {
   await mkdir(dirname(target), { recursive: true });
@@ -891,6 +1005,7 @@ async function generatePaintProcess(args) {
     let base;
     let w;
     let h;
+    let baseFmt = "";
     try {
       const genPrompt = args.mode === "strokes" && !/lineart|coloring book|线稿/i.test(prompt) ? `${prompt}\uFF0Csimple lineart, clean thick strokes, coloring book page, black ink on white background, no shading` : prompt;
       const got = await getBaseImage(genPrompt);
@@ -898,6 +1013,7 @@ async function generatePaintProcess(args) {
       w = got.width;
       h = got.height;
       source = got.source;
+      baseFmt = String(got.format || "");
       painterMsg = got.message ? decodeURIComponentSafe(got.message) : "";
     } catch (e) {
       return { ok: false, error: `\u83B7\u53D6\u5E95\u56FE\u5931\u8D25\uFF1A${e.message}`, elapsed_ms: Math.round(performance.now() - t0) };
@@ -925,7 +1041,20 @@ async function generatePaintProcess(args) {
         console.error(`${LOG_TAG} \u7B14\u753B\u8FFD\u8E2A\u5931\u8D25\uFF0C\u9000\u56DE\u4E09\u9636\u6BB5\uFF1A${e.message}`);
       }
     }
-    if (!strokeRes && env.threeStage) {
+    let pixelRes = null;
+    if (args.mode === "pixel") {
+      try {
+        const n = clampInt(String(args.grid_size), 8, 256, 64);
+        const grid = await readPixelGrid(base, n);
+        const order = planBrickOrder(grid, { seed: 7 });
+        const { batch } = planBrickBatches(n);
+        pixelRes = { grid, order, batch };
+        console.log(`${LOG_TAG} \u50CF\u7D20\u6A21\u5F0F\uFF1A${n}\xD7${n}\uFF0C\u6BCF\u683C ${grid.cell}px\uFF0C\u6BCF\u6B65\u5237 ${batch} \u683C`);
+      } catch (e) {
+        console.error(`${LOG_TAG} \u50CF\u7D20\u5316\u5931\u8D25\uFF0C\u9000\u56DE\u4E09\u9636\u6BB5\uFF1A${e.message}`);
+      }
+    }
+    if (!pixelRes && !strokeRes && env.threeStage) {
       try {
         stages = await prepareStages(base, env.stageLong);
       } catch (e) {
@@ -944,7 +1073,12 @@ async function generatePaintProcess(args) {
       if (job.abort.signal.aborted) return;
       const p = (i + 1) / totalFrames;
       let buf;
-      if (strokeRes) {
+      if (pixelRes) {
+        const total = pixelRes.order.length;
+        const k = Math.floor(p * total / pixelRes.batch);
+        const q = Math.min(1, k * pixelRes.batch / total);
+        buf = await renderPixelFrame(pixelRes.grid, pixelRes.order, q);
+      } else if (strokeRes) {
         buf = await renderStrokeFrame(strokeRes, p, env.jpegQuality);
       } else if (stages) {
         buf = await renderStageFrame(stages, p, env.jpegQuality);
@@ -956,7 +1090,8 @@ async function generatePaintProcess(args) {
       await atomicWrite(obsPath, buf, String(jobId));
       framesWritten++;
       if (framesDir) {
-        const name = `frame_${String(i + 1).padStart(padLen, "0")}.jpg`;
+        const isPng = pixelRes && !/^jpe?g$/.test(String(baseFmt));
+        const name = `frame_${String(i + 1).padStart(padLen, "0")}.${isPng ? "png" : "jpg"}`;
         await writeFile(join(framesDir, name), buf).catch(() => {
         });
       }
@@ -993,7 +1128,7 @@ async function generatePaintProcess(args) {
         source
       };
     }
-    const finalBuf = await sharp2(base).flatten({ background: { r: 255, g: 255, b: 255 } }).jpeg({ quality: env.jpegQuality }).toBuffer();
+    const finalBuf = pixelRes ? await renderPixelFrame(pixelRes.grid, pixelRes.order, 1) : await sharp3(base).flatten({ background: { r: 255, g: 255, b: 255 } }).jpeg({ quality: env.jpegQuality }).toBuffer();
     await atomicWrite(obsPath, finalBuf, String(jobId));
     return {
       ok: true,
@@ -1001,8 +1136,9 @@ async function generatePaintProcess(args) {
       frames: framesWritten,
       elapsed_ms: Math.round(performance.now() - t0),
       source,
-      mode: strokeRes ? "strokes" : stages ? "stages" : "scanline",
+      mode: pixelRes ? "pixel" : strokeRes ? "strokes" : stages ? "stages" : "scanline",
       strokes: strokeRes ? strokeRes.strokes.length : void 0,
+      grid_size: pixelRes ? pixelRes.grid.n : void 0,
       message: painterMsg || void 0
     };
   } catch (e) {
@@ -1035,7 +1171,8 @@ var paintTool = {
       obs_output_path: { type: "string", description: "OBS \u76D1\u542C\u7684\u56FE\u7247\u7EDD\u5BF9\u8DEF\u5F84\uFF0C\u5982 C:\\live_assets\\current_paint.jpg" },
       duration_ms: { type: "number", description: "\u6574\u4E2A\u4F5C\u753B\u8FC7\u7A0B\u6301\u7EED\u6BEB\u79D2\u6570\uFF0C\u9ED8\u8BA4 4000" },
       fps: { type: "number", description: "\u5237\u65B0\u9891\u7387\uFF08\u5E27/\u79D2\uFF09\uFF0C\u9ED8\u8BA4 10" },
-      mode: { type: "string", enum: ["stages", "strokes"], description: "stages=\u4E09\u9636\u6BB5\u6D3E\u751F\uFF08\u9ED8\u8BA4\uFF09\uFF1Bstrokes=\u771F\u9010\u7B14\u52FE\u7EBF\uFF0C\u5E95\u56FE\u9700\u662F\u5E72\u51C0\u7EBF\u7A3F" },
+      mode: { type: "string", enum: ["stages", "strokes", "pixel"], description: "stages=\u4E09\u9636\u6BB5\u6D3E\u751F\uFF08\u9ED8\u8BA4\uFF09\uFF1Bstrokes=\u771F\u9010\u7B14\u52FE\u7EBF\uFF0C\u5E95\u56FE\u9700\u662F\u5E72\u51C0\u7EBF\u7A3F\uFF1Bpixel=\u50CF\u7D20\u780C\u7816\uFF08N\xD7N \u683C\u5B50\u6309\u6697\u2192\u4E2D\u2192\u4EAE\u4E00\u5757\u5757\u586B\u6EE1\uFF09" },
+      grid_size: { type: "number", description: "pixel \u6A21\u5F0F\u7684\u7F51\u683C\u8FB9\u957F\uFF08\u683C\u5B50\u6570\uFF09\uFF0C\u9ED8\u8BA4 64\uFF1B32=\u5757\u5927\u6000\u65E7\u300164=\u6700\u7A33\u3001128=\u7EC6\u817B" },
       palette: { type: "array", items: { type: "string" }, description: 'strokes \u6A21\u5F0F\u7684\u914D\u8272\uFF08\u6309\u7B14\u753B\u91CD\u5FC3\u7EB5\u5E26\u53D6\uFF09\uFF0C\u5982 ["#22384f","#5f9ea6"]\uFF0C\u53EA\u7ED9\u4E00\u4E2A\u5C31\u662F\u5355\u8272' }
     }
   },
