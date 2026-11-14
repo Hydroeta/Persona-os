@@ -48,7 +48,7 @@
 - 🎬 **Rundown 自主直播**（`dsh-live-director`）：弹幕 WebSocket 接入 → 优先级队列（礼物>画图>对话）→ 状态机（闲聊 3min → 你画我猜 5min → 自由点单 5min 循环）→ 20s 心跳自动切环节 / 冷场破冰；观众记忆注入 System Prompt；命中“在干嘛/画了什么”自动截屏喂多模态视觉。
 - 🌐 **Playwright 无头浏览器**（`dsh-web-agent`）：后台静默抓网页正文/链接/点击，**不抢占物理鼠标**，带超时防挂死。
 - 🎭 **多角色热切换**（`dsh-persona-core`）：`switch_persona` 即时切换人格，回写 `active.json` 无需重启。
-- 🖌️ **逐笔作画**（`dsh-painter`）：两种模式——`stages` 三阶段显影（勾线→铺色→细节，本地派生，不重复生图）；`strokes` 真逐笔（涂色本线稿 → 细化 → 沿骨架追踪 → 相邻碎片两轮拼接 → 按条带排序 → 逐帧推进 `dashoffset`），画一只戴帽子的鲸鱼约 26 笔；笔画不足或追踪失败自动退回三阶段。
+- 🖌️ **逐笔作画**（`dsh-painter`）：三种模式——`stages` 三阶段显影（勾线→铺色→细节，本地派生，不重复生图）；`strokes` 真逐笔（涂色本线稿 → 细化 → 沿骨架追踪 → 相邻碎片两轮拼接 → 按条带排序 → 逐帧推进 `dashoffset`），画一只戴帽子的鲸鱼约 26 笔；`pixel` 像素砌砖（N×N 网格按「暗→中→亮」分档、由外向内一块块填满，格子数随 N 自适应批量刷新）。笔画不足或追踪失败自动退回三阶段。
 - 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
 - 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
 - 🎤 **实时 AI 翻唱**（`dsh-audio-cover` + `audio-cover` :8005）：弹幕 `!翻唱 <歌名>` 开唱、`!停唱` 收工；音频走 `VB-CABLE` 闭环，OBS 伴奏可联动；RVC 推理放在独立常驻 worker 里，模型缺失/超时一律回退直通不停播。
@@ -142,11 +142,14 @@ persona-os/
 │  ├─ dsh-service-manager/   #   微服务生命周期
 │  ├─ dsh-self-play/         #   人格自进化（半夜复盘去 AI 味）
 │  ├─ dsh-game-agent/        #   游戏代理大脑（截屏→VLM→虚拟手柄 :8003）
+│  ├─ dsh-screen-companion/  #   读屏陪伴（绿眼睛开着才看，60s 一次）
+│  ├─ dsh-autopilot/         #   自进化总控（存方案 / 按方案改代码推仓库）
 │  └─ dsh-audio-cover/       #   实时翻唱开关（调 :8005，含 RVC worker 客户端）
 ├─ core-services/            # Python 微服务层
 │  ├─ memory/   main.py      #   记忆存取 :8001
-│  ├─ painter/  main.py      #   生图 :8002
+│  ├─ painter/  main.py      #   生图 :8002（pixel_art.py：像素画静态处理）
 │  ├─ game-bot/ main.py      #   虚拟手柄 :8003（vgamepad + ViGEmBus）
+│  ├─ screen-indicator/      #   绿眼睛悬浮窗（读屏开关，无端口）
 │  └─ audio-cover/ main.py   #   实时翻唱 :8005（sounddevice 音频闭环）
 │     └─ rvc/                #   RVC 常驻推理 worker + 训练流水线（train_rvc.py）
 ├─ dsh/                      # DSH 工作区（home/cordis.patch.yml）
