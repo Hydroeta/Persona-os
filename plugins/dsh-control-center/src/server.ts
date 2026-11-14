@@ -17,8 +17,12 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import { probeAll, readHostInfo, type ServiceStatus, type HostInfo } from './probe.js'
 import { sendTestDanmaku, resolveDanmakuWsUrl, type DanmakuReply } from './danmaku.js'
+import { EventHub, type PanelEvent } from './events.js'
 
 const LOG_TAG = '[dsh-control-center]'
+
+/** 面板事件总线（SSE）：live-director 推回复/播放状态，面板广播给浏览器 */
+export const hub = new EventHub()
 
 /** 服务控制接口（dsh-service-manager 起的 :8010） */
 export const CONTROL_API = (process.env.SERVICE_CTL_URL || 'http://127.0.0.1:8010').replace(/\/+$/, '')
@@ -95,6 +99,25 @@ export async function startControlCenter(opts: { port?: number; page?: () => str
         return res.end(html)
       }
       if (req.method === 'GET' && url === '/health') return json(res, 200, { ok: true, service: 'dsh-control-center' })
+
+      if (req.method === 'GET' && url.startsWith('/api/event/stream')) {
+        return hub.addClient(res)
+      }
+      if (req.method === 'GET' && url.startsWith('/api/event/recent')) {
+        return json(res, 200, { ok: true, events: hub.recentEvents() })
+      }
+      if (req.method === 'POST' && url === '/api/event') {
+        const raw = await readBody(req)
+        let ev: PanelEvent
+        try {
+          ev = JSON.parse(raw || '{}')
+        } catch {
+          return json(res, 400, { ok: false, error: 'JSON 解析失败' })
+        }
+        if (!ev || typeof ev.type !== 'string') return json(res, 400, { ok: false, error: '缺少 type' })
+        hub.publish(ev)
+        return json(res, 200, { ok: true, listeners: hub.clientCount })
+      }
 
       if (req.method === 'GET' && url.startsWith('/api/latest-paint')) {
         if (!PAINT_BOARD_PATH) return json(res, 404, { ok: false, error: '未配置 PAINT_BOARD_PATH' })
@@ -174,7 +197,11 @@ export async function startControlCenter(opts: { port?: number; page?: () => str
       console.log(`${LOG_TAG} 面板已启动 http://127.0.0.1:${actual}`)
       resolve({
         port: actual,
-        close: () => new Promise<void>((r) => server.close(() => r())),
+        close: () =>
+          new Promise<void>((r) => {
+            hub.closeAll()
+            server.close(() => r())
+          }),
       })
     })
   })

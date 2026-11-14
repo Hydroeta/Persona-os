@@ -4421,8 +4421,41 @@ async function stopBgm() {
   }
 }
 
+// src/report.ts
+var LOG_TAG6 = "[dsh-live-director/report]";
+function panelEventUrl() {
+  if (String(process.env.PANEL_EVENT || "") === "0") return "";
+  return String(process.env.PANEL_EVENT_URL || "http://127.0.0.1:8088/api/event").trim();
+}
+async function reportEvent(ev, opts = {}) {
+  const url = opts.url ?? panelEventUrl();
+  if (!url) return false;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 1500);
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(ev),
+      signal: ctrl.signal
+    });
+    return r.ok;
+  } catch (e) {
+    if (process.env.PANEL_EVENT_DEBUG === "1") {
+      console.log(`${LOG_TAG6} \u63A8\u9001\u5931\u8D25\uFF08\u9762\u677F\u53EF\u80FD\u6CA1\u5F00\uFF09\uFF1A${e.message}`);
+    }
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function reportEventNoWait(ev, opts = {}) {
+  void reportEvent(ev, opts).catch(() => {
+  });
+}
+
 // src/index.ts
-var LOG_TAG6 = "[dsh-live-director]";
+var LOG_TAG7 = "[dsh-live-director]";
 var DANMAKU_PORT = Number(process.env.DSH_LIVE_DIRECTOR_PORT) || 9001;
 var danmakuServer = null;
 var director = null;
@@ -4451,7 +4484,7 @@ async function generateReply(ctx, prompt, fallback) {
       const content = res?.content;
       if (typeof content === "string" && content.trim()) return content;
     } catch (e) {
-      console.error(`${LOG_TAG6} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
+      console.error(`${LOG_TAG7} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
     }
   }
   return fallback;
@@ -4469,7 +4502,7 @@ async function chatWithMessages(ctx, messages, fallback) {
       const content = res?.content;
       if (typeof content === "string" && content.trim()) return content;
     } catch (e) {
-      console.error(`${LOG_TAG6} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
+      console.error(`${LOG_TAG7} LLM \u8C03\u7528\u5931\u8D25\uFF0C\u964D\u7EA7 mock \u6587\u6848\uFF1A`, e.message);
     }
   }
   return fallback;
@@ -4542,8 +4575,9 @@ function buildChitchatPrompt(opts) {
   return parts.join("\n");
 }
 function speak(text, meta = {}) {
-  console.log(`${LOG_TAG6} \u{1F50A} speak\uFF1A${text}`, Object.keys(meta).length ? meta : "");
+  console.log(`${LOG_TAG7} \u{1F50A} speak\uFF1A${text}`, Object.keys(meta).length ? meta : "");
   director?.markInteraction();
+  reportEventNoWait({ type: "chat_reply", text, user: String(meta?.user ?? ""), meta });
   void planVoiceFx(text);
 }
 async function planVoiceFx(text) {
@@ -4558,7 +4592,7 @@ async function planVoiceFx(text) {
     });
     if (!r.ok) return;
     const j = await r.json();
-    if (j?.effect) console.log(`${LOG_TAG6} \u{1F399}\uFE0F \u62DF\u58F0\u8BCD\u5EFA\u8BAE\uFF1A${j.effect}\uFF08${j.reason}\uFF09`);
+    if (j?.effect) console.log(`${LOG_TAG7} \u{1F399}\uFE0F \u62DF\u58F0\u8BCD\u5EFA\u8BAE\uFF1A${j.effect}\uFF08${j.reason}\uFF09`);
   } catch {
   } finally {
     clearTimeout(timer);
@@ -4574,7 +4608,7 @@ async function handleCoverCommand(text) {
     if (stop) {
       await fetch(`${AUDIO_COVER_URL}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       const bgm2 = await stopBgm();
-      console.log(`${LOG_TAG6} \u{1F3A4} \u6536\u5DE5\uFF0C\u4F34\u594F\u505C\u6B62=${bgm2.mode}`);
+      console.log(`${LOG_TAG7} \u{1F3A4} \u6536\u5DE5\uFF0C\u4F34\u594F\u505C\u6B62=${bgm2.mode}`);
       return "\u6536\u5DE5\uFF01\u8FD9\u9996\u6B4C\u5C31\u5531\u5230\u8FD9\uFF0C\u638C\u58F0\u5462\uFF1F";
     }
     const song = (start?.[1] || "").trim();
@@ -4584,13 +4618,13 @@ async function handleCoverCommand(text) {
       body: JSON.stringify({ mode: "bypass", output_device: null })
     });
     const bgm = await playBgm(song);
-    console.log(`${LOG_TAG6} \u{1F3A4} \u5B9E\u65F6\u7FFB\u5531\u5DF2\u5F00\u542F\uFF0C\u6B4C\u66F2=${song || "\u672A\u6307\u5B9A"}\uFF0C\u4F34\u594F=${bgm.mode}${bgm.file ? ` (${bgm.file})` : ""}${bgm.error ? ` err=${bgm.error}` : ""}`);
+    console.log(`${LOG_TAG7} \u{1F3A4} \u5B9E\u65F6\u7FFB\u5531\u5DF2\u5F00\u542F\uFF0C\u6B4C\u66F2=${song || "\u672A\u6307\u5B9A"}\uFF0C\u4F34\u594F=${bgm.mode}${bgm.file ? ` (${bgm.file})` : ""}${bgm.error ? ` err=${bgm.error}` : ""}`);
     if (song) {
       return bgm.ok ? `\u300A${song}\u300B\u662F\u5427\uFF1F\u6765\u4E86\uFF0C\u6211\u53EF\u662F\u7EC3\u8FC7\u7684\uFF01` : `\u300A${song}\u300B\u4F34\u594F\u6CA1\u627E\u5230\uFF0C\u6211\u5C31\u6E05\u5531\u5427\uFF01`;
     }
     return "\u5F00\u5531\uFF01\u60F3\u542C\u4EC0\u4E48\u968F\u4FBF\u70B9\u3002";
   } catch (e) {
-    console.error(`${LOG_TAG6} \u5B9E\u65F6\u7FFB\u5531\u8C03\u7528\u5931\u8D25\uFF1A`, e?.message || e);
+    console.error(`${LOG_TAG7} \u5B9E\u65F6\u7FFB\u5531\u8C03\u7528\u5931\u8D25\uFF1A`, e?.message || e);
     return "\u7FFB\u5531\u8BBE\u5907\u6CA1\u8FDE\u4E0A\uFF0C\u7B49\u6211\u628A\u5B83\u63D2\u597D\u518D\u8BF4\u3002";
   }
 }
@@ -4692,15 +4726,15 @@ var tools = [
 var index_default = {
   name: "dsh-live-director",
   async apply(ctx) {
-    console.log(`${LOG_TAG6} apply`);
+    console.log(`${LOG_TAG7} apply`);
     const disposers = [];
     for (const t of tools) {
       try {
         const d = ctx.tools.register(t);
         if (typeof d === "function") disposers.push(d);
-        console.log(`${LOG_TAG6} \u5DF2\u6CE8\u518C\u5DE5\u5177 ${t.name}`);
+        console.log(`${LOG_TAG7} \u5DF2\u6CE8\u518C\u5DE5\u5177 ${t.name}`);
       } catch (e) {
-        console.error(`${LOG_TAG6} \u6CE8\u518C\u5DE5\u5177 ${t.name} \u5931\u8D25\uFF1A`, e);
+        console.error(`${LOG_TAG7} \u6CE8\u518C\u5DE5\u5177 ${t.name} \u5931\u8D25\uFF1A`, e);
       }
     }
     memoryClient = memoryClientOverride ?? new MemoryClient();
@@ -4727,17 +4761,17 @@ var index_default = {
         }
       });
       console.log(
-        `${LOG_TAG6} \u5F39\u5E55\u670D\u52A1\u5C31\u7EEA\uFF08\u7AEF\u53E3 ${DANMAKU_PORT}\uFF09\uFF0C\u4F18\u5148\u7EA7\uFF1A\u793C\u7269=${3 /* GIFT */} \u753B\u56FE=${2 /* DRAW */} \u5BF9\u8BDD=${1 /* CHAT */}`
+        `${LOG_TAG7} \u5F39\u5E55\u670D\u52A1\u5C31\u7EEA\uFF08\u7AEF\u53E3 ${DANMAKU_PORT}\uFF09\uFF0C\u4F18\u5148\u7EA7\uFF1A\u793C\u7269=${3 /* GIFT */} \u753B\u56FE=${2 /* DRAW */} \u5BF9\u8BDD=${1 /* CHAT */}`
       );
       stopConsume = danmakuServer.queue.consume(async (item) => {
         await consumeDanmaku(ctx, item);
       });
-      console.log(`${LOG_TAG6} \u961F\u5217\u6D88\u8D39\u8005\u5DF2\u542F\u52A8`);
+      console.log(`${LOG_TAG7} \u961F\u5217\u6D88\u8D39\u8005\u5DF2\u542F\u52A8`);
     } catch (e) {
-      console.error(`${LOG_TAG6} \u542F\u52A8\u5F39\u5E55\u670D\u52A1\u5931\u8D25\uFF08\u7AEF\u53E3 ${DANMAKU_PORT} \u53EF\u80FD\u88AB\u5360\u7528\uFF09\uFF1A`, e);
+      console.error(`${LOG_TAG7} \u542F\u52A8\u5F39\u5E55\u670D\u52A1\u5931\u8D25\uFF08\u7AEF\u53E3 ${DANMAKU_PORT} \u53EF\u80FD\u88AB\u5360\u7528\uFF09\uFF1A`, e);
     }
     ctx.on("dispose", () => {
-      console.log(`${LOG_TAG6} dispose\uFF1A\u505C\u6B62\u5FC3\u8DF3\u3001\u5173\u95ED\u961F\u5217\u6D88\u8D39\u3001\u5173\u95ED\u5F39\u5E55\u670D\u52A1\u3001\u6CE8\u9500 ${disposers.length} \u4E2A\u5DE5\u5177`);
+      console.log(`${LOG_TAG7} dispose\uFF1A\u505C\u6B62\u5FC3\u8DF3\u3001\u5173\u95ED\u961F\u5217\u6D88\u8D39\u3001\u5173\u95ED\u5F39\u5E55\u670D\u52A1\u3001\u6CE8\u9500 ${disposers.length} \u4E2A\u5DE5\u5177`);
       director?.stop();
       director = null;
       memoryClient = null;
@@ -4750,7 +4784,7 @@ var index_default = {
         stopConsume = null;
       }
       if (danmakuServer) {
-        danmakuServer.close().catch((e) => console.error(`${LOG_TAG6} \u5173\u95ED\u5F39\u5E55\u670D\u52A1\u51FA\u9519\uFF1A`, e));
+        danmakuServer.close().catch((e) => console.error(`${LOG_TAG7} \u5173\u95ED\u5F39\u5E55\u670D\u52A1\u51FA\u9519\uFF1A`, e));
         danmakuServer = null;
       }
       for (const d of disposers) {

@@ -21,6 +21,7 @@ import { Director, RundownState, type SysAction, STATE_LABEL } from './director'
 import { MemoryClient, buildMemoryPrompt } from './memory'
 import { Perception, shouldCaptureScreen, buildScreenPrompt } from './perception'
 import { playBgm, stopBgm } from './bgm'
+import { reportEventNoWait } from './report'
 
 const LOG_TAG = '[dsh-live-director]'
 const DANMAKU_PORT = Number(process.env.DSH_LIVE_DIRECTOR_PORT) || 9001
@@ -229,6 +230,8 @@ export function buildChitchatPrompt(opts: {
 function speak(text: string, meta: Record<string, unknown> = {}): void {
   console.log(`${LOG_TAG} 🔊 speak：${text}`, Object.keys(meta).length ? meta : '')
   director?.markInteraction()
+  // 推给总控面板：让面板的弹幕流里出现她真实说的这句（面板没开时静默失败）
+  reportEventNoWait({ type: 'chat_reply', text, user: String(meta?.user ?? ''), meta })
   // 拟声词前置判断：命中叹气/轻笑/哈欠时，TTS 接线后应在语音前插入气口（30ms 交叉淡化）
   void planVoiceFx(text)
   // TODO(模块 5)：调用真实 TTS 服务播放 audio

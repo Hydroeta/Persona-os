@@ -1,0 +1,15 @@
+# dsh-control-center —— DSH bundle patch
+#
+# 装：dsh plugin --profile web add "<仓库>\plugins\dsh-control-center"
+#
+# 启动后面板在 http://127.0.0.1:8088 （或调工具 open_dashboard）
+#
+# 环境变量：
+#   CONTROL_CENTER_PORT   面板端口，默认 8088
+#   DANMAKU_WS_URL        弹幕 WS，默认 ws://127.0.0.1:9001
+#   PAINT_BOARD_PATH      生图浮窗读的图片（OBS 图片源那张）；不配则浮窗一直显示"等待作画"
+#   CONTROL_ASSETS_DIR    静态资源根，默认插件下 web/assets（放 avatar.png）
+#   SERVICE_CTL_URL       服务控制接口，默认 http://127.0.0.1:8010
+- insert:
+    - id: dsh-control-center
+      name: 'dsh-control-center'

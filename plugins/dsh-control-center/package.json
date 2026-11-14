@@ -1,0 +1,42 @@
+{
+  "name": "dsh-control-center",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 插件：persona-os 总控面板。在 :8088 起本地 Web 服务，提供微服务/插件死活看板（health 与 TCP 双模式）、内存与显卡显存、发模拟弹幕到 :9001 的测试台、可开关的生图浮窗，并接收 dsh-live-director 推来的回复/播放事件。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./probe": "./lib/probe.js",
+    "./server": "./lib/server.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "web",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs",
+    "test": "node test-mock.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.12",
+    "esbuild": "^0.25.0"
+  }
+}

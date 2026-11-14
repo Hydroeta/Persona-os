@@ -244,6 +244,12 @@ async function runDraw(cmd: DrawCommand, user: string, deps: DrawRunnerDeps): Pr
   const framesDir = framesDirFor(deps.dirs.framesRoot)
 
   const prompt = deps.buildPrompt ? deps.buildPrompt(cmd) : cmd.content
+  try {
+    const { reportEventNoWait } = await import('./report.js')
+    reportEventNoWait({ type: 'paint_start', prompt })
+  } catch {
+    /* 面板没接也无所谓 */
+  }
   const res: PaintResponse = await requestPaint({
     prompt,
     obs_output_path: png,
@@ -275,6 +281,13 @@ async function runDraw(cmd: DrawCommand, user: string, deps: DrawRunnerDeps): Pr
     } catch (e) {
       console.error(`${LOG_TAG} 头像交付异常（不影响作画）：${(e as Error).message}`)
     }
+  }
+
+  try {
+    const { reportEventNoWait } = await import('./report.js')
+    reportEventNoWait({ type: 'paint_end', ok: !!res.ok })
+  } catch {
+    /* ignore */
   }
 
   console.log(`${LOG_TAG} ${cmd.kind} 完成 user=${user} mode=${cmd.mode} aspect=${cmd.aspect} ok=${res.ok} -> ${png}`)

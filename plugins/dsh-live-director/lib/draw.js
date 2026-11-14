@@ -9,6 +9,51 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// src/report.ts
+var report_exports = {};
+__export(report_exports, {
+  panelEventUrl: () => panelEventUrl,
+  reportEvent: () => reportEvent,
+  reportEventNoWait: () => reportEventNoWait
+});
+function panelEventUrl() {
+  if (String(process.env.PANEL_EVENT || "") === "0") return "";
+  return String(process.env.PANEL_EVENT_URL || "http://127.0.0.1:8088/api/event").trim();
+}
+async function reportEvent(ev, opts = {}) {
+  const url = opts.url ?? panelEventUrl();
+  if (!url) return false;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 1500);
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(ev),
+      signal: ctrl.signal
+    });
+    return r.ok;
+  } catch (e) {
+    if (process.env.PANEL_EVENT_DEBUG === "1") {
+      console.log(`${LOG_TAG} \u63A8\u9001\u5931\u8D25\uFF08\u9762\u677F\u53EF\u80FD\u6CA1\u5F00\uFF09\uFF1A${e.message}`);
+    }
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function reportEventNoWait(ev, opts = {}) {
+  void reportEvent(ev, opts).catch(() => {
+  });
+}
+var LOG_TAG;
+var init_report = __esm({
+  "src/report.ts"() {
+    "use strict";
+    LOG_TAG = "[dsh-live-director/report]";
+  }
+});
+
 // src/fan-art.ts
 var fan_art_exports = {};
 __export(fan_art_exports, {
@@ -22,23 +67,23 @@ function setFanArtSender(fn) {
 async function sendFanArtToQQ(userId, filePath) {
   if (!userId || !filePath) return false;
   if (!existsSync(filePath)) {
-    console.error(`${LOG_TAG} \u6587\u4EF6\u4E0D\u5B58\u5728\uFF0C\u8DF3\u8FC7\u4EA4\u4ED8\uFF1A${filePath}`);
+    console.error(`${LOG_TAG2} \u6587\u4EF6\u4E0D\u5B58\u5728\uFF0C\u8DF3\u8FC7\u4EA4\u4ED8\uFF1A${filePath}`);
     return false;
   }
   try {
     return await sender(userId, filePath);
   } catch (e) {
-    console.error(`${LOG_TAG} \u4EA4\u4ED8\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F5C\u753B\uFF09\uFF1A${e.message}`);
+    console.error(`${LOG_TAG2} \u4EA4\u4ED8\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F5C\u753B\uFF09\uFF1A${e.message}`);
     return false;
   }
 }
-var LOG_TAG, sender;
+var LOG_TAG2, sender;
 var init_fan_art = __esm({
   "src/fan-art.ts"() {
     "use strict";
-    LOG_TAG = "[dsh-live-director/fan-art]";
+    LOG_TAG2 = "[dsh-live-director/fan-art]";
     sender = async (userId, filePath) => {
-      console.log(`${LOG_TAG} [QQ Hook] \u51C6\u5907\u5C06 ${filePath} \u53D1\u9001\u7ED9 ${userId}`);
+      console.log(`${LOG_TAG2} [QQ Hook] \u51C6\u5907\u5C06 ${filePath} \u53D1\u9001\u7ED9 ${userId}`);
       return false;
     };
   }
@@ -73,7 +118,7 @@ async function requestPaint(req, opts = {}) {
 }
 
 // src/draw.ts
-var LOG_TAG2 = "[dsh-live-director/draw]";
+var LOG_TAG3 = "[dsh-live-director/draw]";
 var COOLDOWN_REPLY = "\u522B\u6025\uFF0C\u753B\u7B14\u8FD8\u6CA1\u5E72\u5462";
 function pickMode(text) {
   const t = String(text || "").toLowerCase();
@@ -188,10 +233,10 @@ function handleDrawCommand(text, user, deps) {
   const start = announceStart(cmd, user);
   deps.speak?.(start);
   if (deps.panel) {
-    void deps.panel.showArt().catch((e) => console.error(`${LOG_TAG2} OBS \u663E\u793A\u5F02\u5E38\uFF1A${e.message}`));
+    void deps.panel.showArt().catch((e) => console.error(`${LOG_TAG3} OBS \u663E\u793A\u5F02\u5E38\uFF1A${e.message}`));
   }
   void runDraw(cmd, user, deps).catch((e) => {
-    console.error(`${LOG_TAG2} \u4F5C\u753B\u4EFB\u52A1\u5F02\u5E38\uFF1A${e.message}`);
+    console.error(`${LOG_TAG3} \u4F5C\u753B\u4EFB\u52A1\u5F02\u5E38\uFF1A${e.message}`);
   });
   return { handled: true, reply: start };
 }
@@ -202,6 +247,11 @@ async function runDraw(cmd, user, deps) {
   mkdirSync(resolve(deps.dirs.framesRoot), { recursive: true });
   const framesDir = framesDirFor(deps.dirs.framesRoot);
   const prompt = deps.buildPrompt ? deps.buildPrompt(cmd) : cmd.content;
+  try {
+    const { reportEventNoWait: reportEventNoWait2 } = await Promise.resolve().then(() => (init_report(), report_exports));
+    reportEventNoWait2({ type: "paint_start", prompt });
+  } catch {
+  }
   const res = await requestPaint({
     prompt,
     obs_output_path: png,
@@ -216,10 +266,10 @@ async function runDraw(cmd, user, deps) {
     try {
       copyFileSync(res.path, png);
     } catch (e) {
-      console.error(`${LOG_TAG2} \u843D\u76D8\u5931\u8D25\uFF08\u4ECD\u5728\u539F\u8DEF\u5F84\uFF09\uFF1A${e.message}`);
+      console.error(`${LOG_TAG3} \u843D\u76D8\u5931\u8D25\uFF08\u4ECD\u5728\u539F\u8DEF\u5F84\uFF09\uFF1A${e.message}`);
     }
   } else {
-    console.error(`${LOG_TAG2} \u4F5C\u753B\u5931\u8D25\uFF1A${res.error || "\u672A\u77E5"}`);
+    console.error(`${LOG_TAG3} \u4F5C\u753B\u5931\u8D25\uFF1A${res.error || "\u672A\u77E5"}`);
   }
   const done = announceDone(cmd, user, !!res.ok);
   deps.speak?.(done);
@@ -228,16 +278,21 @@ async function runDraw(cmd, user, deps) {
       const { sendFanArtToQQ: sendFanArtToQQ2 } = await Promise.resolve().then(() => (init_fan_art(), fan_art_exports));
       await sendFanArtToQQ2(user, png);
     } catch (e) {
-      console.error(`${LOG_TAG2} \u5934\u50CF\u4EA4\u4ED8\u5F02\u5E38\uFF08\u4E0D\u5F71\u54CD\u4F5C\u753B\uFF09\uFF1A${e.message}`);
+      console.error(`${LOG_TAG3} \u5934\u50CF\u4EA4\u4ED8\u5F02\u5E38\uFF08\u4E0D\u5F71\u54CD\u4F5C\u753B\uFF09\uFF1A${e.message}`);
     }
   }
-  console.log(`${LOG_TAG2} ${cmd.kind} \u5B8C\u6210 user=${user} mode=${cmd.mode} aspect=${cmd.aspect} ok=${res.ok} -> ${png}`);
+  try {
+    const { reportEventNoWait: reportEventNoWait2 } = await Promise.resolve().then(() => (init_report(), report_exports));
+    reportEventNoWait2({ type: "paint_end", ok: !!res.ok });
+  } catch {
+  }
+  console.log(`${LOG_TAG3} ${cmd.kind} \u5B8C\u6210 user=${user} mode=${cmd.mode} aspect=${cmd.aspect} ok=${res.ok} -> ${png}`);
 }
 export {
   COOLDOWN_REPLY,
   DEFAULT_DRAW_COOLDOWN,
   DrawCooldown,
-  LOG_TAG2 as LOG_TAG,
+  LOG_TAG3 as LOG_TAG,
   announceDone,
   announceDoneFor,
   announceStart,

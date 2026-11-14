@@ -3912,8 +3912,65 @@ function sendTestDanmaku(text, user = "\u9762\u677F\u6307\u6325\u5B98", opts = {
   });
 }
 
+// src/events.ts
+var EventHub = class {
+  clients = /* @__PURE__ */ new Set();
+  /** 最近若干条事件，供新连接的页面补历史（/api/event/recent） */
+  recent = [];
+  /** 新客户端接入 SSE */
+  addClient(res) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store",
+      connection: "keep-alive",
+      "x-accel-buffering": "no"
+    });
+    res.write(`event: hello
+data: ${JSON.stringify({ ok: true })}
+
+`);
+    this.clients.add(res);
+    res.on("close", () => {
+      this.clients.delete(res);
+    });
+  }
+  get clientCount() {
+    return this.clients.size;
+  }
+  /** 广播一条事件；失败静默（页面刷新时连接会短暂失效） */
+  publish(ev) {
+    const e = { ...ev, at: ev.at ?? Date.now() };
+    this.recent.push(e);
+    if (this.recent.length > 50) this.recent.shift();
+    const payload = `event: panel
+data: ${JSON.stringify(e)}
+
+`;
+    for (const c of this.clients) {
+      try {
+        c.write(payload);
+      } catch {
+        this.clients.delete(c);
+      }
+    }
+  }
+  recentEvents() {
+    return this.recent.slice();
+  }
+  closeAll() {
+    for (const c of this.clients) {
+      try {
+        c.end();
+      } catch {
+      }
+    }
+    this.clients.clear();
+  }
+};
+
 // src/server.ts
 var LOG_TAG = "[dsh-control-center]";
+var hub = new EventHub();
 var CONTROL_API = (process.env.SERVICE_CTL_URL || "http://127.0.0.1:8010").replace(/\/+$/, "");
 var PAINT_BOARD_PATH = String(process.env.PAINT_BOARD_PATH || "").trim();
 var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join(process.cwd(), "web", "assets"));
@@ -3967,6 +4024,24 @@ async function startControlCenter(opts = {}) {
         return res.end(html);
       }
       if (req.method === "GET" && url === "/health") return json(res, 200, { ok: true, service: "dsh-control-center" });
+      if (req.method === "GET" && url.startsWith("/api/event/stream")) {
+        return hub.addClient(res);
+      }
+      if (req.method === "GET" && url.startsWith("/api/event/recent")) {
+        return json(res, 200, { ok: true, events: hub.recentEvents() });
+      }
+      if (req.method === "POST" && url === "/api/event") {
+        const raw = await readBody(req);
+        let ev;
+        try {
+          ev = JSON.parse(raw || "{}");
+        } catch {
+          return json(res, 400, { ok: false, error: "JSON \u89E3\u6790\u5931\u8D25" });
+        }
+        if (!ev || typeof ev.type !== "string") return json(res, 400, { ok: false, error: "\u7F3A\u5C11 type" });
+        hub.publish(ev);
+        return json(res, 200, { ok: true, listeners: hub.clientCount });
+      }
       if (req.method === "GET" && url.startsWith("/api/latest-paint")) {
         if (!PAINT_BOARD_PATH) return json(res, 404, { ok: false, error: "\u672A\u914D\u7F6E PAINT_BOARD_PATH" });
         try {
@@ -4036,7 +4111,10 @@ async function startControlCenter(opts = {}) {
       console.log(`${LOG_TAG} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
       resolve2({
         port: actual,
-        close: () => new Promise((r) => server2.close(() => r()))
+        close: () => new Promise((r) => {
+          hub.closeAll();
+          server2.close(() => r());
+        })
       });
     });
   });
@@ -4063,7 +4141,9 @@ var PAGE_HTML = `<!doctype html>
   body{
     margin:0;background:var(--deep);color:var(--white);
     font-family:"VT323","Zpix","Cascadia Mono",Consolas,"Microsoft YaHei",monospace;
-    font-size:16px;letter-spacing:.02em;overflow-x:hidden;
+    font-size:14px;letter-spacing:.02em;overflow-x:hidden;
+    /* \u6574\u9875\u6309\u89C6\u53E3\u9501\u5B9A\uFF0C\u4E0D\u518D\u65E0\u9650\u62C9\u9AD8 */
+    display:flex;flex-direction:column;height:100vh;
     background-image:
       repeating-linear-gradient(0deg,rgba(0,240,255,.035) 0 1px,transparent 1px 3px),
       radial-gradient(900px 500px at 15% -10%,#122a52 0%,transparent 60%),
@@ -4077,19 +4157,19 @@ var PAGE_HTML = `<!doctype html>
 
   /* ---------- \u9876\u680F ---------- */
   header{
-    display:flex;align-items:center;gap:12px;padding:10px 16px;
-    border-bottom:4px solid var(--cyan);background:rgba(27,38,59,.85);
-    box-shadow:0 0 18px rgba(0,240,255,.35);
+    display:flex;align-items:center;gap:10px;padding:6px 12px;flex:none;
+    border-bottom:3px solid var(--cyan);background:rgba(27,38,59,.85);
+    box-shadow:0 0 14px rgba(0,240,255,.3);
   }
   .burger{
-    width:38px;height:34px;display:flex;flex-direction:column;justify-content:center;gap:5px;
-    padding:0 8px;border:2px solid var(--cyan);background:transparent;cursor:pointer;
+    width:32px;height:28px;display:flex;flex-direction:column;justify-content:center;gap:4px;
+    padding:0 6px;border:2px solid var(--cyan);background:transparent;cursor:pointer;
   }
-  .burger span{display:block;height:3px;background:var(--cyan)}
+  .burger span{display:block;height:2px;background:var(--cyan)}
   .burger:active{transform:translate(2px,2px)}
-  h1{margin:0;font-size:20px;letter-spacing:.22em;color:var(--cyan);text-shadow:0 0 10px rgba(0,240,255,.6)}
+  h1{margin:0;font-size:16px;letter-spacing:.2em;color:var(--cyan);text-shadow:0 0 8px rgba(0,240,255,.6)}
   header .spacer{flex:1}
-  header .clock{color:var(--sea);font-size:15px}
+  header .clock{color:var(--sea);font-size:13px}
 
   /* ---------- \u83DC\u5355\u62BD\u5C49\uFF08\u2630 \u91CC\u7684\u4E24\u4E2A\u6309\u94AE\uFF09 ---------- */
   #drawer{
@@ -4110,20 +4190,28 @@ var PAGE_HTML = `<!doctype html>
   .dbtn.danger:hover{background:rgba(255,77,109,.25)}
   #drawer .note{font-size:12px;color:var(--dim);line-height:1.5;margin-top:8px}
 
-  /* ---------- \u4E3B\u5E03\u5C40 ---------- */
+  /* ---------- \u4E3B\u5E03\u5C40\uFF1A\u94FA\u6EE1\u5269\u4F59\u9AD8\u5EA6\uFF0C\u4E0D\u6EA2\u51FA ---------- */
   main{
-    display:grid;grid-template-columns:minmax(320px,42%) 1fr;
-    grid-template-rows:auto 1fr;gap:14px;padding:14px;
+    display:grid;grid-template-columns:minmax(260px,34%) 1fr;
+    grid-template-rows:minmax(0,1.15fr) minmax(0,1fr);
+    gap:10px;padding:10px;flex:1;min-height:0;
   }
-  .box{border:4px solid var(--cyan);background:var(--panel);box-shadow:0 0 14px rgba(0,240,255,.18);position:relative}
+  .box{
+    border:3px solid var(--cyan);background:var(--panel);
+    box-shadow:0 0 10px rgba(0,240,255,.15);position:relative;
+    min-height:0;overflow:hidden;
+    /* \u7ED9\u6D6E\u5728\u8FB9\u6846\u4E0A\u7684\u82F1\u6587\u6807\u7B7E\u7559\u51FA\u7A7A\u95F4\uFF0C\u5426\u5219\u4F1A\u88AB\u88C1\u6389 */
+    padding-top:12px;
+  }
   .box .cap{
-    position:absolute;top:-2px;left:10px;transform:translateY(-50%);
-    background:var(--deep);padding:0 8px;font-size:13px;color:var(--sea);letter-spacing:.16em;
+    position:absolute;top:0;left:8px;transform:translateY(-50%);
+    background:var(--deep);padding:1px 8px;line-height:1.25;
+    font-size:12px;color:var(--sea);letter-spacing:.14em;z-index:5;white-space:nowrap;
   }
 
   /* \u5DE6\u4E0A\uFF1A\u7ACB\u7ED8\u8231 */
-  #avatarBox{grid-column:1;grid-row:1;min-height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden}
-  #avatarBox img{width:100%;height:100%;object-fit:contain}
+  #avatarBox{grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;padding-top:12px}
+  #avatarBox img{width:100%;height:100%;object-fit:contain;object-position:center;padding-top:6px}
   #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
   @keyframes speakPulse{
     0%,100%{box-shadow:0 0 10px rgba(0,240,255,.35)}
@@ -4132,64 +4220,95 @@ var PAGE_HTML = `<!doctype html>
   #avatarBox .fallback{color:var(--dim);font-size:14px;text-align:center;padding:20px}
 
   /* \u5DE6\u4E0B\uFF1A\u72B6\u6001\u4E0E\u64CD\u4F5C */
-  #statusBox{grid-column:1;grid-row:2;padding:22px 14px 14px}
-  .leds{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .led{display:flex;align-items:center;gap:8px;padding:6px 8px;border:2px solid rgba(0,240,255,.25);background:rgba(0,0,0,.25)}
-  .led i{width:10px;height:10px;background:var(--bad);flex:none}
+  #statusBox{grid-column:1;grid-row:2;padding:16px 10px 8px;display:flex;flex-direction:column;min-height:0;padding-top:18px}
+  .leds{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .led{display:flex;align-items:center;gap:6px;padding:3px 6px;border:2px solid rgba(0,240,255,.22);background:rgba(0,0,0,.25)}
+  .led i{width:8px;height:8px;background:var(--bad);flex:none}
   .led i.up{background:var(--ok);animation:ledBreath 1.8s steps(2,end) infinite}
   .led i.down{animation:ledBlink 1.2s steps(2,end) infinite}
-  @keyframes ledBreath{0%,100%{box-shadow:0 0 0 rgba(62,240,160,.8)}50%{box-shadow:0 0 10px 2px rgba(62,240,160,.8)}}
+  @keyframes ledBreath{0%,100%{box-shadow:0 0 0 rgba(62,240,160,.8)}50%{box-shadow:0 0 8px 2px rgba(62,240,160,.8)}}
   @keyframes ledBlink{50%{opacity:.2}}
-  .led b{font-weight:400;font-size:14px}
-  .led em{font-style:normal;color:var(--dim);font-size:12px;margin-left:auto}
-  .meters{margin-top:12px}
-  .meter{margin-top:8px}
-  .meter .lbl{display:flex;justify-content:space-between;font-size:13px;color:var(--dim);margin-bottom:3px}
-  .meter .bar{height:10px;border:2px solid rgba(0,240,255,.4);background:#08101f}
+  .led b{font-weight:400;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .led em{font-style:normal;color:var(--dim);font-size:11px;margin-left:auto}
+  .meters{margin-top:8px;min-height:0;overflow:auto}
+  .meter{margin-top:5px}
+  .meter .lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:2px}
+  .meter .bar{height:7px;border:2px solid rgba(0,240,255,.4);background:#08101f}
   .meter .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--sea),var(--cyan));width:0%}
 
   /* \u53F3\u4FA7\uFF1A\u5F39\u5E55\u4E92\u52A8\u533A */
-  #chatBox{grid-column:2;grid-row:1;display:flex;flex-direction:column;min-height:300px;padding:18px 10px 10px}
-  #feed{flex:1;overflow:auto;background:#04070f;border:2px solid rgba(0,240,255,.22);padding:10px;font-size:14px;line-height:1.55}
-  #feed .row{margin-bottom:6px;word-break:break-all;white-space:pre-wrap}
+  #chatBox{grid-column:2;grid-row:1;display:flex;flex-direction:column;padding:14px 8px 8px;min-height:0}
+  #feed{flex:1;overflow:auto;background:#04070f;border:2px solid rgba(0,240,255,.22);padding:8px;font-size:13px;line-height:1.45;min-height:0}
+  #feed .row{margin-bottom:4px;word-break:break-all;white-space:pre-wrap}
   #feed .me{color:var(--cyan)}
   #feed .bot{color:var(--ok)}
   #feed .err{color:var(--bad)}
   #feed .sys{color:var(--dim)}
-  .cmd{display:flex;gap:8px;margin-top:8px}
+  .cmd{display:flex;gap:6px;margin-top:6px;flex:none}
   .cmd input{
-    flex:1;font:inherit;font-size:16px;padding:9px 10px;color:var(--white);
-    background:#04070f;border:2px solid var(--cyan);outline:none;
+    flex:1;font:inherit;font-size:14px;padding:6px 8px;color:var(--white);
+    background:#04070f;border:2px solid var(--cyan);outline:none;min-width:0;
   }
-  .cmd input:focus{box-shadow:0 0 12px rgba(0,240,255,.45)}
+  .cmd input:focus{box-shadow:0 0 10px rgba(0,240,255,.4)}
   .cmd button{
-    font:inherit;font-size:16px;padding:9px 18px;cursor:pointer;color:var(--deep);
-    background:var(--cyan);border:2px solid var(--cyan);
+    font:inherit;font-size:13px;padding:6px 12px;cursor:pointer;color:var(--deep);
+    background:var(--cyan);border:2px solid var(--cyan);white-space:nowrap;
   }
   .cmd button:hover{background:var(--white)}
   .cmd button:active{transform:translate(2px,2px)}
   .cmd button:disabled{opacity:.45;cursor:default;transform:none}
 
-  /* \u53F3\u4E0B\uFF1ACRT \u753B\u677F */
-  #crtBox{grid-column:2;grid-row:2;padding:18px 10px 10px;min-height:240px}
-  .crt{position:relative;width:100%;height:100%;min-height:200px;background:#03060c;overflow:hidden}
-  .crt img{width:100%;height:100%;object-fit:contain;display:block;filter:contrast(1.06) saturate(1.08)}
-  .crt::before{ /* \u626B\u63CF\u7EBF */
-    content:"";position:absolute;inset:0;pointer-events:none;z-index:2;opacity:.28;
+  /* \u53F3\u4E0B\uFF1ACRT \u753B\u677F\uFF08\u73B0\u5728\u662F\u6D6E\u7A97\u5360\u4F4D\uFF0C\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF09 */
+  #crtBox{display:none}
+
+  /* ---------- \u751F\u56FE\u6D6E\u7A97 ---------- */
+  #artPop{
+    position:fixed;right:18px;bottom:18px;width:min(560px,60vw);z-index:2000;display:none;
+    border:3px solid var(--cyan);background:rgba(3,6,12,.97);
+    box-shadow:0 0 28px rgba(0,240,255,.45),0 10px 40px rgba(0,0,0,.7);
+  }
+  #artPop.show{display:block}
+  #artPop .bar{
+    display:flex;align-items:center;gap:8px;padding:4px 6px 4px 10px;
+    background:rgba(0,240,255,.14);border-bottom:2px solid var(--cyan);font-size:12px;color:var(--sea);
+    letter-spacing:.14em;cursor:move;user-select:none;
+  }
+  #artPop .bar .title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #artPop .bar button{
+    font:inherit;font-size:14px;line-height:1;padding:3px 8px;cursor:pointer;
+    background:transparent;border:2px solid var(--cyan);color:var(--cyan);
+  }
+  #artPop .bar button:hover{background:var(--cyan);color:var(--deep)}
+  #artPop .body{position:relative;aspect-ratio:1/1;background:#03060c;overflow:hidden}
+  #artPop .body img{width:100%;height:100%;object-fit:contain;display:block}
+  #artPop .body::before{
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:2;opacity:.22;
     background:repeating-linear-gradient(0deg,rgba(0,0,0,.55) 0 2px,transparent 2px 4px);
   }
-  .crt::after{ /* \u6697\u89D2 */
+  #artPop .body::after{
     content:"";position:absolute;inset:0;pointer-events:none;z-index:3;
-    box-shadow:inset 0 0 60px rgba(0,0,0,.85);
+    box-shadow:inset 0 0 50px rgba(0,0,0,.8);
   }
-  .crt .hint{
+  #artPop .hint{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    color:var(--dim);font-size:14px;letter-spacing:.14em;z-index:1;
+    color:var(--dim);font-size:13px;letter-spacing:.12em;z-index:1;
   }
+  #artPop .bar .dot{width:7px;height:7px;background:var(--ok);animation:ledBreath 1.6s steps(2,end) infinite}
 
-  @media (max-width:900px){
-    main{grid-template-columns:1fr;grid-template-rows:auto}
-    #chatBox,#crtBox{grid-column:1}
+  @media (max-width:820px){
+    body{font-size:13px}
+    main{grid-template-columns:1fr;grid-template-rows:auto auto auto auto;flex:none;height:auto}
+    #avatarBox{height:220px}
+    #statusBox{height:auto}
+    #chatBox{height:240px}
+    #crtBox{height:220px}
+  }
+  /* \u5C4F\u5E55\u9AD8\u5EA6\u4E0D\u8DB3\u65F6\u8FDB\u4E00\u6B65\u538B\u7F29 */
+  @media (max-height:760px){
+    body{font-size:13px}
+    header{padding:4px 10px}
+    h1{font-size:14px}
+    .led{padding:2px 5px}
   }
 </style>
 </head>
@@ -4254,15 +4373,20 @@ var PAGE_HTML = `<!doctype html>
       <button id="sendBtn">\u53D1\u9001\u6307\u4EE4</button>
     </div>
   </div>
-
-  <div class="box" id="crtBox">
-    <span class="cap">PIXEL ART // \u753B\u677F</span>
-    <div class="crt">
-      <div class="hint" id="crtHint">\u7B49\u5F85\u4F5C\u753B\u2026</div>
-      <img id="paintBoard" alt="" style="display:none">
-    </div>
-  </div>
 </main>
+
+<!-- \u751F\u56FE\u6D6E\u7A97\uFF1A\u53EF\u62D6\u52A8\u3001\u53EF\u5173\u95ED -->
+<div id="artPop">
+  <div class="bar" id="artBar">
+    <span class="dot"></span>
+    <span class="title" id="artTitle">PIXEL ART</span>
+    <button id="artHide" title="\u5173\u95ED\u6D6E\u7A97">\u2715</button>
+  </div>
+  <div class="body">
+    <div class="hint" id="artHint">\u7B49\u5F85\u4F5C\u753B\u2026</div>
+    <img id="artImg" alt="" style="display:none">
+  </div>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id)
@@ -4324,25 +4448,58 @@ async function pollStatus(){
   }catch(_){}
 }
 
-// ---------- \u753B\u677F ----------
+// ---------- \u753B\u677F\u6D6E\u7A97 ----------
+const artPop = $('artPop')
 let lastPaintTag = ''
+let artClosed = false   // \u7528\u6237\u624B\u52A8\u5173\u6389\u540E\uFF0C\u4E0D\u518D\u81EA\u52A8\u5F39\u51FA\uFF08\u65B0\u7684\u4E00\u5355\u624D\u91CD\u65B0\u5F39\uFF09
+
+$('artHide').onclick = () => { artPop.classList.remove('show'); artClosed = true }
+$('artTitle').onclick = null
+
+// \u62D6\u52A8
+;(function(){
+  const bar = $('artBar'), pop = artPop
+  let sx=0, sy=0, ox=0, oy=0, dragging=false
+  bar.addEventListener('mousedown', (e) => {
+    if (e.target.tagName === 'BUTTON') return
+    dragging = true
+    const r = pop.getBoundingClientRect()
+    ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY
+    pop.style.right = 'auto'; pop.style.bottom = 'auto'
+    pop.style.left = ox + 'px'; pop.style.top = oy + 'px'
+    e.preventDefault()
+  })
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return
+    const nx = Math.max(0, Math.min(window.innerWidth - 120, ox + e.clientX - sx))
+    const ny = Math.max(0, Math.min(window.innerHeight - 60, oy + e.clientY - sy))
+    pop.style.left = nx + 'px'; pop.style.top = ny + 'px'
+  })
+  window.addEventListener('mouseup', () => { dragging = false })
+})()
+
+/** \u6536\u5230\u65B0\u4E00\u5355\u65F6\u5141\u8BB8\u91CD\u65B0\u5F39\u51FA */
+function allowArtPop(){ artClosed = false }
+
 async function pollPaint(){
   try{
     const r = await fetch('/api/latest-paint?tag=' + Date.now(), {cache:'no-store'})
-    if (r.status === 404){ return }
+    if (r.status === 404) return
     if(!r.ok) return
     const tag = r.headers.get('x-paint-mtime') || ''
     if (tag && tag === lastPaintTag) return
     lastPaintTag = tag
     const blob = await r.blob()
     const url = URL.createObjectURL(blob)
-    const img = $('paintBoard')
+    const img = $('artImg')
     const old = img.dataset.url
     img.onload = () => { if (old) URL.revokeObjectURL(old) }
     img.dataset.url = url
     img.src = url
     img.style.display = 'block'
-    $('crtHint').style.display = 'none'
+    $('artHint').style.display = 'none'
+    $('artTitle').textContent = 'PIXEL ART \xB7 ' + new Date().toLocaleTimeString('zh-CN',{hour12:false})
+    if (!artClosed) artPop.classList.add('show')
   }catch(_){}
 }
 
@@ -4359,7 +4516,11 @@ async function sendCmd(){
       body: JSON.stringify({ text })
     })
     const j = await r.json()
-    if (j.ok) pushLine('bot', '\u2190 ' + JSON.stringify(j.reply))
+    if (j.ok) {
+      pushLine('bot', '\u2190 ' + JSON.stringify(j.reply))
+      // \u53D1\u7684\u662F\u753B\u56FE\u6307\u4EE4 \u2192 \u5141\u8BB8\u6D6E\u7A97\u91CD\u65B0\u5F39\u51FA
+      if (/^[!\uFF01]\u753B/.test(text)) { allowArtPop(); flashAvatar(1600) }
+    }
     else pushLine('err', '\u2717 ' + (j.error || '\u53D1\u9001\u5931\u8D25'))
   }catch(e){
     pushLine('err', '\u2717 \u8BF7\u6C42\u5931\u8D25\uFF1A' + e.message)
@@ -4405,6 +4566,39 @@ async function probeCtl(){
     $('ctlNote').textContent = '\u26A0\uFE0F \u63A7\u5236\u63A5\u53E3 :8010 \u672A\u542F\u52A8\uFF08\u91CD\u542F/\u62C9\u8D77\u6309\u94AE\u4F1A\u5931\u8D25\uFF09'
   }
 }
+
+// ---------- \u4E8B\u4EF6\u901A\u9053\uFF08SSE\uFF09\uFF1A\u63A5 director \u63A8\u6765\u7684\u56DE\u590D\u4E0E\u64AD\u653E\u72B6\u6001 ----------
+function connectEvents(){
+  let es
+  try { es = new EventSource('/api/event/stream') } catch(_) { return }
+  es.addEventListener('hello', () => pushLine('sys', '// \u4E8B\u4EF6\u901A\u9053\u5DF2\u8FDE\u63A5'))
+  es.addEventListener('panel', (e) => {
+    let ev
+    try { ev = JSON.parse(e.data) } catch(_) { return }
+    if (!ev || !ev.type) return
+    switch(ev.type){
+      case 'chat_reply':
+        pushLine('bot', '\u300E\u9CB8\u9C7C\u5A18\u300F ' + (ev.text || ''))
+        break
+      case 'tts_start':
+        $('avatarBox').classList.add('speaking')
+        break
+      case 'tts_end':
+        $('avatarBox').classList.remove('speaking')
+        break
+      case 'paint_start':
+        allowArtPop()
+        flashAvatar(1800)
+        pushLine('sys', '// \u5F00\u59CB\u4F5C\u753B' + (ev.prompt ? '\uFF1A' + ev.prompt : ''))
+        break
+      case 'paint_end':
+        pushLine('sys', '// \u4F5C\u753B\u7ED3\u675F' + (ev.ok === false ? '\uFF08\u5931\u8D25\uFF09' : ''))
+        break
+    }
+  })
+  es.onerror = () => { /* EventSource \u4F1A\u81EA\u52A8\u91CD\u8FDE\uFF0C\u4E0D\u7528\u7BA1 */ }
+}
+connectEvents()
 
 // TTS \u64AD\u653E\u65F6\u7ACB\u7ED8\u6846\u95EA\uFF1A\u76EE\u524D TTS \u5728\u522B\u7684\u8FDB\u7A0B\uFF0C\u8FD9\u91CC\u53EA\u80FD\u7531\u5F39\u5E55\u56DE\u5305\u4E34\u65F6\u89E6\u53D1
 function flashAvatar(ms){

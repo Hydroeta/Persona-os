@@ -58,6 +58,7 @@
 - 💭 **内心潜台词**（`inner_thoughts` 独立表）：夜间用本地 Ollama 复盘当天素材，生成第一人称「没说出口的心里话」；只影响语气、禁止当事实转述，第二天她会用欲言又止的方式流露。
 - 🎮 **虚拟手柄游戏代理**（`dsh-game-agent`）：截屏 → 多模态 VLM 决策下一步宏观动作 → HTTP 转发 game-bot 微服务（:8003）调 `vgamepad` 虚拟 Xbox 手柄；默认 `dry_run` 安全预览不操作手柄，Python 端 2s 看门狗无指令自动松杆防失控，任一环节离线/超时均安全降级不阻断 DSH。
 - 👁️ **读屏陪伴**（`dsh-screen-companion`）：右上角「绿眼睛」悬浮窗（`core-services/screen-indicator`）每 2 秒写心跳，**心跳一停就立刻不截屏**；在跑时每 60 秒截一次主屏交给视觉模型判断「在干什么 / 什么情绪」，只在「有报错且焦虑」或「连续 2 小时工作」时开口，**每天最多 3 次、间隔 ≥45 分钟**；检测到游戏进程自动暂停，失败静默。
+- 🖥️ **总控面板**（`dsh-control-center`）：本地 `:8088` 的像素风指挥舱——各微服务死活（HTTP 打 `/health`、WebSocket 类只测端口）、内存与显存、发模拟弹幕到 `:9001` 的测试台、可开关的生图浮窗；左上 ☰ 菜单能真的重启服务（走 `dsh-service-manager` 的 `:8010` 控制口，白名单 + 只杀自己拉起的进程）。直播引擎通过 `POST /api/event` 把「她说了什么」「是否在播」推给面板，面板用 SSE 广播给页面。
 - 🔎 **参考搜索**（`dsh-web-agent` 的 `search_reference`）：动手造轮子前先搜开源/网页方案（GitHub 仓库 + README 片段 / Bing 技术文章），网络不可用时返回 `ok:false` 让主脑降级为自己写，**不允许反复重试**。
 
 ---
@@ -159,6 +160,7 @@ persona-os/
 ├─ ohwhale-deploy/           # QQ 语音通话直播（live_bot / call_loop）
 ├─ README.md                 # 本文件
 ├─ 使用说明.md                # 运行与功能使用手册
+├─ docs/                      # 补充文档（启动指南：面板 + 直播链路的启动顺序与环境变量）
 ├─ 项目介绍.md                # 设计理念与路线图
 ├─ THIRD-PARTY-NOTICES.md    # 第三方开源声明
 └─ V2-MIGRATION-NOTES.md     # V1→V2 迁移说明（V1 文档已移除，历史见 git 提交记录）

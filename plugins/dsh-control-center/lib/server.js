@@ -3912,8 +3912,65 @@ function sendTestDanmaku(text, user = "\u9762\u677F\u6307\u6325\u5B98", opts = {
   });
 }
 
+// src/events.ts
+var EventHub = class {
+  clients = /* @__PURE__ */ new Set();
+  /** 最近若干条事件，供新连接的页面补历史（/api/event/recent） */
+  recent = [];
+  /** 新客户端接入 SSE */
+  addClient(res) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store",
+      connection: "keep-alive",
+      "x-accel-buffering": "no"
+    });
+    res.write(`event: hello
+data: ${JSON.stringify({ ok: true })}
+
+`);
+    this.clients.add(res);
+    res.on("close", () => {
+      this.clients.delete(res);
+    });
+  }
+  get clientCount() {
+    return this.clients.size;
+  }
+  /** 广播一条事件；失败静默（页面刷新时连接会短暂失效） */
+  publish(ev) {
+    const e = { ...ev, at: ev.at ?? Date.now() };
+    this.recent.push(e);
+    if (this.recent.length > 50) this.recent.shift();
+    const payload = `event: panel
+data: ${JSON.stringify(e)}
+
+`;
+    for (const c of this.clients) {
+      try {
+        c.write(payload);
+      } catch {
+        this.clients.delete(c);
+      }
+    }
+  }
+  recentEvents() {
+    return this.recent.slice();
+  }
+  closeAll() {
+    for (const c of this.clients) {
+      try {
+        c.end();
+      } catch {
+      }
+    }
+    this.clients.clear();
+  }
+};
+
 // src/server.ts
 var LOG_TAG = "[dsh-control-center]";
+var hub = new EventHub();
 var CONTROL_API = (process.env.SERVICE_CTL_URL || "http://127.0.0.1:8010").replace(/\/+$/, "");
 var PAINT_BOARD_PATH = String(process.env.PAINT_BOARD_PATH || "").trim();
 var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join(process.cwd(), "web", "assets"));
@@ -3967,6 +4024,24 @@ async function startControlCenter(opts = {}) {
         return res.end(html);
       }
       if (req.method === "GET" && url === "/health") return json(res, 200, { ok: true, service: "dsh-control-center" });
+      if (req.method === "GET" && url.startsWith("/api/event/stream")) {
+        return hub.addClient(res);
+      }
+      if (req.method === "GET" && url.startsWith("/api/event/recent")) {
+        return json(res, 200, { ok: true, events: hub.recentEvents() });
+      }
+      if (req.method === "POST" && url === "/api/event") {
+        const raw = await readBody(req);
+        let ev;
+        try {
+          ev = JSON.parse(raw || "{}");
+        } catch {
+          return json(res, 400, { ok: false, error: "JSON \u89E3\u6790\u5931\u8D25" });
+        }
+        if (!ev || typeof ev.type !== "string") return json(res, 400, { ok: false, error: "\u7F3A\u5C11 type" });
+        hub.publish(ev);
+        return json(res, 200, { ok: true, listeners: hub.clientCount });
+      }
       if (req.method === "GET" && url.startsWith("/api/latest-paint")) {
         if (!PAINT_BOARD_PATH) return json(res, 404, { ok: false, error: "\u672A\u914D\u7F6E PAINT_BOARD_PATH" });
         try {
@@ -4036,7 +4111,10 @@ async function startControlCenter(opts = {}) {
       console.log(`${LOG_TAG} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
       resolve2({
         port: actual,
-        close: () => new Promise((r) => server.close(() => r()))
+        close: () => new Promise((r) => {
+          hub.closeAll();
+          server.close(() => r());
+        })
       });
     });
   });
@@ -4047,6 +4125,7 @@ export {
   DEFAULT_PORT,
   PAINT_BOARD_PATH,
   collectSnapshot,
+  hub,
   startControlCenter
 };
 //# sourceMappingURL=server.js.map
