@@ -1,128 +1,126 @@
 # -*- coding: utf-8 -*-
-r"""make_pixel_avatar.py —— 从一张立绘生成像素风主图 + 眨眼/说话微变体
+r"""make_pixel_avatar.py —— 立绘像素化 + 按亮度分段做**色差修正**
 
-设计要点（都是踩过坑总结的）：
-1. **先定型、后标定坐标**：所有变体都走同一个 `pixelize()`，坐标一律写在
-   `pixelize()` 内部那套「正方形裁剪后」的坐标系上，避免裁完偏移。
-2. **不量化颜色**（--colors 0 默认）：蓝灰色调在 16/32 色下会发脏，
-   像素画靠的是 NEAREST 的硬边，不是靠压色数。
-3. 眼睛/嘴巴位置用**比例 + 可覆盖**：换图只要改 `--face` 或传新的 mark 参数。
+为什么按亮度分段而不是套一个乘法系数：
+    乘法会把整段色调一起拖走（高光也变暗、阴影也发灰）。
+    实测 USER 与 expr/shy 的头发在**每一档亮度上的色相都不一致**：
+        L 40-80    USER (47,61,109)  vs  SRC (40,58,101)
+        L 80-120   USER (65,84,140)  vs  SRC (70,98,156)   <- 差最多，G 高了 14
+        L 120-160  USER (102,128,179) vs SRC (101,135,190)
+    所以做法是：**保留源图的亮度 L，把色相/饱和度换成目标图对应亮度档的**，
+    相当于"形状和明暗不变，只把颜色对齐"。
 
 用法：
-    python make_pixel_avatar.py --src puzzled.png --out ../web/assets --grid 128 --size 512
-    python make_pixel_avatar.py --src x.png --out d --grid 128 --colors 32   # 要限色时显式给
+    python make_pixel_avatar.py --src shy.png --out web/assets --ref user.png \
+        --fix hair --grid 128 --size 512
 """
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+import numpy as np
+from PIL import Image
 
-# 脸部件相对【正方形裁剪后】画布的位置与大小
-DEFAULT_FACE = {
-    "left_eye":  (0.300, 0.472),
-    "right_eye": (0.512, 0.452),
-    "mouth":     (0.404, 0.514),
-    "eye_w":     0.088,
-    "eye_h":     0.052,
-    "mouth_w":   0.050,
-    "mouth_h":   0.026,
-    "skin":      [252, 235, 224, 255],
-    "line":      [44, 36, 52, 255],
-    "mouth_in":  [118, 62, 70, 255],
-}
-
-SIZE = 512  # 与 bottom() 呼应，main 里会覆盖
+# 亮度分档（用 L 区间划分，各档单独对齐）
+BANDS = [(0, 40), (40, 80), (80, 120), (120, 160), (160, 200), (200, 256)]
 
 
-def square_crop(im: Image.Image) -> Image.Image:
-    """居中裁成正方形（这一步是后面所有坐标的基准）。"""
-    im = im.convert("RGBA")
-    w, h = im.size
+def load(p: str) -> np.ndarray:
+    return np.asarray(Image.open(p).convert('RGBA')).astype(np.float32)
+
+
+def luma(a: np.ndarray) -> np.ndarray:
+    return a[..., 0] * 0.299 + a[..., 1] * 0.587 + a[..., 2] * 0.114
+
+
+def hair_mask(a: np.ndarray, top_ratio: float = 0.62) -> np.ndarray:
+    h, w = a.shape[:2]
+    R, G, B = a[..., 0], a[..., 1], a[..., 2]
+    mx, mn = a[..., :3].max(2), a[..., :3].min(2)
+    m = (B > R + 18) & (B > 60) & (B < 220) & (G < B - 5) & ((mx - mn) > 20)
+    top = np.zeros((h, w), bool)
+    top[: int(h * top_ratio), :] = True
+    m &= top
+    if a.shape[2] == 4:
+        m &= a[..., 3] > 200
+    return m
+
+
+def band_targets(ref: np.ndarray, mask: np.ndarray) -> dict:
+    """从参考图统计每一档亮度下的颜色中位数"""
+    L = luma(ref)
+    out = {}
+    for lo, hi in BANDS:
+        k = mask & (L >= lo) & (L < hi)
+        if k.sum() >= 50:
+            out[(lo, hi)] = np.median(ref[..., :3][k], axis=0)
+    return out
+
+
+def apply_bands(src: np.ndarray, mask: np.ndarray, targets: dict) -> np.ndarray:
+    """保留源图亮度 L，把颜色替换成该亮度档的目标颜色（保持 L 不变）。
+
+    做法：目标颜色按亮度归一化后乘以源图 L，得到"同样的明暗、不同的色调"。
+    """
+    out = src.copy()
+    L = luma(src)
+    for (lo, hi), tgt in targets.items():
+        k = mask & (L >= lo) & (L < hi)
+        if not k.any():
+            continue
+        Lt = tgt[0] * 0.299 + tgt[1] * 0.587 + tgt[2] * 0.114
+        if Lt < 1e-3:
+            continue
+        scale = (L[k] / Lt)[..., None]
+        out[..., :3][k] = np.clip(tgt[None, :] * scale, 0, 255)
+    return out
+
+
+def pixelize(im: Image.Image, grid: int, size: int) -> Image.Image:
+    sq = im.convert('RGBA')
+    w, h = sq.size
     side = min(w, h)
-    return im.crop(((w - side) // 2, (h - side) // 2, (w - side) // 2 + side, (h - side) // 2 + side))
-
-
-def pixelize(sq: Image.Image, grid: int, colors: int, size: int) -> Image.Image:
-    """【已经是正方形】的图 -> grid×grid -> (可选量化) -> size。"""
+    sq = sq.crop(((w - side) // 2, (h - side) // 2, (w - side) // 2 + side, (h - side) // 2 + side))
     if size % grid != 0:
         size = (size // grid) * grid or grid
-    small = sq.resize((grid, grid), Image.NEAREST)
-    if colors and colors > 0:
-        rgb = Image.new("RGB", small.size, (255, 255, 255))
-        rgb.paste(small, mask=small.split()[3])
-        q = rgb.quantize(colors=colors, method=Image.MEDIANCUT, dither=Image.NONE).convert("RGB")
-        q.putalpha(small.split()[3].point(lambda v: 255 if v >= 128 else 0))
-        small = q
-    return small.resize((size, size), Image.NEAREST)
-
-
-def _ellipse(d, cx, cy, w, h, color):
-    d.ellipse([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], fill=color)
-
-
-def draw_face(sq: Image.Image, face: dict, mode: str) -> Image.Image:
-    """在【正方形原图】上画眼睛/嘴。mode: 'blink' | 'talk' | 'both'"""
-    im = sq.copy()
-    d = ImageDraw.Draw(im, "RGBA")
-    W, H = im.size
-    f = face
-
-    if mode in ("blink", "both"):
-        ew, eh = W * f["eye_w"], H * f["eye_h"]
-        for key in ("left_eye", "right_eye"):
-            rx, ry = W * f[key][0], H * f[key][1]
-            _ellipse(d, rx, ry, ew * 1.18, eh * 1.18, tuple(f["skin"]))
-            lw = max(2, int(H * 0.007))
-            d.line(
-                [(rx - ew / 2, ry - eh * 0.10), (rx - ew / 6, ry + eh * 0.12), (rx + ew / 2, ry - eh * 0.10)],
-                fill=tuple(f["line"]),
-                width=lw,
-                joint="curve",
-            )
-
-    if mode in ("talk", "both"):
-        mx, my = W * f["mouth"][0], H * f["mouth"][1]
-        mw, mh = W * f["mouth_w"], H * f["mouth_h"]
-        _ellipse(d, mx, my + mh * 0.2, mw, mh * 1.6, tuple(f["mouth_in"]))
-    return im
+    return sq.resize((grid, grid), Image.NEAREST).resize((size, size), Image.NEAREST)
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--grid", type=int, default=128)
-    ap.add_argument("--size", type=int, default=512)
-    ap.add_argument("--colors", type=int, default=0, help="0=不限色数（默认）")
-    ap.add_argument("--face", default="", help="JSON 文件覆盖默认脸部坐标")
+    ap.add_argument('--src', required=True)
+    ap.add_argument('--ref', required=True, help='参考图（目标颜色）')
+    ap.add_argument('--out', required=True)
+    ap.add_argument('--fix', default='hair', choices=['hair', 'none'])
+    ap.add_argument('--grid', type=int, default=128)
+    ap.add_argument('--size', type=int, default=512)
+    ap.add_argument('--name', default='avatar_pixel')
     args = ap.parse_args(argv)
 
-    face = dict(DEFAULT_FACE)
-    if args.face:
-        face.update(json.loads(Path(args.face).read_text(encoding="utf-8")))
+    ref = load(args.ref)
+    src = load(args.src)
+    work = src
 
-    sq = square_crop(Image.open(args.src))
+    if args.fix == 'hair':
+        rm = hair_mask(ref)
+        sm = hair_mask(src)
+        tg = band_targets(ref, rm)
+        print('参考图各亮度档颜色：')
+        for (lo, hi), c in tg.items():
+            print(f'  L {lo:>3}-{hi:<3} -> {c.round(0)}')
+        work = apply_bands(src, sm, tg)
+
+    img = Image.fromarray(np.clip(work, 0, 255).astype(np.uint8), 'RGBA')
+    px = pixelize(img, args.grid, args.size)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-
-    variants = {
-        "pixel_main": sq,
-        "pixel_blink": draw_face(sq, face, "blink"),
-        "pixel_talk": draw_face(sq, face, "talk"),
-    }
-    for name, im in variants.items():
-        px = pixelize(im, args.grid, args.colors, args.size)
-        p = out / f"{name}.png"
-        px.save(p, optimize=True)
-        print(f"{name:<12} {px.size} {round(os.path.getsize(p)/1024,1)} KB -> {p}")
-    (out / "pixel_face.json").write_text(json.dumps(face, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("face ->", out / "pixel_face.json")
+    p = out / f'{args.name}.png'
+    px.save(p, optimize=True)
+    print(f'{p.name}: {px.size} grid={args.grid} {os.path.getsize(p)//1024} KB')
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

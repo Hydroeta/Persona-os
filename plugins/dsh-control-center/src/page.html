@@ -86,9 +86,23 @@
     font-size:12px;color:var(--sea);letter-spacing:.14em;z-index:5;white-space:nowrap;
   }
 
-  /* 左上：立绘舱 */
-  #avatarBox{grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;padding-top:12px}
-  #avatarBox img{width:100%;height:100%;object-fit:contain;object-position:center;padding-top:6px}
+  /* 左上：立绘舱（像素立绘 + 呼吸 + 视线跟随） */
+  #avatarBox{grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;padding-top:12px;cursor:pointer}
+  #avatarStage{
+    position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    transform:translate(var(--look-x,0px),var(--look-y,0px)); /* 视线跟随，只平移不缩放 */
+    transition:transform .18s ease-out;
+  }
+  #avatarImg{
+    max-width:100%;max-height:100%;object-fit:contain;
+    animation:breathe 3.6s ease-in-out infinite;      /* 呼吸：只走 Y 轴，绝不 scale */
+  }
+  #avatarStage.talking #avatarImg{
+    animation:talkBob .15s steps(2,end) infinite;       /* 说话抖动：1px 步进，像像素游戏 */
+  }
+  @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+  @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+  #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
   #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
   @keyframes speakPulse{
     0%,100%{box-shadow:0 0 10px rgba(0,240,255,.35)}
@@ -226,8 +240,11 @@
 <main>
   <div class="box" id="avatarBox">
     <span class="cap">LIVE FEED</span>
-    <img id="avatar" src="/assets/avatar.png" alt="" onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
-    <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>把图放到 web/assets/avatar.png</small></div>
+    <div id="avatarStage">
+      <img id="avatarImg" src="/assets/expr/pixel_content.png" alt=""
+           onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
+    </div>
+    <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>检查 web/assets/expr/pixel_*.png</small></div>
   </div>
 
   <div class="box" id="statusBox">
@@ -396,7 +413,7 @@ async function sendCmd(){
     if (j.ok) {
       pushLine('bot', '← ' + JSON.stringify(j.reply))
       // 发的是画图指令 → 允许浮窗重新弹出
-      if (/^[!！]画/.test(text)) { allowArtPop(); flashAvatar(1600) }
+      if (/^[!！]画/.test(text)) { allowArtPop(); setExpr('starry', 2000) }
     }
     else pushLine('err', '✗ ' + (j.error || '发送失败'))
   }catch(e){
@@ -444,6 +461,98 @@ async function probeCtl(){
   }
 }
 
+// ---------- 立绘：表情状态机（全部走整图切换，绝不 scale） ----------
+const EXPR_BASE = '/assets/expr/pixel_';
+const EXPR_DEFAULT = 'content';       // 待机
+const EXPR_LIST = ['aggrieved','blush','content','giggle','joy','nervous','pout','puzzled',
+                   'sad','scared','shy','sleepy','smug','starry','surprise','wink'];
+const img = $('avatarImg')
+const stage = $('avatarStage')
+
+let curExpr = EXPR_DEFAULT
+let exprTimer = null      // 临时表情（眨眼/说话/点击）的还原计时
+let idleTimer = null      // 随机眨眼计时
+let talkTimer = null
+const preloaded = {}
+
+for (const n of EXPR_LIST) {           // 预加载，切表情不闪白
+  const im = new Image()
+  im.src = EXPR_BASE + n + '.png'
+  preloaded[n] = im
+}
+
+function setExpr(name, holdMs){
+  if (!EXPR_LIST.includes(name)) return
+  curExpr = name
+  img.src = EXPR_BASE + name + '.png'
+  if (holdMs) {
+    if (exprTimer) clearTimeout(exprTimer)
+    exprTimer = setTimeout(() => { exprTimer = null; setExpr(EXPR_DEFAULT) }, holdMs)
+  }
+}
+
+/** 侧漏的状态接口：以后 state_engine 接上直接调 */
+window.setAvatarExpression = (name) => { setExpr(name) }
+window.setAvatarExpressionFor = (name, ms) => { setExpr(name, ms) }
+
+/** 随机眨眼：切成 wink，120ms 后回来 */
+function scheduleBlink(){
+  if (idleTimer) clearTimeout(idleTimer)
+  const wait = 3000 + Math.random() * 3000
+  idleTimer = setTimeout(() => {
+    if (!stage.classList.contains('talking') && !exprTimer) {
+      setExpr('wink', 120)
+    }
+    scheduleBlink()
+  }, wait)
+}
+scheduleBlink()
+
+/** 视线跟随：整个 stage 平移 ±4px，绝不缩放 */
+let rafPending = false
+window.addEventListener('mousemove', (e) => {
+  if (rafPending) return
+  rafPending = true
+  requestAnimationFrame(() => {
+    const cx = window.innerWidth / 2
+    const cy = window.innerHeight / 2
+    const nx = Math.max(-1, Math.min(1, (e.clientX - cx) / cx))
+    const ny = Math.max(-1, Math.min(1, (e.clientY - cy) / cy))
+    stage.style.setProperty('--look-x', (nx * 4).toFixed(1) + 'px')
+    stage.style.setProperty('--look-y', (ny * 3).toFixed(1) + 'px')
+    rafPending = false
+  })
+})
+
+/** 点击她：惊讶 1.5s + 往弹幕流发一句 */
+$('avatarBox').addEventListener('click', () => {
+  if (stage.classList.contains('talking')) return
+  setExpr('surprise', 1500)
+  pushLine('me', '『你』 （戳了一下她的脸）')
+  fetch('/api/danmaku', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: '别戳啦！', user: '你' }),
+  }).then(r => r.json()).then(j => {
+    pushLine('sys', '// 已转发：' + (j.ok ? 'ok' : (j.error || '失败')))
+  }).catch(() => {})
+})
+
+function startTalking(){
+  $('avatarBox').classList.add('speaking')
+  stage.classList.add('talking')
+  setExpr(Math.random() < 0.5 ? 'joy' : 'giggle')
+  if (talkTimer) clearInterval(talkTimer)
+  talkTimer = setInterval(() => {          // 说话时随机换表情，像在开口
+    setExpr(Math.random() < 0.6 ? 'joy' : (Math.random() < 0.5 ? 'giggle' : 'surprise'))
+  }, 420)
+}
+function stopTalking(){
+  $('avatarBox').classList.remove('speaking')
+  stage.classList.remove('talking')
+  if (talkTimer) { clearInterval(talkTimer); talkTimer = null }
+  setExpr(EXPR_DEFAULT)
+}
+
 // ---------- 事件通道（SSE）：接 director 推来的回复与播放状态 ----------
 function connectEvents(){
   let es
@@ -456,16 +565,17 @@ function connectEvents(){
     switch(ev.type){
       case 'chat_reply':
         pushLine('bot', '『鲸鱼娘』 ' + (ev.text || ''))
+        if (ev.text) startTalking()
         break
       case 'tts_start':
-        $('avatarBox').classList.add('speaking')
+        startTalking()
         break
       case 'tts_end':
-        $('avatarBox').classList.remove('speaking')
+        stopTalking()
         break
       case 'paint_start':
         allowArtPop()
-        flashAvatar(1800)
+        setExpr('starry', 2000)
         pushLine('sys', '// 开始作画' + (ev.prompt ? '：' + ev.prompt : ''))
         break
       case 'paint_end':
@@ -473,16 +583,10 @@ function connectEvents(){
         break
     }
   })
-  es.onerror = () => { /* EventSource 会自动重连，不用管 */ }
+  es.onerror = () => { /* EventSource 自动重连 */ }
 }
 connectEvents()
 
-// TTS 播放时立绘框闪：目前 TTS 在别的进程，这里只能由弹幕回包临时触发
-function flashAvatar(ms){
-  const b = $('avatarBox')
-  b.classList.add('speaking')
-  setTimeout(()=>b.classList.remove('speaking'), ms || 1600)
-}
 
 pushLine('sys','// 鲸鱼指挥舱已就绪')
 probeCtl()

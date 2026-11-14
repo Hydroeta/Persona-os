@@ -4209,9 +4209,23 @@ var PAGE_HTML = `<!doctype html>
     font-size:12px;color:var(--sea);letter-spacing:.14em;z-index:5;white-space:nowrap;
   }
 
-  /* \u5DE6\u4E0A\uFF1A\u7ACB\u7ED8\u8231 */
-  #avatarBox{grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;padding-top:12px}
-  #avatarBox img{width:100%;height:100%;object-fit:contain;object-position:center;padding-top:6px}
+  /* \u5DE6\u4E0A\uFF1A\u7ACB\u7ED8\u8231\uFF08\u50CF\u7D20\u7ACB\u7ED8 + \u547C\u5438 + \u89C6\u7EBF\u8DDF\u968F\uFF09 */
+  #avatarBox{grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;padding-top:12px;cursor:pointer}
+  #avatarStage{
+    position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    transform:translate(var(--look-x,0px),var(--look-y,0px)); /* \u89C6\u7EBF\u8DDF\u968F\uFF0C\u53EA\u5E73\u79FB\u4E0D\u7F29\u653E */
+    transition:transform .18s ease-out;
+  }
+  #avatarImg{
+    max-width:100%;max-height:100%;object-fit:contain;
+    animation:breathe 3.6s ease-in-out infinite;      /* \u547C\u5438\uFF1A\u53EA\u8D70 Y \u8F74\uFF0C\u7EDD\u4E0D scale */
+  }
+  #avatarStage.talking #avatarImg{
+    animation:talkBob .15s steps(2,end) infinite;       /* \u8BF4\u8BDD\u6296\u52A8\uFF1A1px \u6B65\u8FDB\uFF0C\u50CF\u50CF\u7D20\u6E38\u620F */
+  }
+  @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+  @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+  #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
   #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
   @keyframes speakPulse{
     0%,100%{box-shadow:0 0 10px rgba(0,240,255,.35)}
@@ -4349,8 +4363,11 @@ var PAGE_HTML = `<!doctype html>
 <main>
   <div class="box" id="avatarBox">
     <span class="cap">LIVE FEED</span>
-    <img id="avatar" src="/assets/avatar.png" alt="" onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
-    <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u628A\u56FE\u653E\u5230 web/assets/avatar.png</small></div>
+    <div id="avatarStage">
+      <img id="avatarImg" src="/assets/expr/pixel_content.png" alt=""
+           onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
+    </div>
+    <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u68C0\u67E5 web/assets/expr/pixel_*.png</small></div>
   </div>
 
   <div class="box" id="statusBox">
@@ -4519,7 +4536,7 @@ async function sendCmd(){
     if (j.ok) {
       pushLine('bot', '\u2190 ' + JSON.stringify(j.reply))
       // \u53D1\u7684\u662F\u753B\u56FE\u6307\u4EE4 \u2192 \u5141\u8BB8\u6D6E\u7A97\u91CD\u65B0\u5F39\u51FA
-      if (/^[!\uFF01]\u753B/.test(text)) { allowArtPop(); flashAvatar(1600) }
+      if (/^[!\uFF01]\u753B/.test(text)) { allowArtPop(); setExpr('starry', 2000) }
     }
     else pushLine('err', '\u2717 ' + (j.error || '\u53D1\u9001\u5931\u8D25'))
   }catch(e){
@@ -4567,6 +4584,98 @@ async function probeCtl(){
   }
 }
 
+// ---------- \u7ACB\u7ED8\uFF1A\u8868\u60C5\u72B6\u6001\u673A\uFF08\u5168\u90E8\u8D70\u6574\u56FE\u5207\u6362\uFF0C\u7EDD\u4E0D scale\uFF09 ----------
+const EXPR_BASE = '/assets/expr/pixel_';
+const EXPR_DEFAULT = 'content';       // \u5F85\u673A
+const EXPR_LIST = ['aggrieved','blush','content','giggle','joy','nervous','pout','puzzled',
+                   'sad','scared','shy','sleepy','smug','starry','surprise','wink'];
+const img = $('avatarImg')
+const stage = $('avatarStage')
+
+let curExpr = EXPR_DEFAULT
+let exprTimer = null      // \u4E34\u65F6\u8868\u60C5\uFF08\u7728\u773C/\u8BF4\u8BDD/\u70B9\u51FB\uFF09\u7684\u8FD8\u539F\u8BA1\u65F6
+let idleTimer = null      // \u968F\u673A\u7728\u773C\u8BA1\u65F6
+let talkTimer = null
+const preloaded = {}
+
+for (const n of EXPR_LIST) {           // \u9884\u52A0\u8F7D\uFF0C\u5207\u8868\u60C5\u4E0D\u95EA\u767D
+  const im = new Image()
+  im.src = EXPR_BASE + n + '.png'
+  preloaded[n] = im
+}
+
+function setExpr(name, holdMs){
+  if (!EXPR_LIST.includes(name)) return
+  curExpr = name
+  img.src = EXPR_BASE + name + '.png'
+  if (holdMs) {
+    if (exprTimer) clearTimeout(exprTimer)
+    exprTimer = setTimeout(() => { exprTimer = null; setExpr(EXPR_DEFAULT) }, holdMs)
+  }
+}
+
+/** \u4FA7\u6F0F\u7684\u72B6\u6001\u63A5\u53E3\uFF1A\u4EE5\u540E state_engine \u63A5\u4E0A\u76F4\u63A5\u8C03 */
+window.setAvatarExpression = (name) => { setExpr(name) }
+window.setAvatarExpressionFor = (name, ms) => { setExpr(name, ms) }
+
+/** \u968F\u673A\u7728\u773C\uFF1A\u5207\u6210 wink\uFF0C120ms \u540E\u56DE\u6765 */
+function scheduleBlink(){
+  if (idleTimer) clearTimeout(idleTimer)
+  const wait = 3000 + Math.random() * 3000
+  idleTimer = setTimeout(() => {
+    if (!stage.classList.contains('talking') && !exprTimer) {
+      setExpr('wink', 120)
+    }
+    scheduleBlink()
+  }, wait)
+}
+scheduleBlink()
+
+/** \u89C6\u7EBF\u8DDF\u968F\uFF1A\u6574\u4E2A stage \u5E73\u79FB \xB14px\uFF0C\u7EDD\u4E0D\u7F29\u653E */
+let rafPending = false
+window.addEventListener('mousemove', (e) => {
+  if (rafPending) return
+  rafPending = true
+  requestAnimationFrame(() => {
+    const cx = window.innerWidth / 2
+    const cy = window.innerHeight / 2
+    const nx = Math.max(-1, Math.min(1, (e.clientX - cx) / cx))
+    const ny = Math.max(-1, Math.min(1, (e.clientY - cy) / cy))
+    stage.style.setProperty('--look-x', (nx * 4).toFixed(1) + 'px')
+    stage.style.setProperty('--look-y', (ny * 3).toFixed(1) + 'px')
+    rafPending = false
+  })
+})
+
+/** \u70B9\u51FB\u5979\uFF1A\u60CA\u8BB6 1.5s + \u5F80\u5F39\u5E55\u6D41\u53D1\u4E00\u53E5 */
+$('avatarBox').addEventListener('click', () => {
+  if (stage.classList.contains('talking')) return
+  setExpr('surprise', 1500)
+  pushLine('me', '\u300E\u4F60\u300F \uFF08\u6233\u4E86\u4E00\u4E0B\u5979\u7684\u8138\uFF09')
+  fetch('/api/danmaku', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: '\u522B\u6233\u5566\uFF01', user: '\u4F60' }),
+  }).then(r => r.json()).then(j => {
+    pushLine('sys', '// \u5DF2\u8F6C\u53D1\uFF1A' + (j.ok ? 'ok' : (j.error || '\u5931\u8D25')))
+  }).catch(() => {})
+})
+
+function startTalking(){
+  $('avatarBox').classList.add('speaking')
+  stage.classList.add('talking')
+  setExpr(Math.random() < 0.5 ? 'joy' : 'giggle')
+  if (talkTimer) clearInterval(talkTimer)
+  talkTimer = setInterval(() => {          // \u8BF4\u8BDD\u65F6\u968F\u673A\u6362\u8868\u60C5\uFF0C\u50CF\u5728\u5F00\u53E3
+    setExpr(Math.random() < 0.6 ? 'joy' : (Math.random() < 0.5 ? 'giggle' : 'surprise'))
+  }, 420)
+}
+function stopTalking(){
+  $('avatarBox').classList.remove('speaking')
+  stage.classList.remove('talking')
+  if (talkTimer) { clearInterval(talkTimer); talkTimer = null }
+  setExpr(EXPR_DEFAULT)
+}
+
 // ---------- \u4E8B\u4EF6\u901A\u9053\uFF08SSE\uFF09\uFF1A\u63A5 director \u63A8\u6765\u7684\u56DE\u590D\u4E0E\u64AD\u653E\u72B6\u6001 ----------
 function connectEvents(){
   let es
@@ -4579,16 +4688,17 @@ function connectEvents(){
     switch(ev.type){
       case 'chat_reply':
         pushLine('bot', '\u300E\u9CB8\u9C7C\u5A18\u300F ' + (ev.text || ''))
+        if (ev.text) startTalking()
         break
       case 'tts_start':
-        $('avatarBox').classList.add('speaking')
+        startTalking()
         break
       case 'tts_end':
-        $('avatarBox').classList.remove('speaking')
+        stopTalking()
         break
       case 'paint_start':
         allowArtPop()
-        flashAvatar(1800)
+        setExpr('starry', 2000)
         pushLine('sys', '// \u5F00\u59CB\u4F5C\u753B' + (ev.prompt ? '\uFF1A' + ev.prompt : ''))
         break
       case 'paint_end':
@@ -4596,16 +4706,10 @@ function connectEvents(){
         break
     }
   })
-  es.onerror = () => { /* EventSource \u4F1A\u81EA\u52A8\u91CD\u8FDE\uFF0C\u4E0D\u7528\u7BA1 */ }
+  es.onerror = () => { /* EventSource \u81EA\u52A8\u91CD\u8FDE */ }
 }
 connectEvents()
 
-// TTS \u64AD\u653E\u65F6\u7ACB\u7ED8\u6846\u95EA\uFF1A\u76EE\u524D TTS \u5728\u522B\u7684\u8FDB\u7A0B\uFF0C\u8FD9\u91CC\u53EA\u80FD\u7531\u5F39\u5E55\u56DE\u5305\u4E34\u65F6\u89E6\u53D1
-function flashAvatar(ms){
-  const b = $('avatarBox')
-  b.classList.add('speaking')
-  setTimeout(()=>b.classList.remove('speaking'), ms || 1600)
-}
 
 pushLine('sys','// \u9CB8\u9C7C\u6307\u6325\u8231\u5DF2\u5C31\u7EEA')
 probeCtl()
