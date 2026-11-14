@@ -4129,112 +4129,119 @@ var PAGE_HTML = `<!doctype html>
 <title>PERSONA-OS // \u9CB8\u9C7C\u6307\u6325\u8231</title>
 <style>
   :root{
-    --deep:#0A1128;      /* \u6DF1\u7A7A\u84DD\u5E95 */
-    --panel:#1B263B;     /* \u9762\u677F */
-    --cyan:#00F0FF;      /* \u8D5B\u535A\u9752\uFF08\u53D1\u5149\u8FB9\u6846\uFF09 */
-    --white:#FFFFFF;     /* \u5973\u4EC6\u767D */
-    --sea:#5BC0BE;       /* \u6D45\u6D77\u84DD\u5F3A\u8C03 */
+    --deep:#0A1128; --panel:#1B263B;
+    --cyan:#00F0FF; --white:#FFFFFF; --sea:#5BC0BE;
     --ok:#3ef0a0; --bad:#ff4d6d; --dim:#6b7f99;
   }
   *{box-sizing:border-box;image-rendering:pixelated}
-  html,body{height:100%}
+  html,body{height:100%;overflow:hidden}
   body{
     margin:0;background:var(--deep);color:var(--white);
     font-family:"VT323","Zpix","Cascadia Mono",Consolas,"Microsoft YaHei",monospace;
-    font-size:14px;letter-spacing:.02em;overflow-x:hidden;
-    /* \u6574\u9875\u6309\u89C6\u53E3\u9501\u5B9A\uFF0C\u4E0D\u518D\u65E0\u9650\u62C9\u9AD8 */
-    display:flex;flex-direction:column;height:100vh;
+    font-size:14px;letter-spacing:.02em;
     background-image:
-      repeating-linear-gradient(0deg,rgba(0,240,255,.035) 0 1px,transparent 1px 3px),
+      repeating-linear-gradient(0deg,rgba(0,240,255,.03) 0 1px,transparent 1px 3px),
+      linear-gradient(rgba(0,240,255,.055) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,240,255,.055) 1px,transparent 1px),
       radial-gradient(900px 500px at 15% -10%,#122a52 0%,transparent 60%),
       radial-gradient(700px 400px at 100% 0%,#1a1a4a 0%,transparent 55%);
+    background-size:auto, 32px 32px, 32px 32px, auto, auto;
   }
-  /* \u50CF\u7D20\u566A\u70B9 */
   body::after{
-    content:"";position:fixed;inset:0;pointer-events:none;opacity:.05;z-index:9999;
+    content:"";position:fixed;inset:0;pointer-events:none;opacity:.05;z-index:99999;
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'><rect width='1' height='1' fill='white'/><rect x='2' y='2' width='1' height='1' fill='white'/></svg>");
   }
 
   /* ---------- \u9876\u680F ---------- */
   header{
-    display:flex;align-items:center;gap:10px;padding:6px 12px;flex:none;
-    border-bottom:3px solid var(--cyan);background:rgba(27,38,59,.85);
-    box-shadow:0 0 14px rgba(0,240,255,.3);
+    display:flex;align-items:center;gap:10px;padding:6px 12px;height:42px;
+    border-bottom:3px solid var(--cyan);background:rgba(27,38,59,.9);
+    box-shadow:0 0 14px rgba(0,240,255,.3);position:relative;z-index:5000;
   }
-  .burger{
-    width:32px;height:28px;display:flex;flex-direction:column;justify-content:center;gap:4px;
-    padding:0 6px;border:2px solid var(--cyan);background:transparent;cursor:pointer;
-  }
+  .burger{width:32px;height:26px;display:flex;flex-direction:column;justify-content:center;gap:4px;
+    padding:0 6px;border:2px solid var(--cyan);background:transparent;cursor:pointer}
   .burger span{display:block;height:2px;background:var(--cyan)}
   .burger:active{transform:translate(2px,2px)}
   h1{margin:0;font-size:16px;letter-spacing:.2em;color:var(--cyan);text-shadow:0 0 8px rgba(0,240,255,.6)}
   header .spacer{flex:1}
+  .wsbadge{font-size:12px;padding:1px 7px;border:2px solid var(--bad);color:var(--bad);letter-spacing:.1em}
+  .wsbadge.on{border-color:var(--ok);color:var(--ok)}
   header .clock{color:var(--sea);font-size:13px}
 
-  /* ---------- \u83DC\u5355\u62BD\u5C49\uFF08\u2630 \u91CC\u7684\u4E24\u4E2A\u6309\u94AE\uFF09 ---------- */
-  #drawer{
-    position:fixed;left:0;top:54px;width:280px;z-index:1000;display:none;
-    border:4px solid var(--cyan);border-left:none;background:rgba(10,17,40,.97);
-    box-shadow:6px 6px 0 rgba(0,240,255,.25);padding:12px;
-  }
+  /* ---------- \u2630 \u83DC\u5355 ---------- */
+  #drawer{position:fixed;left:0;top:42px;width:280px;z-index:6000;display:none;
+    border:3px solid var(--cyan);border-left:none;background:rgba(10,17,40,.98);
+    box-shadow:6px 6px 0 rgba(0,240,255,.25);padding:12px}
   #drawer.open{display:block}
-  #drawer h3{margin:0 0 10px;font-size:14px;letter-spacing:.18em;color:var(--sea)}
-  .dbtn{
-    display:block;width:100%;text-align:left;margin-bottom:8px;padding:9px 10px;cursor:pointer;
-    border:2px solid var(--cyan);background:rgba(0,240,255,.08);color:var(--white);font:inherit;font-size:15px;
-  }
+  #drawer h3{margin:0 0 10px;font-size:13px;letter-spacing:.18em;color:var(--sea)}
+  .dbtn{display:block;width:100%;text-align:left;margin-bottom:8px;padding:8px 10px;cursor:pointer;
+    border:2px solid var(--cyan);background:rgba(0,240,255,.08);color:var(--white);font:inherit;font-size:14px}
   .dbtn:hover{background:rgba(0,240,255,.2)}
   .dbtn:active{transform:translate(2px,2px)}
-  .dbtn small{display:block;color:var(--dim);font-size:12px;margin-top:2px}
+  .dbtn small{display:block;color:var(--dim);font-size:11px;margin-top:2px}
   .dbtn.danger{border-color:var(--bad);background:rgba(255,77,109,.1)}
-  .dbtn.danger:hover{background:rgba(255,77,109,.25)}
-  #drawer .note{font-size:12px;color:var(--dim);line-height:1.5;margin-top:8px}
+  #drawer .note{font-size:11px;color:var(--dim);line-height:1.5;margin-top:8px}
 
-  /* ---------- \u4E3B\u5E03\u5C40\uFF1A\u94FA\u6EE1\u5269\u4F59\u9AD8\u5EA6\uFF0C\u4E0D\u6EA2\u51FA ---------- */
-  main{
-    display:grid;grid-template-columns:minmax(260px,34%) 1fr;
-    grid-template-rows:minmax(0,1.15fr) minmax(0,1fr);
-    gap:10px;padding:10px;flex:1;min-height:0;
+  /* ---------- \u684C\u9762\u56FE\u6807 ---------- */
+  #dock{position:fixed;left:12px;bottom:12px;z-index:4000;display:flex;flex-direction:column;gap:8px}
+  .dockicon{
+    width:78px;padding:8px 4px;text-align:center;cursor:pointer;user-select:none;
+    border:2px solid rgba(0,240,255,.45);background:rgba(10,17,40,.82);
+    font-size:12px;color:var(--sea);transition:background .12s;
   }
-  .box{
+  .dockicon:hover{background:rgba(0,240,255,.18);border-color:var(--cyan)}
+  .dockicon .glyph{font-size:22px;line-height:1.1;color:var(--cyan);display:block}
+  .dockicon.active{border-color:var(--white);color:var(--white)}
+  .dockicon.active .glyph{color:var(--white)}
+
+  /* ---------- \u7A97\u53E3 ---------- */
+  .win{
+    position:fixed;display:none;flex-direction:column;z-index:100;
     border:3px solid var(--cyan);background:var(--panel);
-    box-shadow:0 0 10px rgba(0,240,255,.15);position:relative;
-    min-height:0;overflow:hidden;
-    /* \u7ED9\u6D6E\u5728\u8FB9\u6846\u4E0A\u7684\u82F1\u6587\u6807\u7B7E\u7559\u51FA\u7A7A\u95F4\uFF0C\u5426\u5219\u4F1A\u88AB\u88C1\u6389 */
-    padding-top:12px;
+    box-shadow:0 0 14px rgba(0,240,255,.22),0 8px 30px rgba(0,0,0,.55);
+    min-width:220px;min-height:130px;
   }
-  .box .cap{
-    position:absolute;top:0;left:8px;transform:translateY(-50%);
-    background:var(--deep);padding:1px 8px;line-height:1.25;
-    font-size:12px;color:var(--sea);letter-spacing:.14em;z-index:5;white-space:nowrap;
+  .win.open{display:flex}
+  .win.min{padding-bottom:0}
+  .win.min .win-body{display:none}
+  .win.max{left:0!important;top:0!important;width:100vw!important;height:100vh!important}
+  .win-bar{
+    display:flex;align-items:center;gap:8px;padding:3px 4px 3px 10px;cursor:move;user-select:none;
+    background:rgba(0,240,255,.15);border-bottom:2px solid var(--cyan);flex:none;height:28px;
   }
+  .win-bar .title{flex:1;font-size:12px;letter-spacing:.14em;color:var(--sea);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .win-bar button{
+    font:inherit;font-size:13px;line-height:1;width:22px;height:20px;padding:0;cursor:pointer;
+    background:transparent;border:2px solid var(--cyan);color:var(--cyan);
+  }
+  .win-bar button:hover{background:var(--cyan);color:var(--deep)}
+  .win-bar button.close:hover{background:var(--bad);border-color:var(--bad);color:#fff}
+  .win-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
 
-  /* \u5DE6\u4E0A\uFF1A\u7ACB\u7ED8\u8231\uFF08\u50CF\u7D20\u7ACB\u7ED8 + \u547C\u5438 + \u89C6\u7EBF\u8DDF\u968F\uFF09 */
-  #avatarBox{grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;padding-top:12px;cursor:pointer}
-  #avatarStage{
-    position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;
-    transform:translate(var(--look-x,0px),var(--look-y,0px)); /* \u89C6\u7EBF\u8DDF\u968F\uFF0C\u53EA\u5E73\u79FB\u4E0D\u7F29\u653E */
-    transition:transform .18s ease-out;
+  /* \u7ACB\u7ED8\u7A97 */
+  #win-avatar .win-body{
+    align-items:center;justify-content:center;cursor:pointer;
+    background:
+      radial-gradient(ellipse 70% 45% at 50% 85%, rgba(0,240,255,.16) 0%, transparent 70%),
+      repeating-linear-gradient(0deg,rgba(93,192,190,.07) 0 2px,transparent 2px 6px),
+      linear-gradient(180deg,#061024 0%,#0A1128 55%,#0d2540 100%);
   }
-  #avatarImg{
-    max-width:100%;max-height:100%;object-fit:contain;
-    animation:breathe 3.6s ease-in-out infinite;      /* \u547C\u5438\uFF1A\u53EA\u8D70 Y \u8F74\uFF0C\u7EDD\u4E0D scale */
+  #win-avatar .win-body::before{  /* \u6D77\u5E95\u5149\u6655 */
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(circle at 50% 18%, rgba(90,200,255,.16) 0%, transparent 42%);
   }
-  #avatarStage.talking #avatarImg{
-    animation:talkBob .15s steps(2,end) infinite;       /* \u8BF4\u8BDD\u6296\u52A8\uFF1A1px \u6B65\u8FDB\uFF0C\u50CF\u50CF\u7D20\u6E38\u620F */
-  }
+  #avatarStage{width:100%;height:100%;display:flex;align-items:flex-end;justify-content:center;
+    transform:translate(var(--look-x,0px),var(--look-y,0px));transition:transform .18s ease-out;position:relative;z-index:1}
+  #avatarImg{max-width:96%;max-height:96%;object-fit:contain;animation:breathe 3.6s ease-in-out infinite}
+  #avatarStage.talking #avatarImg{animation:talkBob .15s steps(2,end) infinite}
   @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
   @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
-  #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
-  #avatarBox.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
-  @keyframes speakPulse{
-    0%,100%{box-shadow:0 0 10px rgba(0,240,255,.35)}
-    50%{box-shadow:0 0 26px 6px rgba(255,255,255,.75)}
-  }
-  #avatarBox .fallback{color:var(--dim);font-size:14px;text-align:center;padding:20px}
+  #win-avatar.speaking{border-color:var(--white);animation:speakPulse .55s steps(2,end) infinite}
+  @keyframes speakPulse{0%,100%{box-shadow:0 0 10px rgba(0,240,255,.35)}50%{box-shadow:0 0 26px 6px rgba(255,255,255,.7)}}
+  .fallback{color:var(--dim);font-size:12px;text-align:center;padding:14px;position:relative;z-index:1}
 
-  /* \u5DE6\u4E0B\uFF1A\u72B6\u6001\u4E0E\u64CD\u4F5C */
-  #statusBox{grid-column:1;grid-row:2;padding:16px 10px 8px;display:flex;flex-direction:column;min-height:0;padding-top:18px}
+  /* \u72B6\u6001\u7A97 */
+  #win-status .win-body{padding:10px 8px 8px;overflow:auto}
   .leds{display:grid;grid-template-columns:1fr 1fr;gap:5px}
   .led{display:flex;align-items:center;gap:6px;padding:3px 6px;border:2px solid rgba(0,240,255,.22);background:rgba(0,0,0,.25)}
   .led i{width:8px;height:8px;background:var(--bad);flex:none}
@@ -4244,14 +4251,14 @@ var PAGE_HTML = `<!doctype html>
   @keyframes ledBlink{50%{opacity:.2}}
   .led b{font-weight:400;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .led em{font-style:normal;color:var(--dim);font-size:11px;margin-left:auto}
-  .meters{margin-top:8px;min-height:0;overflow:auto}
+  .meters{margin-top:8px}
   .meter{margin-top:5px}
   .meter .lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:2px}
   .meter .bar{height:7px;border:2px solid rgba(0,240,255,.4);background:#08101f}
   .meter .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--sea),var(--cyan));width:0%}
 
-  /* \u53F3\u4FA7\uFF1A\u5F39\u5E55\u4E92\u52A8\u533A */
-  #chatBox{grid-column:2;grid-row:1;display:flex;flex-direction:column;padding:14px 8px 8px;min-height:0}
+  /* \u5F39\u5E55\u7A97 */
+  #win-console .win-body{padding:8px 8px 8px}
   #feed{flex:1;overflow:auto;background:#04070f;border:2px solid rgba(0,240,255,.22);padding:8px;font-size:13px;line-height:1.45;min-height:0}
   #feed .row{margin-bottom:4px;word-break:break-all;white-space:pre-wrap}
   #feed .me{color:var(--cyan)}
@@ -4259,71 +4266,24 @@ var PAGE_HTML = `<!doctype html>
   #feed .err{color:var(--bad)}
   #feed .sys{color:var(--dim)}
   .cmd{display:flex;gap:6px;margin-top:6px;flex:none}
-  .cmd input{
-    flex:1;font:inherit;font-size:14px;padding:6px 8px;color:var(--white);
-    background:#04070f;border:2px solid var(--cyan);outline:none;min-width:0;
-  }
+  .cmd input{flex:1;font:inherit;font-size:14px;padding:6px 8px;color:var(--white);
+    background:#04070f;border:2px solid var(--cyan);outline:none;min-width:0}
   .cmd input:focus{box-shadow:0 0 10px rgba(0,240,255,.4)}
-  .cmd button{
-    font:inherit;font-size:13px;padding:6px 12px;cursor:pointer;color:var(--deep);
-    background:var(--cyan);border:2px solid var(--cyan);white-space:nowrap;
-  }
+  .cmd button{font:inherit;font-size:13px;padding:6px 12px;cursor:pointer;color:var(--deep);
+    background:var(--cyan);border:2px solid var(--cyan);white-space:nowrap}
   .cmd button:hover{background:var(--white)}
-  .cmd button:active{transform:translate(2px,2px)}
-  .cmd button:disabled{opacity:.45;cursor:default;transform:none}
+  .cmd button:disabled{opacity:.45;cursor:default}
 
-  /* \u53F3\u4E0B\uFF1ACRT \u753B\u677F\uFF08\u73B0\u5728\u662F\u6D6E\u7A97\u5360\u4F4D\uFF0C\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF09 */
-  #crtBox{display:none}
-
-  /* ---------- \u751F\u56FE\u6D6E\u7A97 ---------- */
-  #artPop{
-    position:fixed;right:18px;bottom:18px;width:min(560px,60vw);z-index:2000;display:none;
-    border:3px solid var(--cyan);background:rgba(3,6,12,.97);
-    box-shadow:0 0 28px rgba(0,240,255,.45),0 10px 40px rgba(0,0,0,.7);
-  }
-  #artPop.show{display:block}
-  #artPop .bar{
-    display:flex;align-items:center;gap:8px;padding:4px 6px 4px 10px;
-    background:rgba(0,240,255,.14);border-bottom:2px solid var(--cyan);font-size:12px;color:var(--sea);
-    letter-spacing:.14em;cursor:move;user-select:none;
-  }
-  #artPop .bar .title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #artPop .bar button{
-    font:inherit;font-size:14px;line-height:1;padding:3px 8px;cursor:pointer;
-    background:transparent;border:2px solid var(--cyan);color:var(--cyan);
-  }
-  #artPop .bar button:hover{background:var(--cyan);color:var(--deep)}
-  #artPop .body{position:relative;aspect-ratio:1/1;background:#03060c;overflow:hidden}
-  #artPop .body img{width:100%;height:100%;object-fit:contain;display:block}
-  #artPop .body::before{
-    content:"";position:absolute;inset:0;pointer-events:none;z-index:2;opacity:.22;
-    background:repeating-linear-gradient(0deg,rgba(0,0,0,.55) 0 2px,transparent 2px 4px);
-  }
-  #artPop .body::after{
-    content:"";position:absolute;inset:0;pointer-events:none;z-index:3;
-    box-shadow:inset 0 0 50px rgba(0,0,0,.8);
-  }
-  #artPop .hint{
-    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    color:var(--dim);font-size:13px;letter-spacing:.12em;z-index:1;
-  }
-  #artPop .bar .dot{width:7px;height:7px;background:var(--ok);animation:ledBreath 1.6s steps(2,end) infinite}
-
-  @media (max-width:820px){
-    body{font-size:13px}
-    main{grid-template-columns:1fr;grid-template-rows:auto auto auto auto;flex:none;height:auto}
-    #avatarBox{height:220px}
-    #statusBox{height:auto}
-    #chatBox{height:240px}
-    #crtBox{height:220px}
-  }
-  /* \u5C4F\u5E55\u9AD8\u5EA6\u4E0D\u8DB3\u65F6\u8FDB\u4E00\u6B65\u538B\u7F29 */
-  @media (max-height:760px){
-    body{font-size:13px}
-    header{padding:4px 10px}
-    h1{font-size:14px}
-    .led{padding:2px 5px}
-  }
+  /* \u753B\u677F\u7A97 */
+  #win-paint .win-body{padding:8px;background:#03060c}
+  .crt{position:relative;flex:1;background:#03060c;overflow:hidden;min-height:0}
+  .crt img{width:100%;height:100%;object-fit:contain;display:block}
+  .crt::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;opacity:.22;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.55) 0 2px,transparent 2px 4px)}
+  .crt::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;
+    box-shadow:inset 0 0 50px rgba(0,0,0,.8)}
+  .crt .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);font-size:13px;letter-spacing:.12em;z-index:1}
 </style>
 </head>
 <body>
@@ -4331,77 +4291,89 @@ var PAGE_HTML = `<!doctype html>
   <button class="burger" id="burger" title="\u83DC\u5355"><span></span><span></span><span></span></button>
   <h1>PERSONA-OS // \u9CB8\u9C7C\u6307\u6325\u8231</h1>
   <span class="spacer"></span>
+  <span class="wsbadge" id="wsBadge">[WS \u79BB\u7EBF]</span>
   <span class="clock" id="clock">--:--:--</span>
 </header>
 
-<!-- \u2630 \u83DC\u5355\uFF1A\u53EA\u653E\u771F\u80FD\u505A\u7684\u4E8B -->
 <div id="drawer">
   <h3>// \u8230\u6865\u63A7\u5236</h3>
-  <button class="dbtn danger" id="btnRestart" data-name="IndexTTS2">
-    \u91CD\u542F TTS
-    <small>POST :8010/restart?name=IndexTTS2</small>
-  </button>
-  <button class="dbtn danger" id="btnRestartPainter" data-name="Painter">
-    \u91CD\u542F Painter
-    <small>POST :8010/restart?name=Painter</small>
-  </button>
-  <button class="dbtn" id="btnStartAll">
-    \u62C9\u8D77\u5168\u90E8\u5FAE\u670D\u52A1
-    <small>POST :8010/start-all\uFF08\u4E0D\u4F1A\u52A8\u88AB\u624B\u52A8\u505C\u6389\u7684\uFF09</small>
-  </button>
-  <button class="dbtn" id="btnClearFeed">
-    \u6E05\u7A7A\u5F39\u5E55\u6D41
-    <small>\u7EAF\u524D\u7AEF</small>
-  </button>
-  <button class="dbtn" id="btnRawStatus">
-    \u67E5\u770B /api/status \u539F\u59CB JSON
-    <small>\u6392\u67E5\u7528</small>
-  </button>
+  <button class="dbtn danger" id="btnRestart" data-name="IndexTTS2">\u91CD\u542F TTS<small>POST :8010/restart?name=IndexTTS2</small></button>
+  <button class="dbtn danger" id="btnRestartPainter" data-name="Painter">\u91CD\u542F Painter<small>POST :8010/restart?name=Painter</small></button>
+  <button class="dbtn" id="btnStartAll">\u62C9\u8D77\u5168\u90E8\u5FAE\u670D\u52A1<small>POST :8010/start-all</small></button>
+  <button class="dbtn" id="btnClearFeed">\u6E05\u7A7A\u5F39\u5E55\u6D41<small>\u7EAF\u524D\u7AEF</small></button>
+  <button class="dbtn" id="btnRawStatus">\u67E5\u770B /api/status<small>\u6392\u67E5\u7528</small></button>
   <div class="note" id="ctlNote">\u63A7\u5236\u63A5\u53E3\u672A\u63A2\u6D4B</div>
 </div>
 
-<main>
-  <div class="box" id="avatarBox">
-    <span class="cap">LIVE FEED</span>
+<!-- \u684C\u9762\u56FE\u6807 -->
+<div id="dock">
+  <div class="dockicon" data-win="win-avatar"><span class="glyph">\u25C8</span>\u7ACB\u7ED8</div>
+  <div class="dockicon" data-win="win-console"><span class="glyph">\u25A4</span>\u5F39\u5E55</div>
+  <div class="dockicon" data-win="win-status"><span class="glyph">\u25A6</span>\u72B6\u6001</div>
+  <div class="dockicon" data-win="win-paint"><span class="glyph">\u25A3</span>\u753B\u677F</div>
+</div>
+
+<!-- \u7A97\u53E3 1\uFF1A\u7ACB\u7ED8 -->
+<div class="win" id="win-avatar" data-title="LIVE FEED">
+  <div class="win-bar"><span class="title">LIVE FEED</span>
+    <button data-act="min" title="\u6700\u5C0F\u5316">\u2014</button>
+    <button data-act="max" title="\u6700\u5927\u5316">\u25A1</button>
+    <button data-act="close" class="close" title="\u5173\u95ED">\u2715</button>
+  </div>
+  <div class="win-body">
     <div id="avatarStage">
       <img id="avatarImg" src="/assets/expr/pixel_smile.png" alt=""
            onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
     </div>
     <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u68C0\u67E5 web/assets/expr/pixel_*.png</small></div>
   </div>
+</div>
 
-  <div class="box" id="statusBox">
-    <span class="cap">SYSTEMS</span>
-    <div class="leds" id="leds"></div>
-    <div class="meters">
-      <div class="meter">
-        <div class="lbl"><span>MEMORY</span><span id="memTxt">-</span></div>
-        <div class="bar"><i id="memBar"></i></div>
-      </div>
-      <div id="gpuMeters"></div>
-    </div>
+<!-- \u7A97\u53E3 2\uFF1A\u5F39\u5E55\u4E3B\u63A7\u53F0 -->
+<div class="win" id="win-console" data-title="DANMAKU">
+  <div class="win-bar"><span class="title">DANMAKU // \u6307\u6325\u5B98\u6D4B\u8BD5\u53F0</span>
+    <button data-act="min" title="\u6700\u5C0F\u5316">\u2014</button>
+    <button data-act="max" title="\u6700\u5927\u5316">\u25A1</button>
+    <button data-act="close" class="close" title="\u5173\u95ED">\u2715</button>
   </div>
-
-  <div class="box" id="chatBox">
-    <span class="cap">DANMAKU // \u6307\u6325\u5B98\u6D4B\u8BD5\u53F0</span>
+  <div class="win-body">
     <div id="feed"></div>
     <div class="cmd">
       <input id="cmdInput" placeholder="!\u753B \u50CF\u7D20\u98CE\u7684\u732B" autocomplete="off">
       <button id="sendBtn">\u53D1\u9001\u6307\u4EE4</button>
     </div>
   </div>
-</main>
+</div>
 
-<!-- \u751F\u56FE\u6D6E\u7A97\uFF1A\u53EF\u62D6\u52A8\u3001\u53EF\u5173\u95ED -->
-<div id="artPop">
-  <div class="bar" id="artBar">
-    <span class="dot"></span>
-    <span class="title" id="artTitle">PIXEL ART</span>
-    <button id="artHide" title="\u5173\u95ED\u6D6E\u7A97">\u2715</button>
+<!-- \u7A97\u53E3 3\uFF1A\u670D\u52A1\u72B6\u6001 -->
+<div class="win" id="win-status" data-title="SYSTEMS">
+  <div class="win-bar"><span class="title">SYSTEMS</span>
+    <button data-act="min" title="\u6700\u5C0F\u5316">\u2014</button>
+    <button data-act="max" title="\u6700\u5927\u5316">\u25A1</button>
+    <button data-act="close" class="close" title="\u5173\u95ED">\u2715</button>
   </div>
-  <div class="body">
-    <div class="hint" id="artHint">\u7B49\u5F85\u4F5C\u753B\u2026</div>
-    <img id="artImg" alt="" style="display:none">
+  <div class="win-body">
+    <div class="leds" id="leds"></div>
+    <div class="meters">
+      <div class="meter"><div class="lbl"><span>MEMORY</span><span id="memTxt">-</span></div>
+        <div class="bar"><i id="memBar"></i></div></div>
+      <div id="gpuMeters"></div>
+    </div>
+  </div>
+</div>
+
+<!-- \u7A97\u53E3 4\uFF1A\u753B\u677F\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF09 -->
+<div class="win" id="win-paint" data-title="PIXEL ART">
+  <div class="win-bar"><span class="title" id="artTitle">PIXEL ART</span>
+    <button data-act="min" title="\u6700\u5C0F\u5316">\u2014</button>
+    <button data-act="max" title="\u6700\u5927\u5316">\u25A1</button>
+    <button data-act="close" class="close" title="\u5173\u95ED">\u2715</button>
+  </div>
+  <div class="win-body">
+    <div class="crt">
+      <div class="hint" id="artHint">\u7B49\u5F85\u4F5C\u753B\u2026</div>
+      <img id="artImg" alt="" style="display:none">
+    </div>
   </div>
 </div>
 
@@ -4409,7 +4381,6 @@ var PAGE_HTML = `<!doctype html>
 const $ = (id) => document.getElementById(id)
 const feed = $('feed')
 let ctlOk = false
-
 function nowStr(){ return new Date().toLocaleTimeString('zh-CN',{hour12:false}) }
 setInterval(()=>{ $('clock').textContent = nowStr() }, 1000)
 
@@ -4422,7 +4393,119 @@ function pushLine(kind, text){
   while (feed.children.length > 400) feed.removeChild(feed.firstChild)
 }
 
-// ---------- \u72B6\u6001 ----------
+/* ================= WindowManager\uFF08\u539F\u751F JS\uFF0C\u65E0\u4F9D\u8D56\uFF09 ================= */
+const WM = (() => {
+  let zTop = 100
+  const state = {}                     // id -> {open, min, max, rects}
+  const wins = () => Array.from(document.querySelectorAll('.win'))
+
+  function apply(id){
+    const el = document.getElementById(id)
+    const s = state[id]
+    if (!el || !s) return
+    el.classList.toggle('open', s.open)
+    el.classList.toggle('min', s.min)
+    el.classList.toggle('max', s.max)
+    if (s.open && !s.max) {
+      el.style.left = s.x + 'px'; el.style.top = s.y + 'px'
+      el.style.width = s.w + 'px'; el.style.height = s.h + 'px'
+    }
+    // \u56FE\u6807\u9AD8\u4EAE
+    document.querySelectorAll('.dockicon').forEach(ic => {
+      ic.classList.toggle('active', ic.dataset.win === id && s.open && !s.min)
+    })
+  }
+
+  function raise(id){
+    const el = document.getElementById(id)
+    if (!el) return
+    el.style.zIndex = ++zTop
+  }
+
+  function open(id, opts = {}){
+    const s = state[id]
+    if (!s) return
+    s.open = true; s.min = false
+    if (opts.rect) { s.x = opts.rect.x; s.y = opts.rect.y; s.w = opts.rect.w; s.h = opts.rect.h }
+    apply(id); raise(id)
+  }
+  function close(id){ const s = state[id]; if (!s) return; s.open = false; s.min = false; s.max = false; apply(id) }
+  function minimize(id){ const s = state[id]; if (!s) return; s.min = true; apply(id) }
+  function toggleMin(id){ const s = state[id]; if (!s) return; if (s.min) { s.min = false; apply(id); raise(id) } else minimize(id) }
+  function toggleMax(id){
+    const s = state[id]; if (!s) return
+    if (!s.max) { s.saved = {x:s.x,y:s.y,w:s.w,h:s.h}; s.max = true }
+    else { s.max = false; if (s.saved) Object.assign(s, s.saved) }
+    apply(id); raise(id)
+  }
+  function isOpen(id){ return !!(state[id] && state[id].open && !state[id].min) }
+
+  // \u521D\u59CB\u5316\uFF1A\u4ECE DOM \u7684 data-rect \u8BFB\u9ED8\u8BA4\u4F4D\u7F6E
+  function init(){
+    wins().forEach(el => {
+      const r = (el.dataset.rect || '60,60,380,300').split(',').map(Number)
+      const id = el.id
+      state[id] = { open:false, min:false, max:false, x:r[0], y:r[1], w:r[2], h:r[3] }
+      el.querySelectorAll('.win-bar button').forEach(b => {
+        b.addEventListener('mousedown', e => e.stopPropagation())
+        b.addEventListener('click', e => {
+          e.stopPropagation()
+          const act = b.dataset.act
+          if (act === 'min') toggleMin(id)
+          else if (act === 'max') toggleMax(id)
+          else close(id)
+        })
+      })
+      // \u70B9\u7A97\u53E3\u4EFB\u610F\u5904 -> \u7F6E\u9876
+      el.addEventListener('mousedown', () => raise(id))
+      // \u62D6\u6807\u9898\u680F
+      const bar = el.querySelector('.win-bar')
+      let drag = null
+      bar.addEventListener('mousedown', e => {
+        if (e.target.tagName === 'BUTTON') return
+        const s = state[id]
+        if (s.max) return
+        drag = { sx:e.clientX, sy:e.clientY, ox:s.x, oy:s.y }
+        e.preventDefault()
+      })
+      window.addEventListener('mousemove', e => {
+        if (!drag) return
+        const s = state[id]
+        s.x = Math.max(-s.w + 80, Math.min(window.innerWidth - 80, drag.ox + e.clientX - drag.sx))
+        s.y = Math.max(42, Math.min(window.innerHeight - 40, drag.oy + e.clientY - drag.sy))
+        el.style.left = s.x + 'px'; el.style.top = s.y + 'px'
+      })
+      window.addEventListener('mouseup', () => { drag = null })
+      apply(id)
+    })
+  }
+
+  // \u684C\u9762\u56FE\u6807\uFF1A\u5355\u51FB\u6253\u5F00 / \u5DF2\u6253\u5F00\u5219\u7F6E\u9876
+  document.querySelectorAll('.dockicon').forEach(ic => {
+    ic.addEventListener('click', () => {
+      const id = ic.dataset.win
+      const s = state[id]
+      if (!s) return
+      if (!s.open) open(id)
+      else if (s.min) { s.min = false; apply(id); raise(id) }
+      else raise(id)
+    })
+  })
+
+  return { init, open, close, minimize, toggleMin, toggleMax, isOpen, raise, state }
+})()
+
+/* \u9ED8\u8BA4\u5E03\u5C40\uFF08\u7528\u6237\u62CD\u677F\uFF09 */
+WM.init()
+WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 380; WM.state['win-avatar'].h = 460
+WM.state['win-console'].x = Math.max(420, window.innerWidth - 640); WM.state['win-console'].y = 54; WM.state['win-console'].w = 620; WM.state['win-console'].h = 420
+WM.state['win-status'].x = 12;  WM.state['win-status'].y = Math.max(60, window.innerHeight - 280); WM.state['win-status'].w = 380; WM.state['win-status'].h = 260
+WM.state['win-paint'].x = Math.max(420, window.innerWidth - 500); WM.state['win-paint'].y = Math.max(60, window.innerHeight - 500); WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
+WM.open('win-avatar'); WM.open('win-console')
+WM.open('win-status')
+// \u753B\u677F\u9ED8\u8BA4\u5173\u95ED\uFF08\u53D1 !\u753B \u65F6\u81EA\u52A8\u5F00\uFF09
+
+/* ================= \u72B6\u6001 ================= */
 const LED_MAP = [
   ['memory','Memory :8001'],['painter','Painter :8002'],
   ['audiocover','Audio :8005'],['indextts','TTS :9881'],
@@ -4465,44 +4548,13 @@ async function pollStatus(){
   }catch(_){}
 }
 
-// ---------- \u753B\u677F\u6D6E\u7A97 ----------
-const artPop = $('artPop')
+/* ================= \u753B\u677F ================= */
 let lastPaintTag = ''
-let artClosed = false   // \u7528\u6237\u624B\u52A8\u5173\u6389\u540E\uFF0C\u4E0D\u518D\u81EA\u52A8\u5F39\u51FA\uFF08\u65B0\u7684\u4E00\u5355\u624D\u91CD\u65B0\u5F39\uFF09
-
-$('artHide').onclick = () => { artPop.classList.remove('show'); artClosed = true }
-$('artTitle').onclick = null
-
-// \u62D6\u52A8
-;(function(){
-  const bar = $('artBar'), pop = artPop
-  let sx=0, sy=0, ox=0, oy=0, dragging=false
-  bar.addEventListener('mousedown', (e) => {
-    if (e.target.tagName === 'BUTTON') return
-    dragging = true
-    const r = pop.getBoundingClientRect()
-    ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY
-    pop.style.right = 'auto'; pop.style.bottom = 'auto'
-    pop.style.left = ox + 'px'; pop.style.top = oy + 'px'
-    e.preventDefault()
-  })
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return
-    const nx = Math.max(0, Math.min(window.innerWidth - 120, ox + e.clientX - sx))
-    const ny = Math.max(0, Math.min(window.innerHeight - 60, oy + e.clientY - sy))
-    pop.style.left = nx + 'px'; pop.style.top = ny + 'px'
-  })
-  window.addEventListener('mouseup', () => { dragging = false })
-})()
-
-/** \u6536\u5230\u65B0\u4E00\u5355\u65F6\u5141\u8BB8\u91CD\u65B0\u5F39\u51FA */
-function allowArtPop(){ artClosed = false }
-
+let artClosedByUser = false
 async function pollPaint(){
   try{
     const r = await fetch('/api/latest-paint?tag=' + Date.now(), {cache:'no-store'})
-    if (r.status === 404) return
-    if(!r.ok) return
+    if (!r.ok) return
     const tag = r.headers.get('x-paint-mtime') || ''
     if (tag && tag === lastPaintTag) return
     lastPaintTag = tag
@@ -4515,32 +4567,43 @@ async function pollPaint(){
     img.src = url
     img.style.display = 'block'
     $('artHint').style.display = 'none'
-    $('artTitle').textContent = 'PIXEL ART \xB7 ' + new Date().toLocaleTimeString('zh-CN',{hour12:false})
-    if (!artClosed) artPop.classList.add('show')
+    $('artTitle').textContent = 'PIXEL ART \xB7 ' + nowStr()
+    if (!artClosedByUser) WM.open('win-paint')
   }catch(_){}
 }
 
-// ---------- \u53D1\u6307\u4EE4 ----------
+/* ================= \u53D1\u6307\u4EE4 ================= */
 let sending = false
 async function sendCmd(){
   const text = $('cmdInput').value.trim()
   if (!text || sending) return
   sending = true; $('sendBtn').disabled = true
   pushLine('me', '\u300E\u9762\u677F\u6307\u6325\u5B98\u300F ' + text)
+  // \u753B\u56FE\u6307\u4EE4\uFF1A\u5148\u5F39\u51FA\u753B\u677F\uFF08\u7528\u6237\u62CD\u677F\uFF1A\u7ACB\u523B\u5F39\u5E76\u7F6E\u9876\uFF09
+  if (/^[!\uFF01]\u753B/.test(text)) {
+    artClosedByUser = false
+    WM.open('win-paint')
+    WM.raise('win-paint')
+    setExpr('starry', 2000)
+  }
   try{
     const r = await fetch('/api/danmaku', {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ text })
     })
     const j = await r.json()
-    if (j.ok) {
-      pushLine('bot', '\u2190 ' + JSON.stringify(j.reply))
-      // \u53D1\u7684\u662F\u753B\u56FE\u6307\u4EE4 \u2192 \u5141\u8BB8\u6D6E\u7A97\u91CD\u65B0\u5F39\u51FA
-      if (/^[!\uFF01]\u753B/.test(text)) { allowArtPop(); setExpr('starry', 2000) }
+    if (j.ok) pushLine('bot', '\u2190 ' + JSON.stringify(j.reply))
+    else {
+      const msg = String(j.error || '\u53D1\u9001\u5931\u8D25')
+      if (msg.includes('ECONNREFUSED') || msg.includes('9001'))
+        pushLine('err', '\u2717 \u5F39\u5E55\u670D\u52A1\u672A\u8FDE\u63A5\uFF08:9001 Director \u672A\u542F\u52A8\uFF09\uFF0C\u6307\u4EE4\u6CA1\u53D1\u51FA\u53BB')
+      else pushLine('err', '\u2717 ' + msg)
     }
-    else pushLine('err', '\u2717 ' + (j.error || '\u53D1\u9001\u5931\u8D25'))
   }catch(e){
-    pushLine('err', '\u2717 \u8BF7\u6C42\u5931\u8D25\uFF1A' + e.message)
+    const msg = String(e.message || e)
+    if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed'))
+      pushLine('err', '\u2717 \u5F39\u5E55\u670D\u52A1\u672A\u8FDE\u63A5\uFF08:9001 Director \u672A\u542F\u52A8\uFF09\uFF0C\u6307\u4EE4\u6CA1\u53D1\u51FA\u53BB')
+    else pushLine('err', '\u2717 \u8BF7\u6C42\u5931\u8D25\uFF1A' + msg)
   }finally{
     sending = false; $('sendBtn').disabled = false; $('cmdInput').value = ''
   }
@@ -4548,11 +4611,10 @@ async function sendCmd(){
 $('sendBtn').onclick = sendCmd
 $('cmdInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendCmd() })
 
-// ---------- \u2630 \u83DC\u5355 ----------
+/* ================= \u2630 \u83DC\u5355 ================= */
 const drawer = $('drawer')
 $('burger').onclick = (e) => { e.stopPropagation(); drawer.classList.toggle('open') }
 document.addEventListener('click', (e) => { if (!drawer.contains(e.target) && e.target !== $('burger')) drawer.classList.remove('open') })
-
 async function ctl(path, label){
   pushLine('sys', '\u203A ' + label)
   try{
@@ -4560,7 +4622,7 @@ async function ctl(path, label){
     const j = await r.json()
     pushLine(j.ok ? 'bot' : 'err', '\u2190 ' + JSON.stringify(j))
   }catch(e){
-    pushLine('err', '\u2717 \u63A7\u5236\u63A5\u53E3\u4E0D\u53EF\u7528\uFF1A' + e.message)
+    pushLine('err', '\u2717 \u63A7\u5236\u63A5\u53E3\u4E0D\u53EF\u7528\uFF08:8010 \u672A\u542F\u52A8\uFF09')
   }
 }
 document.querySelectorAll('[data-name]').forEach(b => {
@@ -4572,7 +4634,6 @@ $('btnRawStatus').onclick = async () => {
   const j = await fetch('/api/status').then(r=>r.json())
   pushLine('sys', JSON.stringify(j, null, 1))
 }
-
 async function probeCtl(){
   try{
     const r = await fetch('/api/control/health')
@@ -4584,72 +4645,52 @@ async function probeCtl(){
   }
 }
 
-// ---------- \u7ACB\u7ED8\uFF1A\u8868\u60C5\u72B6\u6001\u673A\uFF08\u5168\u90E8\u8D70\u6574\u56FE\u5207\u6362\uFF0C\u7EDD\u4E0D scale\uFF09 ----------
-const EXPR_BASE = '/assets/expr/pixel_';
-// \u5F85\u673A\uFF1Asmile = shy \u7684\u7741\u773C + content \u7684\u5FAE\u7B11\u5634\uFF08\u50CF\u7D20\u7F51\u683C\u4E0A\u5408\u6210\u7684\uFF0C\u89C1 tools/make_smile_pixel.py\uFF09
-const EXPR_DEFAULT = 'smile';
+/* ================= \u7ACB\u7ED8 ================= */
+const EXPR_BASE = '/assets/expr/pixel_'
+const EXPR_DEFAULT = 'smile'
 const EXPR_LIST = ['aggrieved','blush','content','giggle','joy','nervous','pout','puzzled',
-                   'sad','scared','shy','sleepy','smile','smug','starry','surprise','wink'];
+                   'sad','scared','shy','sleepy','smile','smug','starry','surprise','wink']
 const img = $('avatarImg')
 const stage = $('avatarStage')
-
-let curExpr = EXPR_DEFAULT
-let exprTimer = null      // \u4E34\u65F6\u8868\u60C5\uFF08\u7728\u773C/\u8BF4\u8BDD/\u70B9\u51FB\uFF09\u7684\u8FD8\u539F\u8BA1\u65F6
-let idleTimer = null      // \u968F\u673A\u7728\u773C\u8BA1\u65F6
-let talkTimer = null
+let exprTimer = null, idleTimer = null, talkTimer = null
 const preloaded = {}
-
-for (const n of EXPR_LIST) {           // \u9884\u52A0\u8F7D\uFF0C\u5207\u8868\u60C5\u4E0D\u95EA\u767D
-  const im = new Image()
-  im.src = EXPR_BASE + n + '.png'
-  preloaded[n] = im
-}
+for (const n of EXPR_LIST) { const im = new Image(); im.src = EXPR_BASE + n + '.png'; preloaded[n] = im }
 
 function setExpr(name, holdMs){
   if (!EXPR_LIST.includes(name)) return
-  curExpr = name
   img.src = EXPR_BASE + name + '.png'
   if (holdMs) {
     if (exprTimer) clearTimeout(exprTimer)
     exprTimer = setTimeout(() => { exprTimer = null; setExpr(EXPR_DEFAULT) }, holdMs)
   }
 }
-
-/** \u4FA7\u6F0F\u7684\u72B6\u6001\u63A5\u53E3\uFF1A\u4EE5\u540E state_engine \u63A5\u4E0A\u76F4\u63A5\u8C03 */
 window.setAvatarExpression = (name) => { setExpr(name) }
 window.setAvatarExpressionFor = (name, ms) => { setExpr(name, ms) }
 
-/** \u968F\u673A\u7728\u773C\uFF1A\u5207\u6210 wink\uFF0C120ms \u540E\u56DE\u6765 */
 function scheduleBlink(){
   if (idleTimer) clearTimeout(idleTimer)
   const wait = 3000 + Math.random() * 3000
   idleTimer = setTimeout(() => {
-    if (!stage.classList.contains('talking') && !exprTimer) {
-      setExpr('wink', 120)
-    }
+    if (!stage.classList.contains('talking') && !exprTimer) setExpr('wink', 120)
     scheduleBlink()
   }, wait)
 }
 scheduleBlink()
 
-/** \u89C6\u7EBF\u8DDF\u968F\uFF1A\u6574\u4E2A stage \u5E73\u79FB \xB14px\uFF0C\u7EDD\u4E0D\u7F29\u653E */
 let rafPending = false
 window.addEventListener('mousemove', (e) => {
   if (rafPending) return
   rafPending = true
   requestAnimationFrame(() => {
-    const cx = window.innerWidth / 2
-    const cy = window.innerHeight / 2
-    const nx = Math.max(-1, Math.min(1, (e.clientX - cx) / cx))
-    const ny = Math.max(-1, Math.min(1, (e.clientY - cy) / cy))
+    const nx = Math.max(-1, Math.min(1, (e.clientX - window.innerWidth/2) / (window.innerWidth/2)))
+    const ny = Math.max(-1, Math.min(1, (e.clientY - window.innerHeight/2) / (window.innerHeight/2)))
     stage.style.setProperty('--look-x', (nx * 4).toFixed(1) + 'px')
     stage.style.setProperty('--look-y', (ny * 3).toFixed(1) + 'px')
     rafPending = false
   })
 })
 
-/** \u70B9\u51FB\u5979\uFF1A\u60CA\u8BB6 1.5s + \u5F80\u5F39\u5E55\u6D41\u53D1\u4E00\u53E5 */
-$('avatarBox').addEventListener('click', () => {
+$('win-avatar').querySelector('.win-body').addEventListener('click', () => {
   if (stage.classList.contains('talking')) return
   setExpr('surprise', 1500)
   pushLine('me', '\u300E\u4F60\u300F \uFF08\u6233\u4E86\u4E00\u4E0B\u5979\u7684\u8138\uFF09')
@@ -4657,31 +4698,37 @@ $('avatarBox').addEventListener('click', () => {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ text: '\u522B\u6233\u5566\uFF01', user: '\u4F60' }),
   }).then(r => r.json()).then(j => {
-    pushLine('sys', '// \u5DF2\u8F6C\u53D1\uFF1A' + (j.ok ? 'ok' : (j.error || '\u5931\u8D25')))
-  }).catch(() => {})
+    if (!j.ok) pushLine('sys', '// \u5F39\u5E55\u672A\u9001\u8FBE\uFF08:9001 \u672A\u542F\u52A8\uFF09')
+  }).catch(() => pushLine('sys', '// \u5F39\u5E55\u672A\u9001\u8FBE\uFF08:9001 \u672A\u542F\u52A8\uFF09'))
 })
 
 function startTalking(){
-  $('avatarBox').classList.add('speaking')
+  $('win-avatar').classList.add('speaking')
   stage.classList.add('talking')
   setExpr(Math.random() < 0.5 ? 'joy' : 'giggle')
   if (talkTimer) clearInterval(talkTimer)
-  talkTimer = setInterval(() => {          // \u8BF4\u8BDD\u65F6\u968F\u673A\u6362\u8868\u60C5\uFF0C\u50CF\u5728\u5F00\u53E3
+  talkTimer = setInterval(() => {
     setExpr(Math.random() < 0.6 ? 'joy' : (Math.random() < 0.5 ? 'giggle' : 'surprise'))
   }, 420)
 }
 function stopTalking(){
-  $('avatarBox').classList.remove('speaking')
+  $('win-avatar').classList.remove('speaking')
   stage.classList.remove('talking')
   if (talkTimer) { clearInterval(talkTimer); talkTimer = null }
   setExpr(EXPR_DEFAULT)
 }
 
-// ---------- \u4E8B\u4EF6\u901A\u9053\uFF08SSE\uFF09\uFF1A\u63A5 director \u63A8\u6765\u7684\u56DE\u590D\u4E0E\u64AD\u653E\u72B6\u6001 ----------
+/* ================= SSE \u4E8B\u4EF6\u901A\u9053\uFF08\u5E26\u91CD\u8FDE\uFF09 ================= */
+const wsBadge = $('wsBadge')
+function setWsBadge(on){
+  wsBadge.textContent = on ? '[WS \u5728\u7EBF]' : '[WS \u79BB\u7EBF]'
+  wsBadge.classList.toggle('on', on)
+}
+let esRetry = 1000
 function connectEvents(){
   let es
-  try { es = new EventSource('/api/event/stream') } catch(_) { return }
-  es.addEventListener('hello', () => pushLine('sys', '// \u4E8B\u4EF6\u901A\u9053\u5DF2\u8FDE\u63A5'))
+  try { es = new EventSource('/api/event/stream') } catch(_) { setTimeout(connectEvents, esRetry); return }
+  es.addEventListener('hello', () => { esRetry = 1000; setWsBadge(true) })
   es.addEventListener('panel', (e) => {
     let ev
     try { ev = JSON.parse(e.data) } catch(_) { return }
@@ -4691,14 +4738,11 @@ function connectEvents(){
         pushLine('bot', '\u300E\u9CB8\u9C7C\u5A18\u300F ' + (ev.text || ''))
         if (ev.text) startTalking()
         break
-      case 'tts_start':
-        startTalking()
-        break
-      case 'tts_end':
-        stopTalking()
-        break
+      case 'tts_start': startTalking(); break
+      case 'tts_end': stopTalking(); break
       case 'paint_start':
-        allowArtPop()
+        artClosedByUser = false
+        WM.open('win-paint'); WM.raise('win-paint')
         setExpr('starry', 2000)
         pushLine('sys', '// \u5F00\u59CB\u4F5C\u753B' + (ev.prompt ? '\uFF1A' + ev.prompt : ''))
         break
@@ -4707,15 +4751,18 @@ function connectEvents(){
         break
     }
   })
-  es.onerror = () => { /* EventSource \u81EA\u52A8\u91CD\u8FDE */ }
+  es.onerror = () => {
+    setWsBadge(false)
+    try { es.close() } catch(_) {}
+    // \u6307\u6570\u9000\u907F\uFF0C\u6700\u957F 15 \u79D2
+    setTimeout(connectEvents, esRetry)
+    esRetry = Math.min(15000, esRetry * 1.7)
+  }
 }
 connectEvents()
 
-
-pushLine('sys','// \u9CB8\u9C7C\u6307\u6325\u8231\u5DF2\u5C31\u7EEA')
-probeCtl()
-pollStatus()
-pollPaint()
+pushLine('sys','// \u9CB8\u9C7C\u6307\u6325\u8231\u5DF2\u5C31\u7EEA\uFF08\u70B9\u5DE6\u4E0B\u56FE\u6807\u5F00\u7A97\u53E3\uFF09')
+probeCtl(); pollStatus(); pollPaint()
 setInterval(pollStatus, 2000)
 setInterval(pollPaint, 100)
 setInterval(probeCtl, 15000)
