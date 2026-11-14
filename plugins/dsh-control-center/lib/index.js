@@ -4549,11 +4549,22 @@ const WM = (() => {
 
 /* \u9ED8\u8BA4\u5E03\u5C40\uFF08\u7528\u6237\u62CD\u677F\uFF09 */
 WM.init()
-/* \u56FA\u5B9A\u5E03\u5C40\uFF08\u7528\u6237\u62CD\u677F\uFF0C\u6B64\u540E\u4E0D\u518D\u6539\u52A8\uFF09\uFF1A\u7ACB\u7ED8 400x400 \u5DE6\u4E0A / \u5F39\u5E55 620x420 \u53F3\u4E0A / \u72B6\u6001 380x260 \u5DE6\u4E0B / \u753B\u677F 480x480 \u53F3\u4E0B */
-WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 400; WM.state['win-avatar'].h = 400
-WM.state['win-console'].x = Math.max(430, window.innerWidth - 650); WM.state['win-console'].y = 54; WM.state['win-console'].w = 620; WM.state['win-console'].h = 420
-WM.state['win-status'].x = 12;  WM.state['win-status'].y = Math.max(60, window.innerHeight - 290); WM.state['win-status'].w = 380; WM.state['win-status'].h = 260
-WM.state['win-paint'].x = Math.max(430, window.innerWidth - 500); WM.state['win-paint'].y = Math.max(60, window.innerHeight - 500); WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
+/* \u56FA\u5B9A\u5E03\u5C40\uFF1A\u8FD8\u539F"\u6539\u6210\u6D6E\u7A97\u4E4B\u524D"\u7684\u7F51\u683C\u6BD4\u4F8B\uFF08\u5DE6\u680F 34% / \u53F3\u680F 66%\uFF0C\u884C\u9AD8 1.15:1\uFF09 */
+const _W = window.innerWidth, _H = window.innerHeight
+const _colL = Math.max(420, Math.round(_W * 0.34) - 20)          // \u5DE6\u680F\u5BBD
+const _colR = Math.max(520, _W - _colL - 36)                     // \u53F3\u680F\u5BBD
+const _availH = Math.max(400, _H - 42 - 24)                       // \u53BB\u6389\u9876\u680F\u4E0E\u5185\u8FB9\u8DDD
+const _row1 = Math.round(_availH * 1.15 / 2.15)                   // \u7B2C\u4E00\u884C\u9AD8
+const _row2 = _availH - _row1                                     // \u7B2C\u4E8C\u884C\u9AD8
+
+WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54
+WM.state['win-avatar'].w = _colL; WM.state['win-avatar'].h = _row1
+WM.state['win-status'].x = 12;  WM.state['win-status'].y = 54 + _row1 + 10
+WM.state['win-status'].w = _colL; WM.state['win-status'].h = _row2
+WM.state['win-console'].x = 12 + _colL + 14; WM.state['win-console'].y = 54
+WM.state['win-console'].w = _colR; WM.state['win-console'].h = _row1
+WM.state['win-paint'].x = Math.max(20, _W - 500); WM.state['win-paint'].y = Math.max(60, _H - 500)
+WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
 WM.open('win-avatar'); WM.open('win-console')
 WM.open('win-status')
 // \u753B\u677F\u9ED8\u8BA4\u5173\u95ED\uFF08\u53D1 !\u753B \u65F6\u81EA\u52A8\u5F00\uFF09
@@ -4618,9 +4629,8 @@ async function pollStatus(){
   }catch(_){}
 }
 
-/* ================= \u753B\u677F ================= */
+/* ================= \u753B\u677F\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF0C\u53EA\u7531 !\u753B \u6307\u4EE4\u6216 paint_start \u4E8B\u4EF6\u6253\u5F00\uFF09 ================= */
 let lastPaintTag = ''
-let artClosedByUser = false
 async function pollPaint(){
   try{
     const r = await fetch('/api/latest-paint?tag=' + Date.now(), {cache:'no-store'})
@@ -4638,7 +4648,7 @@ async function pollPaint(){
     img.style.display = 'block'
     $('artHint').style.display = 'none'
     $('artTitle').textContent = 'PIXEL ART \xB7 ' + nowStr()
-    if (!artClosedByUser) WM.open('win-paint')
+    // \u53EA\u66F4\u65B0\u56FE\uFF0C**\u4E0D\u81EA\u52A8\u5F00\u7A97**\u2014\u2014\u753B\u677F\u7531 !\u753B \u6307\u4EE4 / paint_start \u4E8B\u4EF6\u6253\u5F00
   }catch(_){}
 }
 
@@ -4649,9 +4659,8 @@ async function sendCmd(){
   if (!text || sending) return
   sending = true; $('sendBtn').disabled = true
   pushLine('me', '\u300E\u9762\u677F\u6307\u6325\u5B98\u300F ' + text)
-  // \u753B\u56FE\u6307\u4EE4\uFF1A\u5148\u5F39\u51FA\u753B\u677F\uFF08\u7528\u6237\u62CD\u677F\uFF1A\u7ACB\u523B\u5F39\u5E76\u7F6E\u9876\uFF09
+  // \u753B\u56FE\u6307\u4EE4\uFF1A\u5F39\u51FA\u753B\u677F\u5E76\u7F6E\u9876
   if (/^[!\uFF01]\u753B/.test(text)) {
-    artClosedByUser = false
     WM.open('win-paint')
     WM.raise('win-paint')
     setExpr('starry', 2000)
@@ -4811,7 +4820,6 @@ function connectEvents(){
       case 'tts_start': startTalking(); break
       case 'tts_end': stopTalking(); break
       case 'paint_start':
-        artClosedByUser = false
         WM.open('win-paint'); WM.raise('win-paint')
         setExpr('starry', 2000)
         pushLine('sys', '// \u5F00\u59CB\u4F5C\u753B' + (ev.prompt ? '\uFF1A' + ev.prompt : ''))

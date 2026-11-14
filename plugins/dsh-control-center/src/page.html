@@ -426,11 +426,22 @@ const WM = (() => {
 
 /* 默认布局（用户拍板） */
 WM.init()
-/* 固定布局（用户拍板，此后不再改动）：立绘 400x400 左上 / 弹幕 620x420 右上 / 状态 380x260 左下 / 画板 480x480 右下 */
-WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 400; WM.state['win-avatar'].h = 400
-WM.state['win-console'].x = Math.max(430, window.innerWidth - 650); WM.state['win-console'].y = 54; WM.state['win-console'].w = 620; WM.state['win-console'].h = 420
-WM.state['win-status'].x = 12;  WM.state['win-status'].y = Math.max(60, window.innerHeight - 290); WM.state['win-status'].w = 380; WM.state['win-status'].h = 260
-WM.state['win-paint'].x = Math.max(430, window.innerWidth - 500); WM.state['win-paint'].y = Math.max(60, window.innerHeight - 500); WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
+/* 固定布局：还原"改成浮窗之前"的网格比例（左栏 34% / 右栏 66%，行高 1.15:1） */
+const _W = window.innerWidth, _H = window.innerHeight
+const _colL = Math.max(420, Math.round(_W * 0.34) - 20)          // 左栏宽
+const _colR = Math.max(520, _W - _colL - 36)                     // 右栏宽
+const _availH = Math.max(400, _H - 42 - 24)                       // 去掉顶栏与内边距
+const _row1 = Math.round(_availH * 1.15 / 2.15)                   // 第一行高
+const _row2 = _availH - _row1                                     // 第二行高
+
+WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54
+WM.state['win-avatar'].w = _colL; WM.state['win-avatar'].h = _row1
+WM.state['win-status'].x = 12;  WM.state['win-status'].y = 54 + _row1 + 10
+WM.state['win-status'].w = _colL; WM.state['win-status'].h = _row2
+WM.state['win-console'].x = 12 + _colL + 14; WM.state['win-console'].y = 54
+WM.state['win-console'].w = _colR; WM.state['win-console'].h = _row1
+WM.state['win-paint'].x = Math.max(20, _W - 500); WM.state['win-paint'].y = Math.max(60, _H - 500)
+WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
 WM.open('win-avatar'); WM.open('win-console')
 WM.open('win-status')
 // 画板默认关闭（发 !画 时自动开）
@@ -495,9 +506,8 @@ async function pollStatus(){
   }catch(_){}
 }
 
-/* ================= 画板 ================= */
+/* ================= 画板（默认关闭，只由 !画 指令或 paint_start 事件打开） ================= */
 let lastPaintTag = ''
-let artClosedByUser = false
 async function pollPaint(){
   try{
     const r = await fetch('/api/latest-paint?tag=' + Date.now(), {cache:'no-store'})
@@ -515,7 +525,7 @@ async function pollPaint(){
     img.style.display = 'block'
     $('artHint').style.display = 'none'
     $('artTitle').textContent = 'PIXEL ART · ' + nowStr()
-    if (!artClosedByUser) WM.open('win-paint')
+    // 只更新图，**不自动开窗**——画板由 !画 指令 / paint_start 事件打开
   }catch(_){}
 }
 
@@ -526,9 +536,8 @@ async function sendCmd(){
   if (!text || sending) return
   sending = true; $('sendBtn').disabled = true
   pushLine('me', '『面板指挥官』 ' + text)
-  // 画图指令：先弹出画板（用户拍板：立刻弹并置顶）
+  // 画图指令：弹出画板并置顶
   if (/^[!！]画/.test(text)) {
-    artClosedByUser = false
     WM.open('win-paint')
     WM.raise('win-paint')
     setExpr('starry', 2000)
@@ -688,7 +697,6 @@ function connectEvents(){
       case 'tts_start': startTalking(); break
       case 'tts_end': stopTalking(); break
       case 'paint_start':
-        artClosedByUser = false
         WM.open('win-paint'); WM.raise('win-paint')
         setExpr('starry', 2000)
         pushLine('sys', '// 开始作画' + (ev.prompt ? '：' + ev.prompt : ''))

@@ -10,7 +10,8 @@
  *
  * 环境变量：
  *   TTS_SERVICE_URL   服务根地址，默认 http://127.0.0.1:9881
- *   TTS_REF_AUDIO     参考音绝对路径（**必填**；没配就不发请求，直接降级）
+ *   TTS_REF_AUDIO     参考音绝对路径。**不配时自动找鲸鱼娘的 ref_190.wav**（见 DEFAULT_REF_CANDIDATES）；
+ *                     都找不到就降级不发请求（日志会写「未配置参考音路径」）
  *   TTS_TIMEOUT_MS    超时，默认 60000（CPU 一句 1~2 分钟，3 秒必超时）
  *   TTS_PLAYER        播放器模板，`{file}` 会被替换成临时 wav 路径
  *   TTS_ENABLED       设 '0' 关闭（只打日志）
@@ -25,8 +26,31 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 
 const LOG_TAG = '[dsh-live-director/tts]'
+
+/**
+ * 默认参考音候选（鲸鱼娘）。
+ * 不硬编码进仓库里某个人的绝对路径，只按"相对用户目录"的常见落点探测。
+ */
+const DEFAULT_REF_CANDIDATES = [
+  process.env.WHALE_REF_AUDIO || '',
+  join(homedir(), 'Documents', 'douyin-whale', 'out', 'ref_video', 'ref_190.wav'),
+  join(homedir(), 'Desktop', '新建文件夹 (2)', 'ohwhale-deploy', 'assets', 'voice', 'states', 'ref_calm.wav'),
+].filter(Boolean)
+
+/** 探测默认参考音；都没有返回空串 */
+export function resolveDefaultRef(): string {
+  for (const p of DEFAULT_REF_CANDIDATES) {
+    try {
+      if (p && existsSync(p)) return p
+    } catch {
+      /* 忽略 */
+    }
+  }
+  return ''
+}
 
 export interface TtsConfig {
   /** 服务根，不含 /tts */
@@ -45,7 +69,8 @@ export function readTtsConfig(env: NodeJS.ProcessEnv = process.env): TtsConfig |
   if (String(env.TTS_ENABLED || '') === '0') return null
   const base = String(env.TTS_SERVICE_URL || 'http://127.0.0.1:9881').trim().replace(/\/+$/, '').replace(/\/tts$/, '')
   if (!base) return null
-  const refAudio = String(env.TTS_REF_AUDIO || '').trim()
+  // 参考音：优先环境变量；没配就按候选列表自动探测（鲸鱼娘 ref_190.wav）
+  const refAudio = String(env.TTS_REF_AUDIO || '').trim() || resolveDefaultRef()
   const t = Number(env.TTS_TIMEOUT_MS)
   return {
     base,

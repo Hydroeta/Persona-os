@@ -4740,6 +4740,8 @@ var index_default = {
     memoryClient = memoryClientOverride ?? new MemoryClient();
     perception = perceptionOverride ?? new Perception();
     director = new Director({
+      // 冷场阈值：默认 120s；测试时用 DSH_LIVE_COLD_THRESHOLD_MS=10000 快速触发
+      coldThresholdMs: Number(process.env.DSH_LIVE_COLD_THRESHOLD_MS) || void 0,
       // 杂谈素材：环境/记忆/弹幕词动态拼进话题池（拿不到就是空，退回默认话题）
       sources: {
         env: () => ENV_LINES,

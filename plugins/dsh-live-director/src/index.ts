@@ -446,6 +446,8 @@ export default {
 
     // 2) 启动 Rundown 状态机 + 心跳（director 独立于弹幕服务，即使弹幕没起来也要跑）
     director = new Director({
+      // 冷场阈值：默认 120s；测试时用 DSH_LIVE_COLD_THRESHOLD_MS=10000 快速触发
+      coldThresholdMs: Number(process.env.DSH_LIVE_COLD_THRESHOLD_MS) || undefined,
       // 杂谈素材：环境/记忆/弹幕词动态拼进话题池（拿不到就是空，退回默认话题）
       sources: {
         env: () => ENV_LINES,

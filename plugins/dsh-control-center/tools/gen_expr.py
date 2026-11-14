@@ -98,6 +98,45 @@ def recolor(a: np.ndarray, m: np.ndarray, target: np.ndarray, feather: int = 2) 
 
 
 # ---------------- 主流程 ----------------
+def make_smile(base: Image.Image, mouth_src: Image.Image) -> Image.Image:
+    """在【已定型】的 shy 上，把 content 的嘴像素搬过来。
+
+    关键：**不再做定型**（base 已经是 512 画布、74% 裁切、贴底的那张），
+    否则同一张图会被缩放两次，宽度从 388 涨到 492。
+    嘴的坐标：在 content 定型图上找"比肤色暗"的像素，只替换对应的格子。
+    """
+    b = np.asarray(base).copy()
+    m = np.asarray(mouth_src)
+
+    # 肤色基准：取嘴部搜索框外围一圈亮像素的中位数
+    x0, y0, x1, y1 = int(SIZE * 0.34), int(SIZE * 0.44), int(SIZE * 0.56), int(SIZE * 0.58)
+    ring = []
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            if x0 + 10 <= x < x1 - 10 and y0 + 10 <= y < y1 - 10:
+                continue
+            p = m[y, x]
+            if p[3] > 128 and min(int(p[0]), int(p[1]), int(p[2])) > 200 and abs(int(p[0]) - int(p[2])) < 45:
+                ring.append((int(p[0]), int(p[1]), int(p[2])))
+    sk = np.median(np.array(ring, dtype=np.float32), axis=0) if ring else np.array([247., 225., 211.])
+    sL = 0.299 * sk[0] + 0.587 * sk[1] + 0.114 * sk[2]
+
+    cnt = 0
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            p = m[y, x]
+            if p[3] <= 128:
+                continue
+            if int(p[2]) > int(p[0]) + 30:        # 偏蓝 = 头发，跳过
+                continue
+            L = 0.299 * int(p[0]) + 0.587 * int(p[1]) + 0.114 * int(p[2])
+            if (sL - L) > 28:                     # 比肤色暗 28 以上 = 嘴
+                b[y, x] = p
+                cnt += 1
+    print(f'  smile: 搬入嘴像素 {cnt} 个')
+    return Image.fromarray(b, 'RGBA')
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', required=True)
@@ -108,14 +147,22 @@ def main(argv=None) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    # 1) 全部定型
+    # 1) 全部定型（smile 不在 src 里，它由 shy 派生，见第 2 步）
     prepped = {}
-    for n in NAMES + ['smile']:
+    for n in NAMES:
         p = src / f'{n}.png'
         if p.exists():
             prepped[n], _ = prepare(str(p))
         else:
             print(f'  跳过（缺失）{n}')
+
+    # 2) smile = shy 定型图 + content 的嘴（**直接复用 shy 的定型结果**，
+    #    不能再对拼好的图重新定型——会被缩放两次，宽度跑偏到 492）
+    if 'shy' in prepped and 'content' in prepped:
+        prepped['smile'] = make_smile(prepped['shy'], prepped['content'])
+        print('  smile 由 shy 派生（避免二次定型）')
+    else:
+        print('  缺少 shy 或 content，跳过 smile')
 
     # 2) 校色目标：取 shy + content 的头发/眼睛中位数（这两张最"标准"）
     refs = [k for k in ('shy', 'content') if k in prepped]

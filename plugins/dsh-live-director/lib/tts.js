@@ -6,13 +6,28 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 var LOG_TAG = "[dsh-live-director/tts]";
+var DEFAULT_REF_CANDIDATES = [
+  process.env.WHALE_REF_AUDIO || "",
+  join(homedir(), "Documents", "douyin-whale", "out", "ref_video", "ref_190.wav"),
+  join(homedir(), "Desktop", "\u65B0\u5EFA\u6587\u4EF6\u5939 (2)", "ohwhale-deploy", "assets", "voice", "states", "ref_calm.wav")
+].filter(Boolean);
+function resolveDefaultRef() {
+  for (const p of DEFAULT_REF_CANDIDATES) {
+    try {
+      if (p && existsSync(p)) return p;
+    } catch {
+    }
+  }
+  return "";
+}
 var DEFAULT_PLAYER = process.platform === "win32" ? `powershell -NoProfile -Command "(New-Object Media.SoundPlayer '{file}').PlaySync()"` : "ffplay -autoexit -nodisp -loglevel quiet {file}";
 function readTtsConfig(env = process.env) {
   if (String(env.TTS_ENABLED || "") === "0") return null;
   const base = String(env.TTS_SERVICE_URL || "http://127.0.0.1:9881").trim().replace(/\/+$/, "").replace(/\/tts$/, "");
   if (!base) return null;
-  const refAudio = String(env.TTS_REF_AUDIO || "").trim();
+  const refAudio = String(env.TTS_REF_AUDIO || "").trim() || resolveDefaultRef();
   const t = Number(env.TTS_TIMEOUT_MS);
   return {
     base,
@@ -139,6 +154,7 @@ export {
   buildTtsUrl,
   isSpeaking,
   readTtsConfig,
+  resolveDefaultRef,
   speakViaTts,
   warmupTts
 };
