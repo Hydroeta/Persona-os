@@ -4131,7 +4131,7 @@ var PAGE_HTML = `<!doctype html>
   :root{
     --deep:#0A1128; --panel:#1B263B;
     --cyan:#00F0FF; --white:#FFFFFF; --sea:#5BC0BE;
-    --ok:#3ef0a0; --bad:#ff4d6d; --dim:#6b7f99;
+    --ok:#3ef0a0; --bad:#ff4d6d; --dim:#6b7f99; --warn:#ffc43d;
   }
   *{box-sizing:border-box;image-rendering:pixelated}
   html,body{height:100%;overflow:hidden}
@@ -4232,7 +4232,8 @@ var PAGE_HTML = `<!doctype html>
   }
   #avatarStage{width:100%;height:100%;display:flex;align-items:flex-end;justify-content:center;
     transform:translate(var(--look-x,0px),var(--look-y,0px));transition:transform .18s ease-out;position:relative;z-index:1}
-  #avatarImg{max-width:96%;max-height:96%;object-fit:contain;animation:breathe 3.6s ease-in-out infinite}
+  #avatarImg{height:96%;width:auto;max-width:100%;object-fit:contain;object-position:bottom center;
+    animation:breathe 3.6s ease-in-out infinite}
   #avatarStage.talking #avatarImg{animation:talkBob .15s steps(2,end) infinite}
   @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
   @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
@@ -4284,6 +4285,53 @@ var PAGE_HTML = `<!doctype html>
     box-shadow:inset 0 0 50px rgba(0,0,0,.8)}
   .crt .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--dim);font-size:13px;letter-spacing:.12em;z-index:1}
+
+  /* ---------- \u9501\u5B9A\u5E03\u5C40\u6309\u94AE\uFF08\u53F3\u4E0B\u89D2\uFF09 ---------- */
+  #lockBtn{
+    position:fixed;right:12px;bottom:12px;z-index:4100;cursor:pointer;
+    padding:6px 10px;font:inherit;font-size:12px;letter-spacing:.1em;
+    border:2px solid var(--cyan);background:rgba(10,17,40,.9);color:var(--cyan);
+  }
+  #lockBtn:hover{background:rgba(0,240,255,.2)}
+  #lockBtn.locked{border-color:var(--warn);color:var(--warn);background:rgba(255,196,61,.14)}
+
+  /* ---------- \u76F4\u64AD\u6A21\u5F0F\uFF08OBS \u6D4F\u89C8\u5668\u6E90\uFF09\uFF1A?mode=live ---------- */
+  body.live{
+    background:none !important;          /* \u53BB\u6389\u50CF\u7D20\u7F51\u683C\u4E0E\u6DF1\u6D77\u6E10\u53D8 */
+    background-image:none !important;
+    background-color:transparent !important;
+  }
+  body.live::after{display:none}          /* \u53BB\u6389\u566A\u70B9\u5C42 */
+  body.live header{display:none}          /* \u9876\u680F\u4E0D\u8981 */
+  body.live #dock{display:none}           /* \u684C\u9762\u56FE\u6807\u4E0D\u8981 */
+  body.live #drawer{display:none !important}
+  body.live #lockBtn{display:none}
+  body.live .win{
+    background:transparent;
+    border-color:transparent;
+    box-shadow:none;
+    backdrop-filter:none;
+  }
+  body.live .win-bar{
+    background:transparent;
+    border-bottom:none;
+    height:0; padding:0; overflow:hidden; cursor:default;
+  }
+  body.live .win-body{background:transparent}
+  /* \u76F4\u64AD\u6A21\u5F0F\u4E0B\u5404\u7A97\u53E3\u7684"\u5E95\u8272"\u4E5F\u8981\u900F\u660E\uFF0C\u53EA\u7559\u5185\u5BB9\u672C\u8EAB */
+  body.live #win-console #feed,
+  body.live #win-status .win-body,
+  body.live #win-paint .win-body{background:transparent;border-color:transparent}
+  body.live #win-avatar .win-body{background:none}
+  body.live #win-avatar .win-body::before{display:none}
+  body.live .led{background:rgba(10,17,40,.55);border-color:rgba(0,240,255,.35)}
+  body.live #feed{background:rgba(4,7,15,.55);border-color:rgba(0,240,255,.3)}
+  body.live .crt::before,body.live .crt::after{display:none}
+
+  /* ---------- \u5E03\u5C40\u9501\u5B9A\uFF1A\u7981\u7528\u62D6\u62FD\u4E0E\u6309\u94AE ---------- */
+  body.locked .win-bar{cursor:default}
+  body.locked .win-bar button{pointer-events:none;opacity:.35}
+  body.locked #lockBtn{pointer-events:auto}
 </style>
 </head>
 <body>
@@ -4304,6 +4352,9 @@ var PAGE_HTML = `<!doctype html>
   <button class="dbtn" id="btnRawStatus">\u67E5\u770B /api/status<small>\u6392\u67E5\u7528</small></button>
   <div class="note" id="ctlNote">\u63A7\u5236\u63A5\u53E3\u672A\u63A2\u6D4B</div>
 </div>
+
+<!-- \u9501\u5B9A\u5E03\u5C40\uFF08\u53F3\u4E0B\u89D2\uFF09 -->
+<button id="lockBtn" title="\u9501\u5B9A\u540E\u7981\u7528\u62D6\u62FD\uFF0C\u9632\u6B62\u76F4\u64AD\u8BEF\u89E6">\u{1F512} \u9501\u5B9A\u5E03\u5C40</button>
 
 <!-- \u684C\u9762\u56FE\u6807 -->
 <div id="dock">
@@ -4463,6 +4514,7 @@ const WM = (() => {
       let drag = null
       bar.addEventListener('mousedown', e => {
         if (e.target.tagName === 'BUTTON') return
+        if (document.body.classList.contains('locked')) return   // \u9501\u5B9A\u540E\u7981\u6B62\u62D6\u62FD
         const s = state[id]
         if (s.max) return
         drag = { sx:e.clientX, sy:e.clientY, ox:s.x, oy:s.y }
@@ -4497,13 +4549,30 @@ const WM = (() => {
 
 /* \u9ED8\u8BA4\u5E03\u5C40\uFF08\u7528\u6237\u62CD\u677F\uFF09 */
 WM.init()
-WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 380; WM.state['win-avatar'].h = 460
+WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 400; WM.state['win-avatar'].h = 400
 WM.state['win-console'].x = Math.max(420, window.innerWidth - 640); WM.state['win-console'].y = 54; WM.state['win-console'].w = 620; WM.state['win-console'].h = 420
 WM.state['win-status'].x = 12;  WM.state['win-status'].y = Math.max(60, window.innerHeight - 280); WM.state['win-status'].w = 380; WM.state['win-status'].h = 260
 WM.state['win-paint'].x = Math.max(420, window.innerWidth - 500); WM.state['win-paint'].y = Math.max(60, window.innerHeight - 500); WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
 WM.open('win-avatar'); WM.open('win-console')
 WM.open('win-status')
 // \u753B\u677F\u9ED8\u8BA4\u5173\u95ED\uFF08\u53D1 !\u753B \u65F6\u81EA\u52A8\u5F00\uFF09
+
+/* ================= \u76F4\u64AD\u6A21\u5F0F ?mode=live ================= */
+const IS_LIVE = new URLSearchParams(location.search).get('mode') === 'live'
+if (IS_LIVE) document.body.classList.add('live')
+
+/* ================= \u9501\u5B9A\u5E03\u5C40 ================= */
+let layoutLocked = false
+function setLocked(v){
+  layoutLocked = v
+  document.body.classList.toggle('locked', v)
+  const b = $('lockBtn')
+  b.classList.toggle('locked', v)
+  b.textContent = v ? '\u{1F512} \u5DF2\u9501\u5B9A\uFF08\u70B9\u51FB\u89E3\u9501\uFF09' : '\u{1F513} \u9501\u5B9A\u5E03\u5C40'
+}
+$('lockBtn').onclick = () => setLocked(!layoutLocked)
+// \u76F4\u64AD\u6A21\u5F0F\u4E0B\u9ED8\u8BA4\u9501\u4F4F\uFF0C\u907F\u514D OBS \u91CC\u8BEF\u62D6
+if (IS_LIVE) setLocked(true)
 
 /* ================= \u72B6\u6001 ================= */
 const LED_MAP = [

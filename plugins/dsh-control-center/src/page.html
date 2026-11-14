@@ -8,7 +8,7 @@
   :root{
     --deep:#0A1128; --panel:#1B263B;
     --cyan:#00F0FF; --white:#FFFFFF; --sea:#5BC0BE;
-    --ok:#3ef0a0; --bad:#ff4d6d; --dim:#6b7f99;
+    --ok:#3ef0a0; --bad:#ff4d6d; --dim:#6b7f99; --warn:#ffc43d;
   }
   *{box-sizing:border-box;image-rendering:pixelated}
   html,body{height:100%;overflow:hidden}
@@ -109,7 +109,8 @@
   }
   #avatarStage{width:100%;height:100%;display:flex;align-items:flex-end;justify-content:center;
     transform:translate(var(--look-x,0px),var(--look-y,0px));transition:transform .18s ease-out;position:relative;z-index:1}
-  #avatarImg{max-width:96%;max-height:96%;object-fit:contain;animation:breathe 3.6s ease-in-out infinite}
+  #avatarImg{height:96%;width:auto;max-width:100%;object-fit:contain;object-position:bottom center;
+    animation:breathe 3.6s ease-in-out infinite}
   #avatarStage.talking #avatarImg{animation:talkBob .15s steps(2,end) infinite}
   @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
   @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
@@ -161,6 +162,53 @@
     box-shadow:inset 0 0 50px rgba(0,0,0,.8)}
   .crt .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--dim);font-size:13px;letter-spacing:.12em;z-index:1}
+
+  /* ---------- 锁定布局按钮（右下角） ---------- */
+  #lockBtn{
+    position:fixed;right:12px;bottom:12px;z-index:4100;cursor:pointer;
+    padding:6px 10px;font:inherit;font-size:12px;letter-spacing:.1em;
+    border:2px solid var(--cyan);background:rgba(10,17,40,.9);color:var(--cyan);
+  }
+  #lockBtn:hover{background:rgba(0,240,255,.2)}
+  #lockBtn.locked{border-color:var(--warn);color:var(--warn);background:rgba(255,196,61,.14)}
+
+  /* ---------- 直播模式（OBS 浏览器源）：?mode=live ---------- */
+  body.live{
+    background:none !important;          /* 去掉像素网格与深海渐变 */
+    background-image:none !important;
+    background-color:transparent !important;
+  }
+  body.live::after{display:none}          /* 去掉噪点层 */
+  body.live header{display:none}          /* 顶栏不要 */
+  body.live #dock{display:none}           /* 桌面图标不要 */
+  body.live #drawer{display:none !important}
+  body.live #lockBtn{display:none}
+  body.live .win{
+    background:transparent;
+    border-color:transparent;
+    box-shadow:none;
+    backdrop-filter:none;
+  }
+  body.live .win-bar{
+    background:transparent;
+    border-bottom:none;
+    height:0; padding:0; overflow:hidden; cursor:default;
+  }
+  body.live .win-body{background:transparent}
+  /* 直播模式下各窗口的"底色"也要透明，只留内容本身 */
+  body.live #win-console #feed,
+  body.live #win-status .win-body,
+  body.live #win-paint .win-body{background:transparent;border-color:transparent}
+  body.live #win-avatar .win-body{background:none}
+  body.live #win-avatar .win-body::before{display:none}
+  body.live .led{background:rgba(10,17,40,.55);border-color:rgba(0,240,255,.35)}
+  body.live #feed{background:rgba(4,7,15,.55);border-color:rgba(0,240,255,.3)}
+  body.live .crt::before,body.live .crt::after{display:none}
+
+  /* ---------- 布局锁定：禁用拖拽与按钮 ---------- */
+  body.locked .win-bar{cursor:default}
+  body.locked .win-bar button{pointer-events:none;opacity:.35}
+  body.locked #lockBtn{pointer-events:auto}
 </style>
 </head>
 <body>
@@ -181,6 +229,9 @@
   <button class="dbtn" id="btnRawStatus">查看 /api/status<small>排查用</small></button>
   <div class="note" id="ctlNote">控制接口未探测</div>
 </div>
+
+<!-- 锁定布局（右下角） -->
+<button id="lockBtn" title="锁定后禁用拖拽，防止直播误触">🔒 锁定布局</button>
 
 <!-- 桌面图标 -->
 <div id="dock">
@@ -340,6 +391,7 @@ const WM = (() => {
       let drag = null
       bar.addEventListener('mousedown', e => {
         if (e.target.tagName === 'BUTTON') return
+        if (document.body.classList.contains('locked')) return   // 锁定后禁止拖拽
         const s = state[id]
         if (s.max) return
         drag = { sx:e.clientX, sy:e.clientY, ox:s.x, oy:s.y }
@@ -374,13 +426,30 @@ const WM = (() => {
 
 /* 默认布局（用户拍板） */
 WM.init()
-WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 380; WM.state['win-avatar'].h = 460
+WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 400; WM.state['win-avatar'].h = 400
 WM.state['win-console'].x = Math.max(420, window.innerWidth - 640); WM.state['win-console'].y = 54; WM.state['win-console'].w = 620; WM.state['win-console'].h = 420
 WM.state['win-status'].x = 12;  WM.state['win-status'].y = Math.max(60, window.innerHeight - 280); WM.state['win-status'].w = 380; WM.state['win-status'].h = 260
 WM.state['win-paint'].x = Math.max(420, window.innerWidth - 500); WM.state['win-paint'].y = Math.max(60, window.innerHeight - 500); WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
 WM.open('win-avatar'); WM.open('win-console')
 WM.open('win-status')
 // 画板默认关闭（发 !画 时自动开）
+
+/* ================= 直播模式 ?mode=live ================= */
+const IS_LIVE = new URLSearchParams(location.search).get('mode') === 'live'
+if (IS_LIVE) document.body.classList.add('live')
+
+/* ================= 锁定布局 ================= */
+let layoutLocked = false
+function setLocked(v){
+  layoutLocked = v
+  document.body.classList.toggle('locked', v)
+  const b = $('lockBtn')
+  b.classList.toggle('locked', v)
+  b.textContent = v ? '🔒 已锁定（点击解锁）' : '🔓 锁定布局'
+}
+$('lockBtn').onclick = () => setLocked(!layoutLocked)
+// 直播模式下默认锁住，避免 OBS 里误拖
+if (IS_LIVE) setLocked(true)
 
 /* ================= 状态 ================= */
 const LED_MAP = [
