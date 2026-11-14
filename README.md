@@ -50,6 +50,7 @@
 - 🌐 **Playwright 无头浏览器**（`dsh-web-agent`）：后台静默抓网页正文/链接/点击，**不抢占物理鼠标**，带超时防挂死。
 - 🎭 **多角色热切换**（`dsh-persona-core`）：`switch_persona` 即时切换人格，回写 `active.json` 无需重启。
 - 🖌️ **逐笔作画**（`dsh-painter`）：三种模式——`stages` 三阶段显影（勾线→铺色→细节，本地派生，不重复生图）；`strokes` 真逐笔（涂色本线稿 → 细化 → 沿骨架追踪 → 相邻碎片两轮拼接 → 按条带排序 → 逐帧推进 `dashoffset`），画一只戴帽子的鲸鱼约 26 笔；`pixel` 像素砌砖（N×N 网格按「暗→中→亮」分档、由外向内一块块填满，格子数随 N 自适应批量刷新；`grid_size` 默认 64，输出硬边 PNG 帧；底图可用 `PAINTER_LOCAL_IMAGE` 直读本地图，离线演示不经过生图 API）。笔画不足或追踪失败自动退回三阶段。
+- 🖍️ **笔触堆叠排线**（`core-services/painter/test_stroke.py`，离线出片）：网格采样取「颜色 + 纹理方向」，每格叠 N 笔排线（格内位置/角度/长度各自随机、明暗 ±14%），几万根铺满白纸出**油画/素描质感**；参数 `--step`（密度）/`--pen`（笔宽）/`--layers`（叠笔）/`--length-k`（笔长），定稿组合 `step4/pen0.6/layers3` = 54831 笔 / 20 秒。
 - 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
 - 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
 - 🎤 **实时 AI 翻唱**（`dsh-audio-cover` + `audio-cover` :8005）：弹幕 `!翻唱 <歌名>` 开唱、`!停唱` 收工；音频走 `VB-CABLE` 闭环，OBS 伴奏可联动；RVC 推理放在独立常驻 worker 里，模型缺失/超时一律回退直通不停播。
