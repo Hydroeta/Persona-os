@@ -4183,7 +4183,7 @@ var PAGE_HTML = `<!doctype html>
   #drawer .note{font-size:11px;color:var(--dim);line-height:1.5;margin-top:8px}
 
   /* ---------- \u684C\u9762\u56FE\u6807 ---------- */
-  #dock{position:fixed;left:12px;bottom:12px;z-index:4000;display:flex;flex-direction:column;gap:8px}
+  #dock{position:fixed;left:12px;bottom:12px;z-index:4000;display:flex;flex-direction:row;gap:8px}
   .dockicon{
     width:78px;padding:8px 4px;text-align:center;cursor:pointer;user-select:none;
     border:2px solid rgba(0,240,255,.45);background:rgba(10,17,40,.82);
@@ -4232,8 +4232,8 @@ var PAGE_HTML = `<!doctype html>
   }
   #avatarStage{width:100%;height:100%;display:flex;align-items:flex-end;justify-content:center;
     transform:translate(var(--look-x,0px),var(--look-y,0px));transition:transform .18s ease-out;position:relative;z-index:1}
-  #avatarImg{height:96%;width:auto;max-width:100%;object-fit:contain;object-position:bottom center;
-    animation:breathe 3.6s ease-in-out infinite}
+  #avatarImg{height:92%;width:auto;max-width:92%;object-fit:contain;object-position:center bottom;
+    display:block;animation:breathe 3.6s ease-in-out infinite}
   #avatarStage.talking #avatarImg{animation:talkBob .15s steps(2,end) infinite}
   @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
   @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
@@ -4549,10 +4549,11 @@ const WM = (() => {
 
 /* \u9ED8\u8BA4\u5E03\u5C40\uFF08\u7528\u6237\u62CD\u677F\uFF09 */
 WM.init()
+/* \u56FA\u5B9A\u5E03\u5C40\uFF08\u7528\u6237\u62CD\u677F\uFF0C\u6B64\u540E\u4E0D\u518D\u6539\u52A8\uFF09\uFF1A\u7ACB\u7ED8 400x400 \u5DE6\u4E0A / \u5F39\u5E55 620x420 \u53F3\u4E0A / \u72B6\u6001 380x260 \u5DE6\u4E0B / \u753B\u677F 480x480 \u53F3\u4E0B */
 WM.state['win-avatar'].x = 12;  WM.state['win-avatar'].y = 54;  WM.state['win-avatar'].w = 400; WM.state['win-avatar'].h = 400
-WM.state['win-console'].x = Math.max(420, window.innerWidth - 640); WM.state['win-console'].y = 54; WM.state['win-console'].w = 620; WM.state['win-console'].h = 420
-WM.state['win-status'].x = 12;  WM.state['win-status'].y = Math.max(60, window.innerHeight - 280); WM.state['win-status'].w = 380; WM.state['win-status'].h = 260
-WM.state['win-paint'].x = Math.max(420, window.innerWidth - 500); WM.state['win-paint'].y = Math.max(60, window.innerHeight - 500); WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
+WM.state['win-console'].x = Math.max(430, window.innerWidth - 650); WM.state['win-console'].y = 54; WM.state['win-console'].w = 620; WM.state['win-console'].h = 420
+WM.state['win-status'].x = 12;  WM.state['win-status'].y = Math.max(60, window.innerHeight - 290); WM.state['win-status'].w = 380; WM.state['win-status'].h = 260
+WM.state['win-paint'].x = Math.max(430, window.innerWidth - 500); WM.state['win-paint'].y = Math.max(60, window.innerHeight - 500); WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
 WM.open('win-avatar'); WM.open('win-console')
 WM.open('win-status')
 // \u753B\u677F\u9ED8\u8BA4\u5173\u95ED\uFF08\u53D1 !\u753B \u65F6\u81EA\u52A8\u5F00\uFF09
