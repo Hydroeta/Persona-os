@@ -8,6 +8,7 @@
   "exports": {
     ".": "./lib/index.js",
     "./guard": "./lib/guard.js",
+    "./report-format": "./lib/report-format.js",
     "./package.json": "./package.json"
   },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },

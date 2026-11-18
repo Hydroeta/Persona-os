@@ -75,6 +75,79 @@ function normalizeCommitMessage(msg) {
   return (one || "chore(auto): \u81EA\u8FDB\u5316\u53D8\u66F4").slice(0, 120);
 }
 
+// src/report-format.ts
+var SECTIONS = ["\u5B9A\u5411", "\u6DF1\u6316", "\u501F\u529B", "\u5B9E\u8DF5"];
+var SECTION_TITLES = {
+  \u5B9A\u5411: "\u3010\u5B9A\u5411\u3011\u8981\u89E3\u51B3\u4EC0\u4E48\u95EE\u9898",
+  \u6DF1\u6316: "\u3010\u6DF1\u6316\u3011\u67E5\u5230\u4E86\u4EC0\u4E48",
+  \u501F\u529B: "\u3010\u501F\u529B\u3011\u53C2\u8003\u4E86\u4EC0\u4E48",
+  \u5B9E\u8DF5: "\u3010\u5B9E\u8DF5\u3011\u6253\u7B97\u600E\u4E48\u505A"
+};
+var EMPTY_TEXT = {
+  \u5B9A\u5411: "\uFF08\u8FD8\u6CA1\u60F3\u6E05\u695A\u8981\u89E3\u51B3\u4EC0\u4E48\uFF09",
+  \u6DF1\u6316: "\uFF08\u6CA1\u6709\u67E5\u9605\u4EE3\u7801\u6216\u65E5\u5FD7\uFF09",
+  \u501F\u529B: "\u6CA1\u6709\u53C2\u8003\u5916\u90E8\u65B9\u6848",
+  \u5B9E\u8DF5: "\uFF08\u8FD8\u6CA1\u51B3\u5B9A\u600E\u4E48\u505A\uFF09"
+};
+function bullets(items) {
+  const lines = (items ?? []).map((x) => String(x).trim()).filter(Boolean);
+  return lines.length ? lines.map((x) => `- ${x}`).join("\n") : "";
+}
+function renderReport(input) {
+  const groups = {
+    \u5B9A\u5411: input.dings,
+    \u6DF1\u6316: input.shenkan,
+    \u501F\u529B: input.jieli,
+    \u5B9E\u8DF5: input.shijian
+  };
+  const out = [`# ${(input.title || "").trim() || "\uFF08\u65E0\u6807\u9898\uFF09"}`, ""];
+  for (const key of SECTIONS) {
+    out.push(`## ${SECTION_TITLES[key]}`);
+    const body = bullets(groups[key]);
+    out.push(body || EMPTY_TEXT[key]);
+    out.push("");
+  }
+  return out.join("\n").replace(/\s+$/, "") + "\n";
+}
+function parseSections(markdown) {
+  const text = markdown || "";
+  const marks = [];
+  for (const key of SECTIONS) {
+    const idx = text.indexOf(`## ${SECTION_TITLES[key]}`);
+    if (idx >= 0) marks.push({ idx, key });
+  }
+  marks.sort((a, b) => a.idx - b.idx);
+  const found = {};
+  for (let i = 0; i < marks.length; i++) {
+    const { idx, key } = marks[i];
+    const start = idx + `## ${SECTION_TITLES[key]}`.length;
+    const end = i + 1 < marks.length ? marks[i + 1].idx : text.length;
+    found[key] = text.slice(start, end).trim();
+  }
+  for (const key of SECTIONS) {
+    if (!(key in found)) found[key] = "";
+  }
+  return found;
+}
+function checkReport(markdown) {
+  const problems = [];
+  const secs = parseSections(markdown);
+  for (const key of SECTIONS) {
+    if (!secs[key]) problems.push(`\u7F3A\u5C11\u300C${key}\u300D\u5C0F\u8282`);
+  }
+  const present = SECTIONS.filter((k) => (markdown || "").includes(`## ${SECTION_TITLES[k]}`));
+  const indices = present.map((k) => ({ k, i: markdown.indexOf(`## ${SECTION_TITLES[k]}`) }));
+  indices.sort((a, b) => a.i - b.i);
+  const actual = indices.map((x) => x.k);
+  if (actual.join(",") !== present.join(",")) {
+    problems.push(`\u5C0F\u8282\u987A\u5E8F\u4E0D\u5BF9\uFF1A\u5B9E\u9645 ${actual.join("\u2192")}\uFF0C\u8981\u6C42 ${present.join("\u2192")}`);
+  }
+  if (["", "\uFF08\u7A7A\uFF09", "\u65E0"].includes(secs["\u501F\u529B"])) {
+    problems.push("\u300C\u501F\u529B\u300D\u4E3A\u7A7A\u65F6\u5FC5\u987B\u5982\u5B9E\u5199\u300C\u6CA1\u6709\u53C2\u8003\u5916\u90E8\u65B9\u6848\u300D");
+  }
+  return problems;
+}
+
 // src/index.ts
 var LOG_TAG = "[dsh-autopilot]";
 function findRepoRoot(start) {
@@ -100,6 +173,13 @@ async function saveProposal(opts) {
   const body = opts.markdown_content || "";
   if (!title) return { ok: false, error: "title \u4E0D\u80FD\u4E3A\u7A7A" };
   if (body.trim().length < 20) return { ok: false, error: "\u65B9\u6848\u5185\u5BB9\u592A\u77ED\uFF08\u81F3\u5C11 20 \u5B57\uFF09\uFF0C\u4E0D\u50CF\u4E00\u4EFD\u53EF\u5BA1\u6279\u7684\u65B9\u6848" };
+  const problems = checkReport(body);
+  if (problems.length) {
+    return {
+      ok: false,
+      error: `\u65B9\u6848\u683C\u5F0F\u4E0D\u5408\u56DB\u6B65\u6CD5\uFF1A${problems.join("\uFF1B")}\u3002\u8BF7\u7528 renderReport \u6216\u6309\u300C## ${SECTION_TITLES.\u5B9A\u5411}\u300D\u7B49\u56DB\u4E2A\u5C0F\u8282\u91CD\u5199\u3002`
+    };
+  }
   const rel = proposalRelPath(opts.now ?? /* @__PURE__ */ new Date(), title);
   const abs = join(opts.root, rel);
   try {
@@ -198,14 +278,17 @@ function apply(ctx) {
   const disposers = [];
   const saveTool = {
     name: "save_proposal",
-    description: "\u628A\u4E00\u4EFD\u81EA\u8FDB\u5316\u65B9\u6848\u5199\u8FDB data/proposals/YYYY-MM-DD_\u6807\u9898.md\uFF0C\u8FD4\u56DE\u76F8\u5BF9\u8DEF\u5F84\uFF08\u4F9B\u4EBA\u5BA1\u6279\uFF09\u3002",
+    description: "\u628A\u4E00\u4EFD\u81EA\u8FDB\u5316\u65B9\u6848\u5199\u8FDB data/proposals/YYYY-MM-DD_\u6807\u9898.md\uFF0C\u8FD4\u56DE\u76F8\u5BF9\u8DEF\u5F84\uFF08\u4F9B\u4EBA\u5BA1\u6279\uFF09\u3002\u6B63\u6587\u5FC5\u987B\u6309\u56DB\u6B65\u6CD5\u5199\uFF1A\u3010\u5B9A\u5411\u3011\u8981\u89E3\u51B3\u4EC0\u4E48\u95EE\u9898 / \u3010\u6DF1\u6316\u3011\u67E5\u5230\u4E86\u4EC0\u4E48 / \u3010\u501F\u529B\u3011\u53C2\u8003\u4E86\u4EC0\u4E48 / \u3010\u5B9E\u8DF5\u3011\u6253\u7B97\u600E\u4E48\u505A\uFF1B\u201C\u501F\u529B\u201D\u6CA1\u5185\u5BB9\u5C31\u5982\u5B9E\u5199\u300C\u6CA1\u6709\u53C2\u8003\u5916\u90E8\u65B9\u6848\u300D\uFF0C\u4E0D\u8BB8\u7559\u767D\u6216\u7F16\u9020\u6765\u6E90\u3002",
     parameters: {
       type: "object",
       additionalProperties: false,
       required: ["title", "markdown_content"],
       properties: {
         title: { type: "string", description: "\u65B9\u6848\u6807\u9898\uFF08\u4F1A\u6210\u4E3A\u6587\u4EF6\u540D\uFF09" },
-        markdown_content: { type: "string", description: "\u65B9\u6848\u6B63\u6587\uFF08Markdown\uFF09" }
+        markdown_content: {
+          type: "string",
+          description: "\u65B9\u6848\u6B63\u6587\uFF08Markdown\uFF09\u3002\u56DB\u6B65\u6CD5\u5C0F\u8282\u6807\u9898\u56FA\u5B9A\u4E3A \u300C## \u3010\u5B9A\u5411\u3011\u8981\u89E3\u51B3\u4EC0\u4E48\u95EE\u9898\u300D\u300C## \u3010\u6DF1\u6316\u3011\u67E5\u5230\u4E86\u4EC0\u4E48\u300D\u300C## \u3010\u501F\u529B\u3011\u53C2\u8003\u4E86\u4EC0\u4E48\u300D\u300C## \u3010\u5B9E\u8DF5\u3011\u6253\u7B97\u600E\u4E48\u505A\u300D"
+        }
       }
     },
     output: {
@@ -299,16 +382,22 @@ ${(v?.steps || []).map((s) => `${s.ok ? "\xB7" : "\u2717"} ${s.step}${s.detail ?
   });
 }
 export {
+  EMPTY_TEXT,
   LOG_TAG,
+  SECTIONS,
+  SECTION_TITLES,
   readFile as _read,
   rm as _rm,
   run as _run,
   apply,
   buildTargets,
+  checkReport,
   executeEvolution,
   findRepoRoot,
   name,
+  parseSections,
   proposalRelPath,
+  renderReport,
   saveProposal,
   scanSecrets,
   slugify,

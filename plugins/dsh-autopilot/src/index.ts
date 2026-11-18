@@ -22,6 +22,8 @@ import {
 
 export const LOG_TAG = '[dsh-autopilot]'
 export { validateChanges, proposalRelPath, slugify, scanSecrets, buildTargets } from './guard.js'
+export { renderReport, parseSections, checkReport, SECTION_TITLES, SECTIONS, EMPTY_TEXT } from './report-format.js'
+import { checkReport, SECTION_TITLES } from './report-format.js'
 
 /** 仓库根：从本插件目录往上找到有 .git 的那层（可用 DSH_AUTOPILOT_ROOT 覆盖） */
 export function findRepoRoot(start: string): string {
@@ -64,6 +66,16 @@ export async function saveProposal(opts: {
   const body = opts.markdown_content || ''
   if (!title) return { ok: false, error: 'title 不能为空' }
   if (body.trim().length < 20) return { ok: false, error: '方案内容太短（至少 20 字），不像一份可审批的方案' }
+  // 四步法校验：缺小节 / 顺序错 / 「借力」留白 都拒绝（提示改格式，而不是静默收下）
+  const problems = checkReport(body)
+  if (problems.length) {
+    return {
+      ok: false,
+      error:
+        `方案格式不合四步法：${problems.join('；')}。` +
+        `请用 renderReport 或按「## ${SECTION_TITLES.定向}」等四个小节重写。`,
+    }
+  }
   const rel = proposalRelPath(opts.now ?? new Date(), title)
   const abs = join(opts.root, rel)
   try {
@@ -208,14 +220,22 @@ export function apply(ctx: any): void {
 
   const saveTool = {
     name: 'save_proposal',
-    description: '把一份自进化方案写进 data/proposals/YYYY-MM-DD_标题.md，返回相对路径（供人审批）。',
+    description:
+      '把一份自进化方案写进 data/proposals/YYYY-MM-DD_标题.md，返回相对路径（供人审批）。' +
+      '正文必须按四步法写：【定向】要解决什么问题 / 【深挖】查到了什么 / 【借力】参考了什么 / 【实践】打算怎么做；' +
+      '“借力”没内容就如实写「没有参考外部方案」，不许留白或编造来源。',
     parameters: {
       type: 'object',
       additionalProperties: false,
       required: ['title', 'markdown_content'],
       properties: {
         title: { type: 'string', description: '方案标题（会成为文件名）' },
-        markdown_content: { type: 'string', description: '方案正文（Markdown）' },
+        markdown_content: {
+          type: 'string',
+          description:
+            '方案正文（Markdown）。四步法小节标题固定为 ' +
+            '「## 【定向】要解决什么问题」「## 【深挖】查到了什么」「## 【借力】参考了什么」「## 【实践】打算怎么做」',
+        },
       },
     },
     output: {

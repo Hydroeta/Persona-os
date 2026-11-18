@@ -175,6 +175,31 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
 
+  plugins/dsh-autopilot:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.5
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+
+  plugins/dsh-control-center:
+    dependencies:
+      ws:
+        specifier: ^8.18.0
+        version: 8.22.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.5
+      '@types/ws':
+        specifier: ^8.5.12
+        version: 8.18.2
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+
   plugins/dsh-game-agent:
     dependencies:
       node-screenshots:
@@ -242,6 +267,19 @@ importers:
         version: 0.25.12
 
   plugins/dsh-persona-core:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.5
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+
+  plugins/dsh-screen-companion:
+    dependencies:
+      node-screenshots:
+        specifier: ^0.2.8
+        version: 0.2.8
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

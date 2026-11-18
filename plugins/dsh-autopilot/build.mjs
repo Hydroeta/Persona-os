@@ -1,8 +1,8 @@
-// esbuild 打包：index.ts（插件入口）+ guard.ts（纯函数，便于单测）
+// esbuild 打包：index.ts（插件入口）+ guard.ts（纯函数，便于单测）+ report-format.ts
 import { build } from 'esbuild'
 
 await build({
-  entryPoints: ['src/index.ts', 'src/guard.ts'],
+  entryPoints: ['src/index.ts', 'src/guard.ts', 'src/report-format.ts'],
   bundle: true,
   platform: 'node',
   format: 'esm',

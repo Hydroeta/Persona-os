@@ -57,10 +57,30 @@ check('非插件文件不产出目标', buildTargets([{ file_path: 'README.md', 
 check('提交信息清洗', normalizeCommitMessage('feat(auto):   a\n\n b  ') === 'feat(auto): a b')
 
 // ---------- 5) save_proposal ----------
-const p1 = await saveProposal({ root, title: '记忆压缩方案', markdown_content: '# 方案\n把记忆按热度分层，冷数据压缩成摘要。' })
+// 注意：save_proposal 现在强制四步法格式（定向/深挖/借力/实践），
+// 不合格式会被拒，所以这里必须写成合规的报告。
+const proposalBody = [
+  '# 记忆压缩方案',
+  '',
+  '## 【定向】要解决什么问题',
+  '- 记忆表越长召回越慢，冷数据占地方',
+  '',
+  '## 【深挖】查到了什么',
+  '- 读 memory-bus 的七层表，90 天前的条目几乎不再被召回',
+  '',
+  '## 【借力】参考了什么',
+  '- 没有参考外部方案',
+  '',
+  '## 【实践】打算怎么做',
+  '- 把 90 天前的条目压成摘要，原条目归档',
+  '',
+].join('\n')
+const p1 = await saveProposal({ root, title: '记忆压缩方案', markdown_content: proposalBody })
 check('方案保存成功', p1.ok && !!p1.path, p1.path || p1.error)
 check('路径带日期与标题', /data\/proposals\/\d{4}-\d{2}-\d{2}_记忆压缩方案\.md$/.test(p1.path || ''), p1.path || '')
 check('短内容被拒', !(await saveProposal({ root, title: 'x', markdown_content: '太短' })).ok)
+check('不合四步法的方案被拒',
+  !(await saveProposal({ root, title: 'y', markdown_content: '# 随便\n这里写一段够长但不合规的内容凑字数' })).ok)
 check('slug 去掉非法字符', slugify('a/b:c*d') === 'a-b-c-d', slugify('a/b:c*d'))
 check('proposalRelPath 合法', proposalRelPath(new Date(2026, 10, 13), '测试') === 'data/proposals/2026-11-13_测试.md')
 
