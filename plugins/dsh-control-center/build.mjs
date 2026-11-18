@@ -31,3 +31,5 @@ await build({ ...common, entryPoints: ['src/danmaku.ts'], outfile: 'lib/danmaku.
 await build({ ...common, entryPoints: ['src/server.ts'], outfile: 'lib/server.js' })
 // task-chain.ts 单独出一份：test-task-chain.mjs 直接测解析逻辑
 await build({ ...common, entryPoints: ['src/task-chain.ts'], outfile: 'lib/task-chain.js' })
+// persona.ts 单独出一份：test-persona.mjs 直接测角色资产解析
+await build({ ...common, entryPoints: ['src/persona.ts'], outfile: 'lib/persona.js' })

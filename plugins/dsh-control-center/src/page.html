@@ -295,17 +295,17 @@
 
 <!-- 窗口 1：立绘 -->
 <div class="win" id="win-avatar" data-title="LIVE FEED">
-  <div class="win-bar"><span class="title">LIVE FEED</span>
+  <div class="win-bar"><span class="title">LIVE FEED<span id="personaTag" style="margin-left:8px;color:var(--white);font-size:11px"></span></span>
     <button data-act="min" title="最小化">—</button>
     <button data-act="max" title="最大化">□</button>
     <button data-act="close" class="close" title="关闭">✕</button>
   </div>
   <div class="win-body">
     <div id="avatarStage">
-      <img id="avatarImg" src="/assets/expr/pixel_smile.png" alt=""
+      <img id="avatarImg" src="" alt=""
            onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
     </div>
-    <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>检查 web/assets/expr/pixel_*.png</small></div>
+    <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>检查角色配置里的 assets.expr_dir</small></div>
     <div id="thinkBar"></div>
     <div id="moodBar"></div>
   </div>
@@ -737,19 +737,62 @@ async function probeCtl(){
 }
 
 /* ================= 立绘 ================= */
-const EXPR_BASE = '/assets/expr/pixel_'
-const EXPR_DEFAULT = 'smile'
-const EXPR_LIST = ['aggrieved','blush','content','giggle','joy','nervous','pout','puzzled',
-                   'sad','scared','shy','sleepy','smile','smug','starry','surprise','wink']
+/* ================= 立绘：表情状态机（多角色解耦，全部走整图切换，绝不 scale） ================= */
+// 目录、前缀、表情清单、主题色全部来自 /api/persona（读的是 config/personas/<id>/persona.json）
+// 这里只保留「兜底默认」——接口挂了也能显示，不至于空白。
+let EXPR_BASE = '/persona-expr/'
+let EXPR_PREFIX = 'pixel_'
+let EXPR_DEFAULT = 'smile'
+let EXPR_LIST = ['smile']
 const img = $('avatarImg')
 const stage = $('avatarStage')
 let exprTimer = null, idleTimer = null, talkTimer = null
 const preloaded = {}
-for (const n of EXPR_LIST) { const im = new Image(); im.src = EXPR_BASE + n + '.png'; preloaded[n] = im }
+
+/** 立绘图片的完整 URL */
+function exprUrl(name){ return EXPR_BASE + EXPR_PREFIX + name + '.png' }
+
+function preloadAll(){
+  for (const n of EXPR_LIST) { const im = new Image(); im.src = exprUrl(n); preloaded[n] = im }
+}
+
+/** 从后端拉当前角色资产，重建表情清单 / 主题色 / 立绘 */
+async function loadPersona(){
+  try{
+    const r = await fetch('/api/persona', { cache: 'no-store' })
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    const p = await r.json()
+    if (!p.ok) throw new Error(p.error || '接口返回失败')
+    EXPR_BASE = (p.exprUrlBase || '/persona-expr') + '/'
+    EXPR_PREFIX = p.exprPrefix || 'pixel_'
+    if (Array.isArray(p.expressions) && p.expressions.length) {
+      EXPR_LIST = p.expressions
+      // 默认态优先 smile，没有就用第一个
+      EXPR_DEFAULT = EXPR_LIST.includes('smile') ? 'smile' : EXPR_LIST[0]
+    }
+    applyTheme(p.themeColor, p.themeSea, p.displayName)
+    preloadAll()
+    img.src = exprUrl(EXPR_DEFAULT)
+    $('personaTag').textContent = p.displayName || p.id || ''
+    pushLine('sys', `// 角色：${p.displayName || p.id}（${EXPR_LIST.length} 个表情）`)
+  }catch(e){
+    // 接口挂了就用兜底：至少能把画面显示出来
+    EXPR_BASE = '/assets/expr/'
+    EXPR_PREFIX = 'pixel_'
+    pushLine('err', '✗ 读角色配置失败（用兜底默认）：' + e.message)
+  }
+}
+
+/** 主题色从角色配置来：只改 CSS 变量，不动结构 */
+function applyTheme(color, sea, name){
+  if (color) document.documentElement.style.setProperty('--cyan', color)
+  if (sea) document.documentElement.style.setProperty('--sea', sea)
+  if (name) document.title = `PERSONA-OS // ${name} 指挥舱`
+}
 
 function setExpr(name, holdMs){
   if (!EXPR_LIST.includes(name)) return
-  img.src = EXPR_BASE + name + '.png'
+  img.src = exprUrl(name)
   if (holdMs) {
     if (exprTimer) clearTimeout(exprTimer)
     exprTimer = setTimeout(() => { exprTimer = null; setExpr(EXPR_DEFAULT) }, holdMs)
@@ -902,10 +945,26 @@ function connectEvents(){
 connectEvents()
 
 pushLine('sys','// 鲸鱼指挥舱已就绪（点左下图标开窗口）')
+// 先拉角色配置（立绘目录/表情清单/主题色），再开始轮询
+void loadPersona()
 probeCtl(); pollStatus(); pollPaint()
 setInterval(pollStatus, 2000)
 setInterval(pollPaint, 100)
 setInterval(probeCtl, 15000)
+// 角色可能被 switch_persona 换掉：每 30 秒对一次 id，变了就重载
+let curPersonaId = ''
+setInterval(async () => {
+  try {
+    const p = await fetch('/api/persona', { cache: 'no-store' }).then(r => r.json())
+    if (p?.ok && p.id && p.id !== curPersonaId) {
+      if (curPersonaId) {
+        pushLine('sys', `// 角色已切换 → ${p.displayName || p.id}`)
+        await loadPersona()
+      }
+      curPersonaId = p.id
+    }
+  } catch { /* 面板自己挂了就算了 */ }
+}, 30000)
 </script>
 </body>
 </html>

@@ -3,17 +3,58 @@ import { createRequire } from 'module'; const require = createRequire(import.met
 // src/tts.ts
 import { execFile } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { homedir } from "node:os";
 var LOG_TAG = "[dsh-live-director/tts]";
+function findRepoRoot(start) {
+  const env = process.env.PERSONA_OS_ROOT;
+  if (env && existsSync(env)) return resolve(env);
+  let cur = resolve(start || process.cwd());
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(join(cur, "config", "personas"))) return cur;
+    const up = resolve(cur, "..");
+    if (up === cur) break;
+    cur = up;
+  }
+  return process.cwd();
+}
+function readActiveRefAudio() {
+  try {
+    const root = findRepoRoot();
+    const personasDir = join(root, "config", "personas");
+    let id = "";
+    try {
+      const act = JSON.parse(readFileSync(join(personasDir, "active.json"), "utf-8"));
+      if (act && typeof act.active_id === "string") id = act.active_id;
+    } catch {
+    }
+    if (!id) return "";
+    const persona = JSON.parse(readFileSync(join(personasDir, id, "persona.json"), "utf-8"));
+    const rel = String(persona?.voice?.ref_audio || "").trim();
+    if (!rel) return "";
+    if (isAbsolute(rel)) return existsSync(rel) ? rel : "";
+    const norm = rel.replace(/\\/g, "/");
+    let base = root;
+    for (let i = 0; i < 3; i++) {
+      const cand = resolve(base, norm);
+      if (existsSync(cand)) return cand;
+      base = resolve(base, "..");
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
 var DEFAULT_REF_CANDIDATES = [
   process.env.WHALE_REF_AUDIO || "",
   join(homedir(), "Documents", "douyin-whale", "out", "ref_video", "ref_190.wav"),
   join(homedir(), "Desktop", "\u65B0\u5EFA\u6587\u4EF6\u5939 (2)", "ohwhale-deploy", "assets", "voice", "states", "ref_calm.wav")
 ].filter(Boolean);
 function resolveDefaultRef() {
+  const fromPersona = readActiveRefAudio();
+  if (fromPersona) return fromPersona;
   for (const p of DEFAULT_REF_CANDIDATES) {
     try {
       if (p && existsSync(p)) return p;
@@ -112,10 +153,10 @@ async function speakViaTts(text, cfg = readTtsConfig()) {
     const file = join(dir, "speak.wav");
     await writeFile(file, buf);
     const { cmd, args } = buildPlayerArgv(cfg.player, file);
-    await new Promise((resolve) => {
+    await new Promise((resolve2) => {
       execFile(cmd, args, { windowsHide: true }, (err) => {
         if (err) console.error(`${LOG_TAG} [TTS\u964D\u7EA7] \u64AD\u653E\u5931\u8D25: ${err.message}`);
-        resolve();
+        resolve2();
       });
     });
     void rm(dir, { recursive: true, force: true }).catch(() => {

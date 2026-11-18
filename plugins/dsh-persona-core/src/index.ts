@@ -21,7 +21,7 @@
  *   服务可能延迟就绪，需重试（每秒一次，最多 20 次）。
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { join, dirname, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +30,7 @@ import {
   moodLabel, moodExpression, moodPrompt,
   type MoodState,
 } from './mood.js'
+import { loadPersonaAssets, safeId, type PersonaAssets } from './persona-assets.js'
 
 const LOG_TAG = '[dsh-persona-core]'
 
@@ -604,6 +605,16 @@ export default {
         } catch (e) {
           console.error(`${LOG_TAG} 写 active.json 失败（切换已在本会话生效，但未持久化）：${(e as Error).message}`)
         }
+        // 多角色解耦：切完立刻换资产 + 换心情文件（两个角色的情绪互不影响）
+        try {
+          assets = loadPersonaAssets({ osRoot })
+          currentMoodFile = moodFileFor(assets.id)
+          mood = loadMood()
+          refreshMoodSection()
+          console.log(`${LOG_TAG} 已切到 ${assets.displayName}（${assets.id}）：表情目录=${assets.exprDir}，心情文件=${currentMoodFile}`)
+        } catch (e) {
+          console.error(`${LOG_TAG} 切换角色后刷新资产/心情失败：${(e as Error).message}`)
+        }
         return { ok: true, active_id: currentId, available: list.map((m) => m.id) }
       },
       presentCall(args: any) {
@@ -614,16 +625,23 @@ export default {
     // ---- PAD 心情引擎：本地 JSON + 定时注入 + 手动覆写工具 ----
     //
     // 设计取舍：
-    //   · 存储用插件目录下 mood_state.json，不建微服务（情绪更新频率低，不值得多一个进程）
+    //   · 不建微服务（情绪更新频率低，不值得多一个进程）
+    //   · **按角色分文件**：data/moods/<persona_id>_mood.json
+    //     （小鲸鱼生气了，切到 mortis 时 mortis 应该是平静的——情绪不跨角色共享）
     //   · 每轮对话先按时间差衰减，再按这句话的情绪事件推进
     //   · prompt 注入单独一个 section（和内心潜台词同级），SSE 推给面板联动立绘
-    const moodFile = join(dataRoot, 'mood_state.json')
+    const moodDir = process.env.PERSONA_MOOD_DIR ? resolve(process.env.PERSONA_MOOD_DIR) : join(dataRoot, 'moods')
+    const moodFileFor = (id: string): string => join(moodDir, `${safeId(id)}_mood.json`)
+
+    // 当前角色资产（表情目录 / 主题色 / TTS 参考音的事实源）
+    let assets: PersonaAssets = loadPersonaAssets({ osRoot })
+    let currentMoodFile = moodFileFor(assets.id)
     let mood: MoodState = defaultMood()
     let moodSectionDispose: (() => void) | null = null
 
     const loadMood = (): MoodState => {
       try {
-        if (existsSync(moodFile)) return normalizeMood(readJsonSafe(moodFile))
+        if (existsSync(currentMoodFile)) return normalizeMood(readJsonSafe(currentMoodFile))
       } catch (e) {
         console.error(`${LOG_TAG} 读取心情状态失败，用默认值：${(e as Error).message}`)
       }
@@ -631,7 +649,8 @@ export default {
     }
     const saveMood = (): void => {
       try {
-        writeFileSync(moodFile, JSON.stringify(mood, null, 2), 'utf8')
+        mkdirSync(moodDir, { recursive: true })
+        writeFileSync(currentMoodFile, JSON.stringify(mood, null, 2), 'utf8')
       } catch (e) {
         console.error(`${LOG_TAG} 写心情状态失败：${(e as Error).message}`)
       }
@@ -669,6 +688,11 @@ export default {
           pleasure: Number(mood.pleasure.toFixed(2)),
           affection: Math.round(mood.affection),
           angryTurns: mood.angryTurns,
+          // 多角色解耦：面板据此换立绘目录与主题色
+          persona_id: assets.id,
+          display_name: assets.displayName,
+          theme_color: assets.themeColor,
+          theme_sea: assets.themeSea,
         }),
         signal: AbortSignal.timeout(1500),
       }).catch(() => { /* 面板没开是常态 */ })
@@ -719,7 +743,7 @@ export default {
           dominance: Number(mood.dominance.toFixed(2)),
           angryTurns: mood.angryTurns,
           expression: moodExpression(mood),
-          file: moodFile,
+          file: currentMoodFile,
         }
       },
       presentCall() {
@@ -827,7 +851,7 @@ export default {
     // 启动时先加载并注入一次
     mood = loadMood()
     refreshMoodSection()
-    console.log(`${LOG_TAG} 心情引擎已就绪（${moodLabel(mood)}，精力 ${Math.round(mood.energy)}%）：${moodFile}`)
+    console.log(`${LOG_TAG} 心情引擎已就绪（${assets.displayName}｜${moodLabel(mood)}｜精力 ${Math.round(mood.energy)}%）：${currentMoodFile}`)
 
     // 每轮对话推进情绪。
     // 用 agent/request 中间件而不新增轮询：它天然在一次真正请求时触发。

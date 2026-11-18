@@ -1,7 +1,7 @@
 // src/index.ts
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync as readFileSync2, writeFileSync, existsSync as existsSync2, readdirSync as readdirSync2, statSync, mkdirSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { join, dirname, resolve, basename } from "node:path";
+import { join as join2, dirname, resolve as resolve2, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/mood.ts
@@ -139,8 +139,88 @@ function moodPrompt(s) {
   return lines.join("\n");
 }
 
+// src/persona-assets.ts
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join, resolve, isAbsolute } from "node:path";
+var LOG_TAG = "[dsh-persona-core/assets]";
+function findOsRoot(start) {
+  const env = process.env.PERSONA_OS_ROOT;
+  if (env && existsSync(env)) return resolve(env);
+  let cur = resolve(start || process.cwd());
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(join(cur, "config", "personas"))) return cur;
+    const up = resolve(cur, "..");
+    if (up === cur) break;
+    cur = up;
+  }
+  return process.cwd();
+}
+function readJson(p) {
+  try {
+    return JSON.parse(readFileSync(p, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function readActivePersonaId(root) {
+  const p = join(root, "config", "personas", "active.json");
+  const j = readJson(p);
+  if (j && typeof j.active_id === "string" && j.active_id) return j.active_id;
+  try {
+    const list = readdirSync(join(root, "config", "personas"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+    return list[0] || "ohwhale";
+  } catch {
+    return "ohwhale";
+  }
+}
+function resolveInRoot(root, p) {
+  if (!p) return "";
+  return isAbsolute(p) ? p : resolve(root, p.replace(/\\/g, "/"));
+}
+function resolveExisting(root, p, maxUp = 3) {
+  if (!p) return "";
+  const first = resolveInRoot(root, p);
+  if (isAbsolute(p)) return first;
+  if (existsSync(first)) return first;
+  let base = root;
+  for (let i = 0; i < maxUp; i++) {
+    base = resolve(base, "..");
+    const cand = resolveInRoot(base, p);
+    if (existsSync(cand)) return cand;
+  }
+  return first;
+}
+function loadPersonaAssets(opts = {}) {
+  const root = opts.osRoot || findOsRoot();
+  const id = opts.personaId || readActivePersonaId(root);
+  const personaPath = join(root, "config", "personas", id, "persona.json");
+  const p = readJson(personaPath);
+  if (!p) {
+    console.error(`${LOG_TAG} \u8BFB\u4E0D\u5230 ${personaPath}\uFF0C\u7528\u9ED8\u8BA4\u8D44\u4EA7\uFF08id=${id}\uFF09`);
+  }
+  const assets = p?.assets && typeof p.assets === "object" ? p.assets : {};
+  const voice = p?.voice && typeof p.voice === "object" ? p.voice : {};
+  const identity = p?.identity && typeof p.identity === "object" ? p.identity : {};
+  const exprDirRel = String(assets.expr_dir || "plugins/dsh-control-center/web/assets/expr");
+  const refRel = String(voice.ref_audio || "");
+  const out = {
+    id,
+    displayName: String(assets.display_name || identity.self_name || id),
+    exprDir: resolveInRoot(root, exprDirRel),
+    exprPrefix: String(assets.expr_prefix || "pixel_"),
+    themeColor: String(assets.theme_color || "#00F0FF"),
+    themeSea: String(assets.theme_sea || "#5BC0BE"),
+    ttsRefAudio: refRel ? resolveExisting(root, refRel) : "",
+    raw: assets
+  };
+  return out;
+}
+function safeId(id) {
+  return String(id || "default").replace(/[^\w.-]+/g, "_");
+}
+
 // src/index.ts
-var LOG_TAG = "[dsh-persona-core]";
+var LOG_TAG2 = "[dsh-persona-core]";
 var LOCAL_FALLBACK_ROOTS = [];
 var SECTION_ORDER = 100;
 var ENV_SECTION_ORDER = SECTION_ORDER + 5;
@@ -189,13 +269,13 @@ async function refreshWeather() {
     envState.weatherAt = Date.now();
   } catch (e) {
     if (!envState.weather) envState.weather = `\u5929\u6C14\uFF1A${ENV_CITY}\uFF08\u53D6\u4E0D\u5230\uFF0C\u7F51\u7EDC\u6216\u63A5\u53E3\u4E0D\u53EF\u7528\uFF09`;
-    console.error(`${LOG_TAG} \u53D6\u5929\u6C14\u5931\u8D25\uFF1A${e.message}`);
+    console.error(`${LOG_TAG2} \u53D6\u5929\u6C14\u5931\u8D25\uFF1A${e.message}`);
   } finally {
     clearTimeout(timer);
   }
 }
 function refreshGpu() {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     execFile(
       "nvidia-smi",
       ["--query-gpu=temperature.gpu,memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
@@ -215,29 +295,29 @@ function refreshGpu() {
           }
         }
         envState.gpuAt = Date.now();
-        resolve2();
+        resolve3();
       }
     );
   });
 }
 function resolvePersonasRoot() {
   if (process.env.PERSONA_CONFIG_DIR) {
-    if (existsSync(process.env.PERSONA_CONFIG_DIR)) return process.env.PERSONA_CONFIG_DIR;
+    if (existsSync2(process.env.PERSONA_CONFIG_DIR)) return process.env.PERSONA_CONFIG_DIR;
     throw new Error(`PERSONA_CONFIG_DIR \u4E0D\u5B58\u5728\uFF1A${process.env.PERSONA_CONFIG_DIR}`);
   }
   const osRoot = process.env.PERSONA_OS_ROOT;
   if (osRoot) {
-    const p = join(osRoot, "config", "personas");
-    if (existsSync(p)) return p;
+    const p = join2(osRoot, "config", "personas");
+    if (existsSync2(p)) return p;
   }
   for (const r of LOCAL_FALLBACK_ROOTS) {
-    const p = join(r, "config", "personas");
-    if (existsSync(p)) return p;
+    const p = join2(r, "config", "personas");
+    if (existsSync2(p)) return p;
   }
   let cur = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 6; i++) {
-    const p = join(cur, "config", "personas");
-    if (existsSync(p)) return p;
+    const p = join2(cur, "config", "personas");
+    if (existsSync2(p)) return p;
     const parent = dirname(cur);
     if (parent === cur) break;
     cur = parent;
@@ -245,7 +325,7 @@ function resolvePersonasRoot() {
   throw new Error("\u627E\u4E0D\u5230 config/personas \u76EE\u5F55\uFF08\u53EF\u8BBE PERSONA_CONFIG_DIR \u6216 PERSONA_OS_ROOT\uFF09");
 }
 function readJsonSafe(p) {
-  return JSON.parse(readFileSync(p, "utf-8"));
+  return JSON.parse(readFileSync2(p, "utf-8"));
 }
 function extractLastUserText(payload) {
   const dump = (v) => {
@@ -288,12 +368,12 @@ function listPersonas(root) {
   const out = [];
   let entries = [];
   try {
-    entries = readdirSync(root);
+    entries = readdirSync2(root);
   } catch {
     return out;
   }
   for (const name of entries) {
-    const dir = join(root, name);
+    const dir = join2(root, name);
     let isDir = false;
     try {
       isDir = statSync(dir).isDirectory();
@@ -301,8 +381,8 @@ function listPersonas(root) {
       continue;
     }
     if (!isDir) continue;
-    const pj = join(dir, "persona.json");
-    if (!existsSync(pj)) continue;
+    const pj = join2(dir, "persona.json");
+    if (!existsSync2(pj)) continue;
     let id = name;
     let display = name;
     try {
@@ -395,16 +475,16 @@ function loadPersona(personasRoot, osRoot, id) {
   if (!meta) {
     throw new Error(`\u672A\u627E\u5230\u89D2\u8272 "${id}"\u3002\u53EF\u7528\uFF1A${list.map((m) => m.id).join(", ") || "\uFF08\u65E0\uFF09"}`);
   }
-  const raw = readJsonSafe(join(meta.dir, "persona.json"));
-  const rulesFile = join(meta.dir, "rules.json");
-  const personalityFile = join(meta.dir, "personality.json");
-  if (existsSync(rulesFile)) {
+  const raw = readJsonSafe(join2(meta.dir, "persona.json"));
+  const rulesFile = join2(meta.dir, "rules.json");
+  const personalityFile = join2(meta.dir, "personality.json");
+  if (existsSync2(rulesFile)) {
     try {
       raw._rules = readJsonSafe(rulesFile);
     } catch {
     }
   }
-  if (existsSync(personalityFile)) {
+  if (existsSync2(personalityFile)) {
     try {
       raw._personality = readJsonSafe(personalityFile);
     } catch {
@@ -413,11 +493,11 @@ function loadPersona(personasRoot, osRoot, id) {
   let md = "";
   const mdRel = raw?.canonical_text?.persona_md;
   if (typeof mdRel === "string" && /\.md$/i.test(mdRel)) {
-    const candidates = [resolve(osRoot, mdRel), resolve(personasRoot, "..", mdRel)];
+    const candidates = [resolve2(osRoot, mdRel), resolve2(personasRoot, "..", mdRel)];
     for (const c of candidates) {
-      if (existsSync(c)) {
+      if (existsSync2(c)) {
         try {
-          md = readFileSync(c, "utf-8");
+          md = readFileSync2(c, "utf-8");
           break;
         } catch {
         }
@@ -434,13 +514,13 @@ var index_default = {
     try {
       personasRoot = resolvePersonasRoot();
     } catch (e) {
-      console.error(`${LOG_TAG} ${e.message}`);
+      console.error(`${LOG_TAG2} ${e.message}`);
       return;
     }
-    const osRoot = resolve(personasRoot, "..", "..");
-    const activeFile = join(personasRoot, "active.json");
-    const dataRoot = process.env.PERSONA_MOOD_DIR ? resolve(process.env.PERSONA_MOOD_DIR) : resolve(personasRoot, "..");
-    console.log(`${LOG_TAG} personas root = ${personasRoot}`);
+    const osRoot = resolve2(personasRoot, "..", "..");
+    const activeFile = join2(personasRoot, "active.json");
+    const dataRoot = process.env.PERSONA_MOOD_DIR ? resolve2(process.env.PERSONA_MOOD_DIR) : resolve2(personasRoot, "..");
+    console.log(`${LOG_TAG2} personas root = ${personasRoot}`);
     let currentId = "";
     let sectionDispose = null;
     let guideTimer = null;
@@ -463,7 +543,7 @@ var index_default = {
           text: envText()
         });
       } catch (e) {
-        console.error(`${LOG_TAG} \u73AF\u5883\u65F6\u949F\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
+        console.error(`${LOG_TAG2} \u73AF\u5883\u65F6\u949F\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
       }
     };
     const startEnvClock = () => {
@@ -475,7 +555,7 @@ var index_default = {
       envTimers.push(setInterval(() => {
         void refreshWeather().then(refreshEnvSection);
       }, WEATHER_INTERVAL_MS));
-      console.log(`${LOG_TAG} \u73AF\u5883\u65F6\u949F\u5DF2\u542F\u52A8\uFF08\u57CE\u5E02=${ENV_CITY}\uFF0C\u663E\u5361 60s / \u5929\u6C14 2h\uFF09`);
+      console.log(`${LOG_TAG2} \u73AF\u5883\u65F6\u949F\u5DF2\u542F\u52A8\uFF08\u57CE\u5E02=${ENV_CITY}\uFF0C\u663E\u5361 60s / \u5929\u6C14 2h\uFF09`);
       void refreshThoughts();
       envTimers.push(setInterval(() => {
         void refreshThoughts();
@@ -527,15 +607,15 @@ var index_default = {
       if (!text) return;
       try {
         thoughtsSectionDispose = svc.section({ name: "persona-core:thoughts", order: THOUGHTS_SECTION_ORDER, text });
-        console.log(`${LOG_TAG} \u5DF2\u6CE8\u5165 ${items.length} \u6761\u5185\u5FC3\u6F5C\u53F0\u8BCD\uFF08\u4EC5\u8BED\u6C14\u53C2\u8003\uFF09`);
+        console.log(`${LOG_TAG2} \u5DF2\u6CE8\u5165 ${items.length} \u6761\u5185\u5FC3\u6F5C\u53F0\u8BCD\uFF08\u4EC5\u8BED\u6C14\u53C2\u8003\uFF09`);
       } catch (e) {
-        console.error(`${LOG_TAG} \u5185\u5FC3\u6F5C\u53F0\u8BCD\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
+        console.error(`${LOG_TAG2} \u5185\u5FC3\u6F5C\u53F0\u8BCD\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
       }
     };
     const disposers = [];
     const getActiveId = () => {
       try {
-        if (existsSync(activeFile)) {
+        if (existsSync2(activeFile)) {
           const j = readJsonSafe(activeFile);
           if (typeof j?.active_id === "string" && j.active_id) return j.active_id;
         }
@@ -556,7 +636,7 @@ var index_default = {
       try {
         loaded = loadPersona(personasRoot, osRoot, id);
       } catch (e) {
-        console.error(`${LOG_TAG} \u52A0\u8F7D\u89D2\u8272 ${id} \u5931\u8D25\uFF1A${e.message}`);
+        console.error(`${LOG_TAG2} \u52A0\u8F7D\u89D2\u8272 ${id} \u5931\u8D25\uFF1A${e.message}`);
         return false;
       }
       currentId = loaded.id;
@@ -564,10 +644,10 @@ var index_default = {
       if (svc && typeof svc.section === "function") {
         try {
           sectionDispose = svc.section({ name: `persona-core:${loaded.id}`, order: SECTION_ORDER, text: loaded.text });
-          console.log(`${LOG_TAG} \u5DF2\u6CE8\u5165\u89D2\u8272 ${loaded.id}\uFF08${loaded.text.length} chars\uFF09\u5230 system prompt`);
+          console.log(`${LOG_TAG2} \u5DF2\u6CE8\u5165\u89D2\u8272 ${loaded.id}\uFF08${loaded.text.length} chars\uFF09\u5230 system prompt`);
           return true;
         } catch (e) {
-          console.error(`${LOG_TAG} section \u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
+          console.error(`${LOG_TAG2} section \u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
         }
       }
       return false;
@@ -582,7 +662,7 @@ var index_default = {
       if (attempts < 20) {
         guideTimer = setTimeout(tryInject, 1e3);
       } else {
-        console.error(`${LOG_TAG} systemPrompt \u670D\u52A1 20s \u5185\u672A\u5C31\u7EEA\uFF0C\u89D2\u8272\u672A\u6CE8\u5165\uFF08\u5DE5\u5177\u4ECD\u53EF\u7528\uFF09`);
+        console.error(`${LOG_TAG2} systemPrompt \u670D\u52A1 20s \u5185\u672A\u5C31\u7EEA\uFF0C\u89D2\u8272\u672A\u6CE8\u5165\uFF08\u5DE5\u5177\u4ECD\u53EF\u7528\uFF09`);
       }
     };
     tryInject();
@@ -628,7 +708,16 @@ var index_default = {
         try {
           writeFileSync(activeFile, JSON.stringify({ active_id: currentId, updated: Date.now() / 1e3 }, null, 2), "utf-8");
         } catch (e) {
-          console.error(`${LOG_TAG} \u5199 active.json \u5931\u8D25\uFF08\u5207\u6362\u5DF2\u5728\u672C\u4F1A\u8BDD\u751F\u6548\uFF0C\u4F46\u672A\u6301\u4E45\u5316\uFF09\uFF1A${e.message}`);
+          console.error(`${LOG_TAG2} \u5199 active.json \u5931\u8D25\uFF08\u5207\u6362\u5DF2\u5728\u672C\u4F1A\u8BDD\u751F\u6548\uFF0C\u4F46\u672A\u6301\u4E45\u5316\uFF09\uFF1A${e.message}`);
+        }
+        try {
+          assets = loadPersonaAssets({ osRoot });
+          currentMoodFile = moodFileFor(assets.id);
+          mood = loadMood();
+          refreshMoodSection();
+          console.log(`${LOG_TAG2} \u5DF2\u5207\u5230 ${assets.displayName}\uFF08${assets.id}\uFF09\uFF1A\u8868\u60C5\u76EE\u5F55=${assets.exprDir}\uFF0C\u5FC3\u60C5\u6587\u4EF6=${currentMoodFile}`);
+        } catch (e) {
+          console.error(`${LOG_TAG2} \u5207\u6362\u89D2\u8272\u540E\u5237\u65B0\u8D44\u4EA7/\u5FC3\u60C5\u5931\u8D25\uFF1A${e.message}`);
         }
         return { ok: true, active_id: currentId, available: list.map((m) => m.id) };
       },
@@ -636,22 +725,26 @@ var index_default = {
         return { card: "generic", title: `switch_persona \u2192 ${String(args?.character_id ?? "")}`, kind: "write" };
       }
     };
-    const moodFile = join(dataRoot, "mood_state.json");
+    const moodDir = process.env.PERSONA_MOOD_DIR ? resolve2(process.env.PERSONA_MOOD_DIR) : join2(dataRoot, "moods");
+    const moodFileFor = (id) => join2(moodDir, `${safeId(id)}_mood.json`);
+    let assets = loadPersonaAssets({ osRoot });
+    let currentMoodFile = moodFileFor(assets.id);
     let mood = defaultMood();
     let moodSectionDispose = null;
     const loadMood = () => {
       try {
-        if (existsSync(moodFile)) return normalizeMood(readJsonSafe(moodFile));
+        if (existsSync2(currentMoodFile)) return normalizeMood(readJsonSafe(currentMoodFile));
       } catch (e) {
-        console.error(`${LOG_TAG} \u8BFB\u53D6\u5FC3\u60C5\u72B6\u6001\u5931\u8D25\uFF0C\u7528\u9ED8\u8BA4\u503C\uFF1A${e.message}`);
+        console.error(`${LOG_TAG2} \u8BFB\u53D6\u5FC3\u60C5\u72B6\u6001\u5931\u8D25\uFF0C\u7528\u9ED8\u8BA4\u503C\uFF1A${e.message}`);
       }
       return defaultMood();
     };
     const saveMood = () => {
       try {
-        writeFileSync(moodFile, JSON.stringify(mood, null, 2), "utf8");
+        mkdirSync(moodDir, { recursive: true });
+        writeFileSync(currentMoodFile, JSON.stringify(mood, null, 2), "utf8");
       } catch (e) {
-        console.error(`${LOG_TAG} \u5199\u5FC3\u60C5\u72B6\u6001\u5931\u8D25\uFF1A${e.message}`);
+        console.error(`${LOG_TAG2} \u5199\u5FC3\u60C5\u72B6\u6001\u5931\u8D25\uFF1A${e.message}`);
       }
     };
     const refreshMoodSection = () => {
@@ -671,7 +764,7 @@ var index_default = {
             text: moodPrompt(mood)
           });
         } catch (e) {
-          console.error(`${LOG_TAG} \u5FC3\u60C5\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
+          console.error(`${LOG_TAG2} \u5FC3\u60C5\u6CE8\u5165\u5931\u8D25\uFF1A${e.message}`);
         }
       }
       const eventUrl = String(process.env.PANEL_EVENT_URL || "http://127.0.0.1:8088/api/event");
@@ -686,7 +779,12 @@ var index_default = {
           energy: Math.round(mood.energy),
           pleasure: Number(mood.pleasure.toFixed(2)),
           affection: Math.round(mood.affection),
-          angryTurns: mood.angryTurns
+          angryTurns: mood.angryTurns,
+          // 多角色解耦：面板据此换立绘目录与主题色
+          persona_id: assets.id,
+          display_name: assets.displayName,
+          theme_color: assets.themeColor,
+          theme_sea: assets.themeSea
         }),
         signal: AbortSignal.timeout(1500)
       }).catch(() => {
@@ -737,7 +835,7 @@ var index_default = {
           dominance: Number(mood.dominance.toFixed(2)),
           angryTurns: mood.angryTurns,
           expression: moodExpression(mood),
-          file: moodFile
+          file: currentMoodFile
         };
       },
       presentCall() {
@@ -838,7 +936,7 @@ var index_default = {
     };
     mood = loadMood();
     refreshMoodSection();
-    console.log(`${LOG_TAG} \u5FC3\u60C5\u5F15\u64CE\u5DF2\u5C31\u7EEA\uFF08${moodLabel(mood)}\uFF0C\u7CBE\u529B ${Math.round(mood.energy)}%\uFF09\uFF1A${moodFile}`);
+    console.log(`${LOG_TAG2} \u5FC3\u60C5\u5F15\u64CE\u5DF2\u5C31\u7EEA\uFF08${assets.displayName}\uFF5C${moodLabel(mood)}\uFF5C\u7CBE\u529B ${Math.round(mood.energy)}%\uFF09\uFF1A${currentMoodFile}`);
     let lastUserText = "";
     try {
       ctx.on("agent/request", async (payload, next) => {
@@ -855,20 +953,20 @@ var index_default = {
             }
           }
         } catch (e) {
-          console.error(`${LOG_TAG} \u5FC3\u60C5\u63A8\u8FDB\u5931\u8D25\uFF08\u5DF2\u5FFD\u7565\uFF09\uFF1A${e.message}`);
+          console.error(`${LOG_TAG2} \u5FC3\u60C5\u63A8\u8FDB\u5931\u8D25\uFF08\u5DF2\u5FFD\u7565\uFF09\uFF1A${e.message}`);
         }
         return next();
       });
     } catch (e) {
-      console.error(`${LOG_TAG} \u5FC3\u60C5\u94A9\u5B50\u6CE8\u518C\u5931\u8D25\uFF08\u60C5\u7EEA\u4E0D\u518D\u81EA\u52A8\u63A8\u8FDB\uFF09\uFF1A${e.message}`);
+      console.error(`${LOG_TAG2} \u5FC3\u60C5\u94A9\u5B50\u6CE8\u518C\u5931\u8D25\uFF08\u60C5\u7EEA\u4E0D\u518D\u81EA\u52A8\u63A8\u8FDB\uFF09\uFF1A${e.message}`);
     }
     for (const t of [switchTool, listTool, moodStatusTool, setMoodTool]) {
       try {
         const d = ctx.tools.register(t);
         if (typeof d === "function") disposers.push(d);
-        console.log(`${LOG_TAG} \u5DF2\u6CE8\u518C\u5DE5\u5177 ${t.name}`);
+        console.log(`${LOG_TAG2} \u5DF2\u6CE8\u518C\u5DE5\u5177 ${t.name}`);
       } catch (e) {
-        console.error(`${LOG_TAG} \u6CE8\u518C\u5DE5\u5177 ${t.name} \u5931\u8D25\uFF1A`, e);
+        console.error(`${LOG_TAG2} \u6CE8\u518C\u5DE5\u5177 ${t.name} \u5931\u8D25\uFF1A`, e);
       }
     }
     ctx.on("dispose", () => {
@@ -892,7 +990,7 @@ var index_default = {
         } catch {
         }
       }
-      console.log(`${LOG_TAG} disposed`);
+      console.log(`${LOG_TAG2} disposed`);
     });
   }
 };

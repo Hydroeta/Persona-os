@@ -3735,7 +3735,7 @@ var require_websocket_server = __commonJS({
 // src/server.ts
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join as join2, normalize, resolve } from "node:path";
+import { extname, join as join3, normalize, resolve as resolve2 } from "node:path";
 
 // src/probe.ts
 import net from "node:net";
@@ -3751,14 +3751,14 @@ var SERVICES = [
 ];
 function probeTcp(port, host = "127.0.0.1", timeoutMs = 2e3) {
   const t0 = Date.now();
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     const sock = new net.Socket();
     let done = false;
     const finish = (up, error) => {
       if (done) return;
       done = true;
       sock.destroy();
-      resolve2({ up, ms: Date.now() - t0, error });
+      resolve3({ up, ms: Date.now() - t0, error });
     };
     sock.setTimeout(timeoutMs);
     sock.once("connect", () => finish(true));
@@ -3824,14 +3824,14 @@ function parseNvidiaSmi(stdout) {
   return out;
 }
 function readGpu() {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     execFile(
       "nvidia-smi",
       ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
       { timeout: 3e3, windowsHide: true },
       (err, stdout) => {
-        if (err) return resolve2({ gpus: [], error: err.message.split("\n")[0] });
-        resolve2({ gpus: parseNvidiaSmi(String(stdout || "")) });
+        if (err) return resolve3({ gpus: [], error: err.message.split("\n")[0] });
+        resolve3({ gpus: parseNvidiaSmi(String(stdout || "")) });
       }
     );
   });
@@ -3871,7 +3871,7 @@ function sendTestDanmaku(text, user = "\u9762\u677F\u6307\u6325\u5B98", opts = {
   const url = opts.url || resolveDanmakuWsUrl();
   const timeoutMs = opts.timeoutMs ?? 5e3;
   const t0 = Date.now();
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     let done = false;
     const finish = (r) => {
       if (done) return;
@@ -3880,13 +3880,13 @@ function sendTestDanmaku(text, user = "\u9762\u677F\u6307\u6325\u5B98", opts = {
         ws.terminate();
       } catch {
       }
-      resolve2({ ...r, ms: Date.now() - t0 });
+      resolve3({ ...r, ms: Date.now() - t0 });
     };
     let ws;
     try {
       ws = new wrapper_default(url);
     } catch (e) {
-      return resolve2({ ok: false, error: e.message, ms: Date.now() - t0 });
+      return resolve3({ ok: false, error: e.message, ms: Date.now() - t0 });
     }
     const timer = setTimeout(() => finish({ ok: false, error: `\u7B49\u5F85\u56DE\u5305\u8D85\u65F6\uFF08${timeoutMs}ms\uFF09` }), timeoutMs);
     ws.on("open", () => {
@@ -4116,12 +4116,75 @@ function getTaskChain(opts = {}) {
   }
 }
 
+// src/persona.ts
+import { readFileSync as readFileSync2, existsSync as existsSync2, readdirSync as readdirSync2 } from "node:fs";
+import { join as join2, resolve, isAbsolute } from "node:path";
+function findRepoRoot(start) {
+  const env = process.env.PERSONA_OS_ROOT;
+  if (env && existsSync2(env)) return resolve(env);
+  let cur = resolve(start || process.cwd());
+  for (let i = 0; i < 8; i++) {
+    if (existsSync2(join2(cur, "config", "personas"))) return cur;
+    const up = resolve(cur, "..");
+    if (up === cur) break;
+    cur = up;
+  }
+  return process.cwd();
+}
+function readJsonSafe(p) {
+  try {
+    return JSON.parse(readFileSync2(p, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function listExpressions(dirAbs, prefix) {
+  try {
+    if (!existsSync2(dirAbs)) return [];
+    return readdirSync2(dirAbs).filter((f) => f.toLowerCase().endsWith(".png") && f.startsWith(prefix)).map((f) => f.slice(prefix.length).replace(/\.png$/i, "")).filter((n) => n && n !== "avatar").sort();
+  } catch {
+    return [];
+  }
+}
+function loadPanelPersona(opts = {}) {
+  const root = opts.osRoot || findRepoRoot();
+  const personasDir = join2(root, "config", "personas");
+  let id = opts.personaId || "";
+  if (!id) {
+    const act = readJsonSafe(join2(personasDir, "active.json"));
+    if (act && typeof act.active_id === "string" && act.active_id) id = act.active_id;
+  }
+  if (!id) {
+    try {
+      id = readdirSync2(personasDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort()[0] || "ohwhale";
+    } catch {
+      id = "ohwhale";
+    }
+  }
+  const persona = readJsonSafe(join2(personasDir, id, "persona.json"));
+  const assets = persona?.assets && typeof persona.assets === "object" ? persona.assets : {};
+  const identity = persona?.identity && typeof persona.identity === "object" ? persona.identity : {};
+  const exprDirRel = String(assets.expr_dir || "plugins/dsh-control-center/web/assets/expr");
+  const prefix = String(assets.expr_prefix || "pixel_");
+  const exprDirAbs = isAbsolute(exprDirRel) ? exprDirRel : resolve(root, exprDirRel);
+  return {
+    id,
+    displayName: String(assets.display_name || identity.self_name || id),
+    exprUrlBase: "/persona-expr",
+    exprDirAbs,
+    exprPrefix: prefix,
+    themeColor: String(assets.theme_color || "#00F0FF"),
+    themeSea: String(assets.theme_sea || "#5BC0BE"),
+    expressions: listExpressions(exprDirAbs, prefix)
+  };
+}
+
 // src/server.ts
 var LOG_TAG2 = "[dsh-control-center]";
 var hub = new EventHub();
 var CONTROL_API = (process.env.SERVICE_CTL_URL || "http://127.0.0.1:8010").replace(/\/+$/, "");
 var PAINT_BOARD_PATH = String(process.env.PAINT_BOARD_PATH || "").trim();
-var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join2(process.cwd(), "web", "assets"));
+var ASSETS_DIR = resolve2(process.env.CONTROL_ASSETS_DIR || join3(process.cwd(), "web", "assets"));
 var MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -4144,7 +4207,7 @@ function json(res, code, obj) {
   res.end(body);
 }
 function readBody(req, limit = 65536) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     let size = 0;
     const chunks = [];
     req.on("data", (c) => {
@@ -4156,7 +4219,7 @@ function readBody(req, limit = 65536) {
       }
       chunks.push(c);
     });
-    req.on("end", () => resolve2(Buffer.concat(chunks).toString("utf8")));
+    req.on("end", () => resolve3(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
 }
@@ -4189,6 +4252,30 @@ async function startControlCenter(opts = {}) {
         if (!ev || typeof ev.type !== "string") return json(res, 400, { ok: false, error: "\u7F3A\u5C11 type" });
         hub.publish(ev);
         return json(res, 200, { ok: true, listeners: hub.clientCount });
+      }
+      if (req.method === "GET" && url.startsWith("/api/persona")) {
+        try {
+          const p = loadPanelPersona();
+          return json(res, 200, { ok: true, ...p });
+        } catch (e) {
+          return json(res, 500, { ok: false, error: e.message });
+        }
+      }
+      if (req.method === "GET" && url.startsWith("/persona-expr/")) {
+        try {
+          const p = loadPanelPersona();
+          const rel = decodeURIComponent(url.slice("/persona-expr/".length).split("?")[0]);
+          const abs = resolve2(join3(p.exprDirAbs, normalize(rel)));
+          if (!abs.startsWith(resolve2(p.exprDirAbs))) return json(res, 403, { ok: false, error: "forbidden" });
+          const buf = await readFile(abs);
+          res.writeHead(200, {
+            "content-type": MIME[extname(abs).toLowerCase()] || "application/octet-stream",
+            "cache-control": "no-store"
+          });
+          return res.end(buf);
+        } catch {
+          return json(res, 404, { ok: false, error: "not found" });
+        }
       }
       if (req.method === "GET" && url.startsWith("/api/task-chain")) {
         const q = new URL(url, "http://127.0.0.1");
@@ -4229,7 +4316,7 @@ async function startControlCenter(opts = {}) {
       }
       if (req.method === "GET" && url.startsWith("/assets/")) {
         const rel = decodeURIComponent(url.slice("/assets/".length).split("?")[0]);
-        const abs = resolve(join2(ASSETS_DIR, normalize(rel)));
+        const abs = resolve2(join3(ASSETS_DIR, normalize(rel)));
         if (!abs.startsWith(ASSETS_DIR)) return json(res, 403, { ok: false, error: "forbidden" });
         try {
           const buf = await readFile(abs);
@@ -4262,12 +4349,12 @@ async function startControlCenter(opts = {}) {
       return json(res, 500, { ok: false, error: e.message });
     }
   });
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     server.on("error", reject);
     server.listen(port, "127.0.0.1", () => {
       const actual = server.address().port;
       console.log(`${LOG_TAG2} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
-      resolve2({
+      resolve3({
         port: actual,
         close: () => new Promise((r) => {
           hub.closeAll();

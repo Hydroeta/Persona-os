@@ -3735,7 +3735,7 @@ var require_websocket_server = __commonJS({
 // src/server.ts
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join as join2, normalize, resolve } from "node:path";
+import { extname, join as join3, normalize, resolve as resolve2 } from "node:path";
 
 // src/probe.ts
 import net from "node:net";
@@ -3751,14 +3751,14 @@ var SERVICES = [
 ];
 function probeTcp(port, host = "127.0.0.1", timeoutMs = 2e3) {
   const t0 = Date.now();
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     const sock = new net.Socket();
     let done = false;
     const finish = (up, error) => {
       if (done) return;
       done = true;
       sock.destroy();
-      resolve2({ up, ms: Date.now() - t0, error });
+      resolve3({ up, ms: Date.now() - t0, error });
     };
     sock.setTimeout(timeoutMs);
     sock.once("connect", () => finish(true));
@@ -3824,14 +3824,14 @@ function parseNvidiaSmi(stdout) {
   return out;
 }
 function readGpu() {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     execFile(
       "nvidia-smi",
       ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
       { timeout: 3e3, windowsHide: true },
       (err, stdout) => {
-        if (err) return resolve2({ gpus: [], error: err.message.split("\n")[0] });
-        resolve2({ gpus: parseNvidiaSmi(String(stdout || "")) });
+        if (err) return resolve3({ gpus: [], error: err.message.split("\n")[0] });
+        resolve3({ gpus: parseNvidiaSmi(String(stdout || "")) });
       }
     );
   });
@@ -3871,7 +3871,7 @@ function sendTestDanmaku(text, user = "\u9762\u677F\u6307\u6325\u5B98", opts = {
   const url = opts.url || resolveDanmakuWsUrl();
   const timeoutMs = opts.timeoutMs ?? 5e3;
   const t0 = Date.now();
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     let done = false;
     const finish = (r) => {
       if (done) return;
@@ -3880,13 +3880,13 @@ function sendTestDanmaku(text, user = "\u9762\u677F\u6307\u6325\u5B98", opts = {
         ws.terminate();
       } catch {
       }
-      resolve2({ ...r, ms: Date.now() - t0 });
+      resolve3({ ...r, ms: Date.now() - t0 });
     };
     let ws;
     try {
       ws = new wrapper_default(url);
     } catch (e) {
-      return resolve2({ ok: false, error: e.message, ms: Date.now() - t0 });
+      return resolve3({ ok: false, error: e.message, ms: Date.now() - t0 });
     }
     const timer = setTimeout(() => finish({ ok: false, error: `\u7B49\u5F85\u56DE\u5305\u8D85\u65F6\uFF08${timeoutMs}ms\uFF09` }), timeoutMs);
     ws.on("open", () => {
@@ -4116,12 +4116,75 @@ function getTaskChain(opts = {}) {
   }
 }
 
+// src/persona.ts
+import { readFileSync as readFileSync2, existsSync as existsSync2, readdirSync as readdirSync2 } from "node:fs";
+import { join as join2, resolve, isAbsolute } from "node:path";
+function findRepoRoot(start) {
+  const env = process.env.PERSONA_OS_ROOT;
+  if (env && existsSync2(env)) return resolve(env);
+  let cur = resolve(start || process.cwd());
+  for (let i = 0; i < 8; i++) {
+    if (existsSync2(join2(cur, "config", "personas"))) return cur;
+    const up = resolve(cur, "..");
+    if (up === cur) break;
+    cur = up;
+  }
+  return process.cwd();
+}
+function readJsonSafe(p) {
+  try {
+    return JSON.parse(readFileSync2(p, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function listExpressions(dirAbs, prefix) {
+  try {
+    if (!existsSync2(dirAbs)) return [];
+    return readdirSync2(dirAbs).filter((f) => f.toLowerCase().endsWith(".png") && f.startsWith(prefix)).map((f) => f.slice(prefix.length).replace(/\.png$/i, "")).filter((n) => n && n !== "avatar").sort();
+  } catch {
+    return [];
+  }
+}
+function loadPanelPersona(opts = {}) {
+  const root = opts.osRoot || findRepoRoot();
+  const personasDir = join2(root, "config", "personas");
+  let id = opts.personaId || "";
+  if (!id) {
+    const act = readJsonSafe(join2(personasDir, "active.json"));
+    if (act && typeof act.active_id === "string" && act.active_id) id = act.active_id;
+  }
+  if (!id) {
+    try {
+      id = readdirSync2(personasDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort()[0] || "ohwhale";
+    } catch {
+      id = "ohwhale";
+    }
+  }
+  const persona = readJsonSafe(join2(personasDir, id, "persona.json"));
+  const assets = persona?.assets && typeof persona.assets === "object" ? persona.assets : {};
+  const identity = persona?.identity && typeof persona.identity === "object" ? persona.identity : {};
+  const exprDirRel = String(assets.expr_dir || "plugins/dsh-control-center/web/assets/expr");
+  const prefix = String(assets.expr_prefix || "pixel_");
+  const exprDirAbs = isAbsolute(exprDirRel) ? exprDirRel : resolve(root, exprDirRel);
+  return {
+    id,
+    displayName: String(assets.display_name || identity.self_name || id),
+    exprUrlBase: "/persona-expr",
+    exprDirAbs,
+    exprPrefix: prefix,
+    themeColor: String(assets.theme_color || "#00F0FF"),
+    themeSea: String(assets.theme_sea || "#5BC0BE"),
+    expressions: listExpressions(exprDirAbs, prefix)
+  };
+}
+
 // src/server.ts
 var LOG_TAG2 = "[dsh-control-center]";
 var hub = new EventHub();
 var CONTROL_API = (process.env.SERVICE_CTL_URL || "http://127.0.0.1:8010").replace(/\/+$/, "");
 var PAINT_BOARD_PATH = String(process.env.PAINT_BOARD_PATH || "").trim();
-var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join2(process.cwd(), "web", "assets"));
+var ASSETS_DIR = resolve2(process.env.CONTROL_ASSETS_DIR || join3(process.cwd(), "web", "assets"));
 var MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -4144,7 +4207,7 @@ function json(res, code, obj) {
   res.end(body);
 }
 function readBody(req, limit = 65536) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     let size = 0;
     const chunks = [];
     req.on("data", (c) => {
@@ -4156,7 +4219,7 @@ function readBody(req, limit = 65536) {
       }
       chunks.push(c);
     });
-    req.on("end", () => resolve2(Buffer.concat(chunks).toString("utf8")));
+    req.on("end", () => resolve3(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
 }
@@ -4189,6 +4252,30 @@ async function startControlCenter(opts = {}) {
         if (!ev || typeof ev.type !== "string") return json(res, 400, { ok: false, error: "\u7F3A\u5C11 type" });
         hub.publish(ev);
         return json(res, 200, { ok: true, listeners: hub.clientCount });
+      }
+      if (req.method === "GET" && url.startsWith("/api/persona")) {
+        try {
+          const p = loadPanelPersona();
+          return json(res, 200, { ok: true, ...p });
+        } catch (e) {
+          return json(res, 500, { ok: false, error: e.message });
+        }
+      }
+      if (req.method === "GET" && url.startsWith("/persona-expr/")) {
+        try {
+          const p = loadPanelPersona();
+          const rel = decodeURIComponent(url.slice("/persona-expr/".length).split("?")[0]);
+          const abs = resolve2(join3(p.exprDirAbs, normalize(rel)));
+          if (!abs.startsWith(resolve2(p.exprDirAbs))) return json(res, 403, { ok: false, error: "forbidden" });
+          const buf = await readFile(abs);
+          res.writeHead(200, {
+            "content-type": MIME[extname(abs).toLowerCase()] || "application/octet-stream",
+            "cache-control": "no-store"
+          });
+          return res.end(buf);
+        } catch {
+          return json(res, 404, { ok: false, error: "not found" });
+        }
       }
       if (req.method === "GET" && url.startsWith("/api/task-chain")) {
         const q = new URL(url, "http://127.0.0.1");
@@ -4229,7 +4316,7 @@ async function startControlCenter(opts = {}) {
       }
       if (req.method === "GET" && url.startsWith("/assets/")) {
         const rel = decodeURIComponent(url.slice("/assets/".length).split("?")[0]);
-        const abs = resolve(join2(ASSETS_DIR, normalize(rel)));
+        const abs = resolve2(join3(ASSETS_DIR, normalize(rel)));
         if (!abs.startsWith(ASSETS_DIR)) return json(res, 403, { ok: false, error: "forbidden" });
         try {
           const buf = await readFile(abs);
@@ -4262,12 +4349,12 @@ async function startControlCenter(opts = {}) {
       return json(res, 500, { ok: false, error: e.message });
     }
   });
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     server2.on("error", reject);
     server2.listen(port, "127.0.0.1", () => {
       const actual = server2.address().port;
       console.log(`${LOG_TAG2} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
-      resolve2({
+      resolve3({
         port: actual,
         close: () => new Promise((r) => {
           hub.closeAll();
@@ -4576,17 +4663,17 @@ var PAGE_HTML = `<!doctype html>
 
 <!-- \u7A97\u53E3 1\uFF1A\u7ACB\u7ED8 -->
 <div class="win" id="win-avatar" data-title="LIVE FEED">
-  <div class="win-bar"><span class="title">LIVE FEED</span>
+  <div class="win-bar"><span class="title">LIVE FEED<span id="personaTag" style="margin-left:8px;color:var(--white);font-size:11px"></span></span>
     <button data-act="min" title="\u6700\u5C0F\u5316">\u2014</button>
     <button data-act="max" title="\u6700\u5927\u5316">\u25A1</button>
     <button data-act="close" class="close" title="\u5173\u95ED">\u2715</button>
   </div>
   <div class="win-body">
     <div id="avatarStage">
-      <img id="avatarImg" src="/assets/expr/pixel_smile.png" alt=""
+      <img id="avatarImg" src="" alt=""
            onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
     </div>
-    <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u68C0\u67E5 web/assets/expr/pixel_*.png</small></div>
+    <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u68C0\u67E5\u89D2\u8272\u914D\u7F6E\u91CC\u7684 assets.expr_dir</small></div>
     <div id="thinkBar"></div>
     <div id="moodBar"></div>
   </div>
@@ -5018,19 +5105,62 @@ async function probeCtl(){
 }
 
 /* ================= \u7ACB\u7ED8 ================= */
-const EXPR_BASE = '/assets/expr/pixel_'
-const EXPR_DEFAULT = 'smile'
-const EXPR_LIST = ['aggrieved','blush','content','giggle','joy','nervous','pout','puzzled',
-                   'sad','scared','shy','sleepy','smile','smug','starry','surprise','wink']
+/* ================= \u7ACB\u7ED8\uFF1A\u8868\u60C5\u72B6\u6001\u673A\uFF08\u591A\u89D2\u8272\u89E3\u8026\uFF0C\u5168\u90E8\u8D70\u6574\u56FE\u5207\u6362\uFF0C\u7EDD\u4E0D scale\uFF09 ================= */
+// \u76EE\u5F55\u3001\u524D\u7F00\u3001\u8868\u60C5\u6E05\u5355\u3001\u4E3B\u9898\u8272\u5168\u90E8\u6765\u81EA /api/persona\uFF08\u8BFB\u7684\u662F config/personas/<id>/persona.json\uFF09
+// \u8FD9\u91CC\u53EA\u4FDD\u7559\u300C\u515C\u5E95\u9ED8\u8BA4\u300D\u2014\u2014\u63A5\u53E3\u6302\u4E86\u4E5F\u80FD\u663E\u793A\uFF0C\u4E0D\u81F3\u4E8E\u7A7A\u767D\u3002
+let EXPR_BASE = '/persona-expr/'
+let EXPR_PREFIX = 'pixel_'
+let EXPR_DEFAULT = 'smile'
+let EXPR_LIST = ['smile']
 const img = $('avatarImg')
 const stage = $('avatarStage')
 let exprTimer = null, idleTimer = null, talkTimer = null
 const preloaded = {}
-for (const n of EXPR_LIST) { const im = new Image(); im.src = EXPR_BASE + n + '.png'; preloaded[n] = im }
+
+/** \u7ACB\u7ED8\u56FE\u7247\u7684\u5B8C\u6574 URL */
+function exprUrl(name){ return EXPR_BASE + EXPR_PREFIX + name + '.png' }
+
+function preloadAll(){
+  for (const n of EXPR_LIST) { const im = new Image(); im.src = exprUrl(n); preloaded[n] = im }
+}
+
+/** \u4ECE\u540E\u7AEF\u62C9\u5F53\u524D\u89D2\u8272\u8D44\u4EA7\uFF0C\u91CD\u5EFA\u8868\u60C5\u6E05\u5355 / \u4E3B\u9898\u8272 / \u7ACB\u7ED8 */
+async function loadPersona(){
+  try{
+    const r = await fetch('/api/persona', { cache: 'no-store' })
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    const p = await r.json()
+    if (!p.ok) throw new Error(p.error || '\u63A5\u53E3\u8FD4\u56DE\u5931\u8D25')
+    EXPR_BASE = (p.exprUrlBase || '/persona-expr') + '/'
+    EXPR_PREFIX = p.exprPrefix || 'pixel_'
+    if (Array.isArray(p.expressions) && p.expressions.length) {
+      EXPR_LIST = p.expressions
+      // \u9ED8\u8BA4\u6001\u4F18\u5148 smile\uFF0C\u6CA1\u6709\u5C31\u7528\u7B2C\u4E00\u4E2A
+      EXPR_DEFAULT = EXPR_LIST.includes('smile') ? 'smile' : EXPR_LIST[0]
+    }
+    applyTheme(p.themeColor, p.themeSea, p.displayName)
+    preloadAll()
+    img.src = exprUrl(EXPR_DEFAULT)
+    $('personaTag').textContent = p.displayName || p.id || ''
+    pushLine('sys', \`// \u89D2\u8272\uFF1A\${p.displayName || p.id}\uFF08\${EXPR_LIST.length} \u4E2A\u8868\u60C5\uFF09\`)
+  }catch(e){
+    // \u63A5\u53E3\u6302\u4E86\u5C31\u7528\u515C\u5E95\uFF1A\u81F3\u5C11\u80FD\u628A\u753B\u9762\u663E\u793A\u51FA\u6765
+    EXPR_BASE = '/assets/expr/'
+    EXPR_PREFIX = 'pixel_'
+    pushLine('err', '\u2717 \u8BFB\u89D2\u8272\u914D\u7F6E\u5931\u8D25\uFF08\u7528\u515C\u5E95\u9ED8\u8BA4\uFF09\uFF1A' + e.message)
+  }
+}
+
+/** \u4E3B\u9898\u8272\u4ECE\u89D2\u8272\u914D\u7F6E\u6765\uFF1A\u53EA\u6539 CSS \u53D8\u91CF\uFF0C\u4E0D\u52A8\u7ED3\u6784 */
+function applyTheme(color, sea, name){
+  if (color) document.documentElement.style.setProperty('--cyan', color)
+  if (sea) document.documentElement.style.setProperty('--sea', sea)
+  if (name) document.title = \`PERSONA-OS // \${name} \u6307\u6325\u8231\`
+}
 
 function setExpr(name, holdMs){
   if (!EXPR_LIST.includes(name)) return
-  img.src = EXPR_BASE + name + '.png'
+  img.src = exprUrl(name)
   if (holdMs) {
     if (exprTimer) clearTimeout(exprTimer)
     exprTimer = setTimeout(() => { exprTimer = null; setExpr(EXPR_DEFAULT) }, holdMs)
@@ -5183,10 +5313,26 @@ function connectEvents(){
 connectEvents()
 
 pushLine('sys','// \u9CB8\u9C7C\u6307\u6325\u8231\u5DF2\u5C31\u7EEA\uFF08\u70B9\u5DE6\u4E0B\u56FE\u6807\u5F00\u7A97\u53E3\uFF09')
+// \u5148\u62C9\u89D2\u8272\u914D\u7F6E\uFF08\u7ACB\u7ED8\u76EE\u5F55/\u8868\u60C5\u6E05\u5355/\u4E3B\u9898\u8272\uFF09\uFF0C\u518D\u5F00\u59CB\u8F6E\u8BE2
+void loadPersona()
 probeCtl(); pollStatus(); pollPaint()
 setInterval(pollStatus, 2000)
 setInterval(pollPaint, 100)
 setInterval(probeCtl, 15000)
+// \u89D2\u8272\u53EF\u80FD\u88AB switch_persona \u6362\u6389\uFF1A\u6BCF 30 \u79D2\u5BF9\u4E00\u6B21 id\uFF0C\u53D8\u4E86\u5C31\u91CD\u8F7D
+let curPersonaId = ''
+setInterval(async () => {
+  try {
+    const p = await fetch('/api/persona', { cache: 'no-store' }).then(r => r.json())
+    if (p?.ok && p.id && p.id !== curPersonaId) {
+      if (curPersonaId) {
+        pushLine('sys', \`// \u89D2\u8272\u5DF2\u5207\u6362 \u2192 \${p.displayName || p.id}\`)
+        await loadPersona()
+      }
+      curPersonaId = p.id
+    }
+  } catch { /* \u9762\u677F\u81EA\u5DF1\u6302\u4E86\u5C31\u7B97\u4E86 */ }
+}, 30000)
 </script>
 </body>
 </html>

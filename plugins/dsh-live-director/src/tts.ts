@@ -10,7 +10,8 @@
  *
  * 环境变量：
  *   TTS_SERVICE_URL   服务根地址，默认 http://127.0.0.1:9881
- *   TTS_REF_AUDIO     参考音绝对路径。**不配时自动找鲸鱼娘的 ref_190.wav**（见 DEFAULT_REF_CANDIDATES）；
+ *   TTS_REF_AUDIO     参考音绝对路径。**不配时自动读当前激活角色的 voice.ref_audio**
+ *                     （见 readActiveRefAudio）；角色配置里也没有才退到历史候选
  *                     都找不到就降级不发请求（日志会写「未配置参考音路径」）
  *   TTS_TIMEOUT_MS    超时，默认 60000（CPU 一句 1~2 分钟，3 秒必超时）
  *   TTS_PLAYER        播放器模板，`{file}` 会被替换成临时 wav 路径
@@ -23,16 +24,69 @@
  */
 import { execFile } from 'node:child_process'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { join, resolve, isAbsolute } from 'node:path'
 import { tmpdir } from 'node:os'
 import { homedir } from 'node:os'
 
 const LOG_TAG = '[dsh-live-director/tts]'
 
 /**
- * 默认参考音候选（鲸鱼娘）。
- * 不硬编码进仓库里某个人的绝对路径，只按"相对用户目录"的常见落点探测。
+ * 多角色解耦：参考音优先读「当前激活角色的配置」，而不是写死某个角色的路径。
+ *
+ * 读的是磁盘上的唯一事实源（`config/personas/active.json` + `<id>/persona.json`）：
+ *   `voice.ref_audio` 相对**工作区根**（V1 的 `ohwhale-deploy/...` 就在那一层），
+ *   而仓库本体在 `.../github-release/persona-os` 下，所以拼不出来时**逐级向上找**。
+ *
+ * 为什么要复制一份读法而不是 import persona-core：
+ *   两个插件各有 node_modules，跨包 import 会踩 ABI/路径问题；这段逻辑只有 30 行，
+ *   复制比耦合划算。约定字段见 persona-core/src/persona-assets.ts 的注释。
+ */
+function findRepoRoot(start?: string): string {
+  const env = process.env.PERSONA_OS_ROOT
+  if (env && existsSync(env)) return resolve(env)
+  let cur = resolve(start || process.cwd())
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(join(cur, 'config', 'personas'))) return cur
+    const up = resolve(cur, '..')
+    if (up === cur) break
+    cur = up
+  }
+  return process.cwd()
+}
+
+function readActiveRefAudio(): string {
+  try {
+    const root = findRepoRoot()
+    const personasDir = join(root, 'config', 'personas')
+    let id = ''
+    try {
+      const act = JSON.parse(readFileSync(join(personasDir, 'active.json'), 'utf-8'))
+      if (act && typeof act.active_id === 'string') id = act.active_id
+    } catch { /* active.json 没有就算了 */ }
+    if (!id) return ''
+    const persona = JSON.parse(readFileSync(join(personasDir, id, 'persona.json'), 'utf-8'))
+    const rel = String(persona?.voice?.ref_audio || '').trim()
+    if (!rel) return ''
+    // 绝对路径直接用；相对路径先按仓库根拼，不存在就逐级向上找
+    if (isAbsolute(rel)) return existsSync(rel) ? rel : ''
+    const norm = rel.replace(/\\/g, '/')
+    let base = root
+    for (let i = 0; i < 3; i++) {
+      const cand = resolve(base, norm)
+      if (existsSync(cand)) return cand
+      base = resolve(base, '..')
+    }
+    return ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 历史遗留兜底候选：**角色配置里没写** voice.ref_audio 时才用。
+ * 正常情况永远走不到这里——主路径是 readActiveRefAudio()。
+ * 留着的意义：老部署里 persona.json 可能还没补 ref_audio 字段。
  */
 const DEFAULT_REF_CANDIDATES = [
   process.env.WHALE_REF_AUDIO || '',
@@ -40,8 +94,10 @@ const DEFAULT_REF_CANDIDATES = [
   join(homedir(), 'Desktop', '新建文件夹 (2)', 'ohwhale-deploy', 'assets', 'voice', 'states', 'ref_calm.wav'),
 ].filter(Boolean)
 
-/** 探测默认参考音；都没有返回空串 */
+/** 探测默认参考音：先读当前角色配置，再退到兜底候选；都没有返回空串 */
 export function resolveDefaultRef(): string {
+  const fromPersona = readActiveRefAudio()
+  if (fromPersona) return fromPersona
   for (const p of DEFAULT_REF_CANDIDATES) {
     try {
       if (p && existsSync(p)) return p
@@ -69,7 +125,7 @@ export function readTtsConfig(env: NodeJS.ProcessEnv = process.env): TtsConfig |
   if (String(env.TTS_ENABLED || '') === '0') return null
   const base = String(env.TTS_SERVICE_URL || 'http://127.0.0.1:9881').trim().replace(/\/+$/, '').replace(/\/tts$/, '')
   if (!base) return null
-  // 参考音：优先环境变量；没配就按候选列表自动探测（鲸鱼娘 ref_190.wav）
+  // 参考音：优先环境变量 TTS_REF_AUDIO；没配就读当前角色配置；再没有才退历史候选
   const refAudio = String(env.TTS_REF_AUDIO || '').trim() || resolveDefaultRef()
   const t = Number(env.TTS_TIMEOUT_MS)
   return {

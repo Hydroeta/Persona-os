@@ -19,6 +19,7 @@ import { probeAll, readHostInfo, type ServiceStatus, type HostInfo } from './pro
 import { sendTestDanmaku, resolveDanmakuWsUrl, type DanmakuReply } from './danmaku.js'
 import { EventHub, type PanelEvent } from './events.js'
 import { getTaskChain } from './task-chain.js'
+import { loadPanelPersona } from './persona.js'
 
 const LOG_TAG = '[dsh-control-center]'
 
@@ -118,6 +119,34 @@ export async function startControlCenter(opts: { port?: number; page?: () => str
         if (!ev || typeof ev.type !== 'string') return json(res, 400, { ok: false, error: '缺少 type' })
         hub.publish(ev)
         return json(res, 200, { ok: true, listeners: hub.clientCount })
+      }
+
+      // 当前角色资产（多角色解耦）：面板据此换立绘目录 / 表情清单 / 主题色
+      if (req.method === 'GET' && url.startsWith('/api/persona')) {
+        try {
+          const p = loadPanelPersona()
+          return json(res, 200, { ok: true, ...p })
+        } catch (e) {
+          return json(res, 500, { ok: false, error: (e as Error).message })
+        }
+      }
+
+      // 表情静态文件：/persona-expr/<name>.png —— 目录由角色配置决定，不写死
+      if (req.method === 'GET' && url.startsWith('/persona-expr/')) {
+        try {
+          const p = loadPanelPersona()
+          const rel = decodeURIComponent(url.slice('/persona-expr/'.length).split('?')[0])
+          const abs = resolve(join(p.exprDirAbs, normalize(rel)))
+          if (!abs.startsWith(resolve(p.exprDirAbs))) return json(res, 403, { ok: false, error: 'forbidden' })
+          const buf = await readFile(abs)
+          res.writeHead(200, {
+            'content-type': MIME[extname(abs).toLowerCase()] || 'application/octet-stream',
+            'cache-control': 'no-store',
+          })
+          return res.end(buf)
+        } catch {
+          return json(res, 404, { ok: false, error: 'not found' })
+        }
       }
 
       // 任务链：解析 DSH 会话记录里的 tool/call，用于面板「看她刚才查了什么」

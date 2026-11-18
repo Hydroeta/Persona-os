@@ -13,3 +13,5 @@ const common = {
 
 await build({ ...common, entryPoints: ['src/index.ts'], outfile: 'lib/index.js' })
 await build({ ...common, entryPoints: ['src/mood.ts'], outfile: 'lib/mood.js' })
+// persona-assets.ts 也单独出一份：离线单测要直接 import（它是多角色解耦的事实源）
+await build({ ...common, entryPoints: ['src/persona-assets.ts'], outfile: 'lib/persona-assets.js' })
