@@ -193,7 +193,7 @@ var require_limiter = __commonJS({
 var require_permessage_deflate = __commonJS({
   "../../node_modules/.pnpm/ws@8.22.1/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
-    var zlib = __require("zlib");
+    var zlib2 = __require("zlib");
     var bufferUtil = require_buffer_util();
     var Limiter = require_limiter();
     var { kStatusCode } = require_constants();
@@ -460,8 +460,8 @@ var require_permessage_deflate = __commonJS({
         const endpoint = this._isServer ? "client" : "server";
         if (!this._inflate) {
           const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
-          this._inflate = zlib.createInflateRaw({
+          const windowBits = typeof this.params[key] !== "number" ? zlib2.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._inflate = zlib2.createInflateRaw({
             ...this._options.zlibInflateOptions,
             windowBits
           });
@@ -511,8 +511,8 @@ var require_permessage_deflate = __commonJS({
         const endpoint = this._isServer ? "server" : "client";
         if (!this._deflate) {
           const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
-          this._deflate = zlib.createDeflateRaw({
+          const windowBits = typeof this.params[key] !== "number" ? zlib2.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._deflate = zlib2.createDeflateRaw({
             ...this._options.zlibDeflateOptions,
             windowBits
           });
@@ -522,7 +522,7 @@ var require_permessage_deflate = __commonJS({
         }
         this._deflate[kCallback] = callback;
         this._deflate.write(data);
-        this._deflate.flush(zlib.Z_SYNC_FLUSH, () => {
+        this._deflate.flush(zlib2.Z_SYNC_FLUSH, () => {
           if (!this._deflate) {
             return;
           }
@@ -2285,7 +2285,7 @@ var require_websocket = __commonJS({
     var tls = __require("tls");
     var { randomBytes, createHash } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
-    var { URL } = __require("url");
+    var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
@@ -2799,11 +2799,11 @@ var require_websocket = __commonJS({
         );
       }
       let parsedUrl;
-      if (address instanceof URL) {
+      if (address instanceof URL2) {
         parsedUrl = address;
       } else {
         try {
-          parsedUrl = new URL(address);
+          parsedUrl = new URL2(address);
         } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
@@ -2945,7 +2945,7 @@ var require_websocket = __commonJS({
           req.abort();
           let addr;
           try {
-            addr = new URL(location, address);
+            addr = new URL2(location, address);
           } catch (e) {
             const err = new SyntaxError(`Invalid URL: ${location}`);
             emitErrorAndClose(websocket, err);
@@ -3735,7 +3735,7 @@ var require_websocket_server = __commonJS({
 // src/server.ts
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join as join2, normalize, resolve } from "node:path";
 
 // src/probe.ts
 import net from "node:net";
@@ -3968,12 +3968,160 @@ data: ${JSON.stringify(e)}
   }
 };
 
+// src/task-chain.ts
+import { readFileSync, statSync, readdirSync, existsSync } from "node:fs";
+import { join, basename } from "node:path";
+import zlib from "node:zlib";
+var LOG_TAG = "[dsh-control-center/task-chain]";
+var ZSTD_MAGIC = Buffer.from([40, 181, 47, 253]);
+function decodeZstdFrames(raw) {
+  const offsets = [];
+  let i = 0;
+  while ((i = raw.indexOf(ZSTD_MAGIC, i)) !== -1) {
+    offsets.push(i);
+    i += 4;
+  }
+  if (!offsets.length) {
+    try {
+      return zlib.zstdDecompressSync(raw).toString("utf8");
+    } catch {
+      return "";
+    }
+  }
+  const parts = [];
+  for (let k = 0; k < offsets.length; k++) {
+    const start = offsets[k];
+    const end = k + 1 < offsets.length ? offsets[k + 1] : raw.length;
+    try {
+      const out = zlib.zstdDecompressSync(raw.subarray(start, end)).toString("utf8");
+      if (out) parts.push(out);
+    } catch {
+    }
+  }
+  return parts.join("");
+}
+var lineCache = /* @__PURE__ */ new Map();
+function readLines(sessionPath) {
+  const st = statSync(sessionPath);
+  const hit = lineCache.get(sessionPath);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.lines;
+  const raw = readFileSync(sessionPath);
+  const text = decodeZstdFrames(raw);
+  const lines = text.split("\n").filter(Boolean);
+  lineCache.set(sessionPath, { mtimeMs: st.mtimeMs, size: st.size, lines });
+  return lines;
+}
+var MAX_ARGS_LEN = 300;
+function parseToolCalls(lines) {
+  const calls = [];
+  const resultIds = /* @__PURE__ */ new Set();
+  for (const ln of lines) {
+    if (!ln.includes("tool/call") && !ln.includes("tool/result")) continue;
+    let o;
+    try {
+      o = JSON.parse(ln);
+    } catch {
+      continue;
+    }
+    const d = o?.data;
+    if (!d) continue;
+    if (o.type === "tool/call") {
+      const args = typeof d.arguments === "string" ? d.arguments : JSON.stringify(d.arguments ?? "");
+      calls.push({
+        turn: Number(d.turn ?? 0),
+        step: Number(d.step ?? 0),
+        seq: Number(o.seq ?? 0),
+        time: Number(o.time ?? 0),
+        callId: String(d.callId ?? ""),
+        name: String(d.name ?? ""),
+        args: args.length > MAX_ARGS_LEN ? args.slice(0, MAX_ARGS_LEN) + "\u2026" : args
+      });
+    } else if (o.type === "tool/result") {
+      const id = d.toolCallId || d.message?.toolCallId || d.message?.source?.callId;
+      if (id) resultIds.add(String(id));
+    }
+  }
+  for (const c of calls) {
+    if (resultIds.has(c.callId)) c.hasResult = true;
+  }
+  return calls;
+}
+function findRecentSessions(opts = {}) {
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const root = join(home, ".dsh", "sessions");
+  if (!existsSync(root)) return [];
+  const out = [];
+  let wsDirs;
+  try {
+    wsDirs = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return [];
+  }
+  for (const ws of wsDirs) {
+    if (opts.workspace && !ws.includes(opts.workspace)) continue;
+    const wsPath = join(root, ws);
+    let sessions;
+    try {
+      sessions = readdirSync(wsPath, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith("session")).map((d) => d.name);
+    } catch {
+      continue;
+    }
+    for (const s of sessions) {
+      const f = join(wsPath, s, "session.v4.jsonl.zstd");
+      if (!existsSync(f)) continue;
+      try {
+        out.push({ path: f, mtime: statSync(f).mtimeMs });
+      } catch {
+      }
+    }
+  }
+  out.sort((a, b) => b.mtime - a.mtime);
+  return out.slice(0, Math.max(1, opts.recent ?? 1)).map((x) => x.path);
+}
+function sessionIdOf(sessionPath) {
+  const dir = basename(join(sessionPath, ".."));
+  return dir.startsWith("session") ? dir : basename(sessionPath);
+}
+function getTaskChain(opts = {}) {
+  try {
+    const sessionPath = opts.sessionPath || findRecentSessions({ workspace: opts.workspace, recent: 1 })[0];
+    if (!sessionPath) {
+      return { ok: false, error: "\u6CA1\u627E\u5230\u4F1A\u8BDD\u8BB0\u5F55\uFF08~/.dsh/sessions/*/session-*/session.v4.jsonl.zstd\uFF09" };
+    }
+    if (!existsSync(sessionPath)) {
+      return { ok: false, error: `\u4F1A\u8BDD\u6587\u4EF6\u4E0D\u5B58\u5728\uFF1A${sessionPath}` };
+    }
+    const lines = readLines(sessionPath);
+    let calls = parseToolCalls(lines);
+    if (opts.tools?.length) {
+      const set = new Set(opts.tools.map((t) => t.toLowerCase()));
+      calls = calls.filter((c) => set.has(c.name.toLowerCase()));
+    }
+    if (typeof opts.afterTurn === "number") {
+      calls = calls.filter((c) => c.turn > opts.afterTurn);
+    }
+    const total = calls.length;
+    const limit = Math.max(1, opts.limit ?? 40);
+    const tail = calls.slice(-limit);
+    console.log(`${LOG_TAG} \u89E3\u6790 ${basename(sessionPath)}\uFF1A${total} \u6761\u8C03\u7528\uFF0C\u8FD4\u56DE\u6700\u540E ${tail.length} \u6761`);
+    return {
+      ok: true,
+      sessionPath,
+      sessionId: sessionIdOf(sessionPath),
+      totalCalls: total,
+      calls: tail
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // src/server.ts
-var LOG_TAG = "[dsh-control-center]";
+var LOG_TAG2 = "[dsh-control-center]";
 var hub = new EventHub();
 var CONTROL_API = (process.env.SERVICE_CTL_URL || "http://127.0.0.1:8010").replace(/\/+$/, "");
 var PAINT_BOARD_PATH = String(process.env.PAINT_BOARD_PATH || "").trim();
-var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join(process.cwd(), "web", "assets"));
+var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join2(process.cwd(), "web", "assets"));
 var MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -4042,6 +4190,16 @@ async function startControlCenter(opts = {}) {
         hub.publish(ev);
         return json(res, 200, { ok: true, listeners: hub.clientCount });
       }
+      if (req.method === "GET" && url.startsWith("/api/task-chain")) {
+        const q = new URL(url, "http://127.0.0.1");
+        const chain = getTaskChain({
+          sessionPath: q.searchParams.get("session") || void 0,
+          workspace: q.searchParams.get("workspace") || void 0,
+          tools: q.searchParams.get("tools") ? q.searchParams.get("tools").split(",").filter(Boolean) : void 0,
+          limit: q.searchParams.get("limit") ? Number(q.searchParams.get("limit")) : 40
+        });
+        return json(res, chain.ok ? 200 : 404, chain);
+      }
       if (req.method === "GET" && url.startsWith("/api/latest-paint")) {
         if (!PAINT_BOARD_PATH) return json(res, 404, { ok: false, error: "\u672A\u914D\u7F6E PAINT_BOARD_PATH" });
         try {
@@ -4071,7 +4229,7 @@ async function startControlCenter(opts = {}) {
       }
       if (req.method === "GET" && url.startsWith("/assets/")) {
         const rel = decodeURIComponent(url.slice("/assets/".length).split("?")[0]);
-        const abs = resolve(join(ASSETS_DIR, normalize(rel)));
+        const abs = resolve(join2(ASSETS_DIR, normalize(rel)));
         if (!abs.startsWith(ASSETS_DIR)) return json(res, 403, { ok: false, error: "forbidden" });
         try {
           const buf = await readFile(abs);
@@ -4100,7 +4258,7 @@ async function startControlCenter(opts = {}) {
       }
       return json(res, 404, { ok: false, error: "not found" });
     } catch (e) {
-      console.error(`${LOG_TAG} \u5904\u7406\u5931\u8D25\uFF1A${e.message}`);
+      console.error(`${LOG_TAG2} \u5904\u7406\u5931\u8D25\uFF1A${e.message}`);
       return json(res, 500, { ok: false, error: e.message });
     }
   });
@@ -4108,7 +4266,7 @@ async function startControlCenter(opts = {}) {
     server2.on("error", reject);
     server2.listen(port, "127.0.0.1", () => {
       const actual = server2.address().port;
-      console.log(`${LOG_TAG} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
+      console.log(`${LOG_TAG2} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
       resolve2({
         port: actual,
         close: () => new Promise((r) => {
@@ -4217,6 +4375,32 @@ var PAGE_HTML = `<!doctype html>
   .win-bar button:hover{background:var(--cyan);color:var(--deep)}
   .win-bar button.close:hover{background:var(--bad);border-color:var(--bad);color:#fff}
   .win-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
+
+  /* \u4EFB\u52A1\u94FE\u7A97 */
+  #win-chain .win-body{padding:8px;display:flex;flex-direction:column;min-height:0}
+  #chainToolbar{display:flex;gap:6px;margin-bottom:6px;flex:none;flex-wrap:wrap}
+  #chainToolbar select,#chainToolbar input{
+    font:inherit;font-size:12px;padding:3px 6px;color:var(--white);
+    background:#04070f;border:2px solid rgba(0,240,255,.45);outline:none;
+  }
+  #chainToolbar input{flex:1;min-width:120px}
+  #chainToolbar button{
+    font:inherit;font-size:12px;padding:3px 10px;cursor:pointer;
+    background:var(--cyan);border:2px solid var(--cyan);color:var(--deep);
+  }
+  #chainToolbar button:hover{background:var(--white)}
+  #chainList{
+    flex:1;overflow:auto;min-height:0;background:#04070f;
+    border:2px solid rgba(0,240,255,.22);padding:6px;font-size:12px;line-height:1.5;
+    font-family:"Cascadia Mono",Consolas,monospace;
+  }
+  #chainList .row{display:flex;gap:8px;padding:1px 0;border-bottom:1px dashed rgba(0,240,255,.08)}
+  #chainList .idx{color:var(--dim);flex:none;width:30px;text-align:right}
+  #chainList .ts{color:var(--text-dim, #4a5c78);flex:none;width:62px}
+  #chainList .nm{flex:none;width:64px;color:var(--sea)}
+  #chainList .nm.w{padding-left:2px;border-left:2px solid var(--cyan)}  /* \u5199\u7C7B\u5DE5\u5177\u52A0\u4EAE */
+  #chainList .ar{flex:1;color:#9fb4cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #chainMeta{flex:none;margin-top:5px;font-size:11px;color:var(--dim)}
 
   /* \u7ACB\u7ED8\u7A97 */
   /* \u601D\u8003\u72B6\u6001\u6761\uFF1A\u7ACB\u7ED8\u5E95\u90E8\u7684\u5C0F HUD\uFF0C\u53EA\u5728\u590D\u6742\u6307\u4EE4\u65F6\u51FA\u73B0\uFF0C1.5 \u79D2\u540E\u6DE1\u51FA */
@@ -4360,6 +4544,7 @@ var PAGE_HTML = `<!doctype html>
   <button class="dbtn" id="btnStartAll">\u62C9\u8D77\u5168\u90E8\u5FAE\u670D\u52A1<small>POST :8010/start-all</small></button>
   <button class="dbtn" id="btnClearFeed">\u6E05\u7A7A\u5F39\u5E55\u6D41<small>\u7EAF\u524D\u7AEF</small></button>
   <button class="dbtn" id="btnRawStatus">\u67E5\u770B /api/status<small>\u6392\u67E5\u7528</small></button>
+  <button class="dbtn" id="btnTaskChain">\u67E5\u770B\u4EFB\u52A1\u94FE<small>\u89E3\u6790\u4F1A\u8BDD\u8BB0\u5F55\u91CC\u7684\u5DE5\u5177\u8C03\u7528</small></button>
   <div class="note" id="ctlNote">\u63A7\u5236\u63A5\u53E3\u672A\u63A2\u6D4B</div>
 </div>
 
@@ -4372,6 +4557,7 @@ var PAGE_HTML = `<!doctype html>
   <div class="dockicon" data-win="win-console"><span class="glyph">\u25A4</span>\u5F39\u5E55</div>
   <div class="dockicon" data-win="win-status"><span class="glyph">\u25A6</span>\u72B6\u6001</div>
   <div class="dockicon" data-win="win-paint"><span class="glyph">\u25A3</span>\u753B\u677F</div>
+  <div class="dockicon" data-win="win-chain"><span class="glyph">\u2318</span>\u4EFB\u52A1\u94FE</div>
 </div>
 
 <!-- \u7A97\u53E3 1\uFF1A\u7ACB\u7ED8 -->
@@ -4436,6 +4622,29 @@ var PAGE_HTML = `<!doctype html>
       <div class="hint" id="artHint">\u7B49\u5F85\u4F5C\u753B\u2026</div>
       <img id="artImg" alt="" style="display:none">
     </div>
+  </div>
+</div>
+
+<!-- \u7A97\u53E3 5\uFF1A\u4EFB\u52A1\u94FE\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF09 -->
+<div class="win" id="win-chain" data-title="TASK CHAIN">
+  <div class="win-bar"><span class="title" id="chainTitle">TASK CHAIN</span>
+    <button data-act="min" title="\u6700\u5C0F\u5316">\u2014</button>
+    <button data-act="max" title="\u6700\u5927\u5316">\u25A1</button>
+    <button data-act="close" class="close" title="\u5173\u95ED">\u2715</button>
+  </div>
+  <div class="win-body">
+    <div id="chainToolbar">
+      <select id="chainLimit">
+        <option value="20">\u6700\u540E 20 \u6761</option>
+        <option value="40" selected>\u6700\u540E 40 \u6761</option>
+        <option value="100">\u6700\u540E 100 \u6761</option>
+        <option value="500">\u6700\u540E 500 \u6761</option>
+      </select>
+      <input id="chainFilter" placeholder="\u53EA\u7559\u8FD9\u4E9B\u5DE5\u5177\uFF08\u9017\u53F7\u5206\u9694\uFF0C\u5982 pwsh,read\uFF09" autocomplete="off">
+      <button id="chainReload">\u5237\u65B0</button>
+    </div>
+    <div id="chainList"></div>
+    <div id="chainMeta"></div>
   </div>
 </div>
 
@@ -4576,6 +4785,9 @@ WM.state['win-console'].x = 12 + _colL + 14; WM.state['win-console'].y = 54
 WM.state['win-console'].w = _colR; WM.state['win-console'].h = _row1
 WM.state['win-paint'].x = Math.max(20, _W - 500); WM.state['win-paint'].y = Math.max(60, _H - 500)
 WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
+// \u4EFB\u52A1\u94FE\u7A97\uFF1A\u9ED8\u8BA4\u4E5F\u5173\u95ED\uFF0C\u70B9 dock \u56FE\u6807\u624D\u5F00\uFF08\u67E5\u770B\u65F6\u624D\u89E3\u6790\u4F1A\u8BDD\u8BB0\u5F55\uFF0C\u4E0D\u5360\u5E38\u9A7B\u5F00\u9500\uFF09
+WM.state['win-chain'].x = Math.max(20, Math.round(_W * 0.18)); WM.state['win-chain'].y = 80
+WM.state['win-chain'].w = Math.min(900, Math.round(_W * 0.62)); WM.state['win-chain'].h = Math.min(620, Math.round(_H * 0.7))
 WM.open('win-avatar'); WM.open('win-console')
 WM.open('win-status')
 // \u753B\u677F\u9ED8\u8BA4\u5173\u95ED\uFF08\u53D1 !\u753B \u65F6\u81EA\u52A8\u5F00\uFF09
@@ -4724,6 +4936,61 @@ $('btnRawStatus').onclick = async () => {
   const j = await fetch('/api/status').then(r=>r.json())
   pushLine('sys', JSON.stringify(j, null, 1))
 }
+
+/* ================= \u4EFB\u52A1\u94FE\uFF08\u89E3\u6790\u4F1A\u8BDD\u8BB0\u5F55\u91CC\u7684 tool/call\uFF09 ================= */
+const WRITE_TOOLS = new Set(['edit', 'write', 'pwsh', 'app_call', 'diagram_apply', 'knowledge_write_node', 'memory_remember', 'memory_update'])
+let chainLoading = false
+
+async function loadChain(){
+  if (chainLoading) return
+  chainLoading = true
+  const list = $('chainList')
+  const meta = $('chainMeta')
+  list.innerHTML = '<div class="row"><span class="ar">\u89E3\u6790\u4F1A\u8BDD\u8BB0\u5F55\u4E2D\u2026\uFF08\u9996\u6B21\u7EA6 1~2 \u79D2\uFF0C\u4E4B\u540E\u8D70\u7F13\u5B58\uFF09</span></div>'
+  meta.textContent = ''
+  try{
+    const limit = $('chainLimit').value || '40'
+    const filter = $('chainFilter').value.trim()
+    let url = '/api/task-chain?limit=' + encodeURIComponent(limit)
+    if (filter) url += '&tools=' + encodeURIComponent(filter)
+    const t0 = performance.now()
+    const r = await fetch(url, { cache: 'no-store' })
+    const j = await r.json()
+    const ms = Math.round(performance.now() - t0)
+    if (!j.ok){
+      list.innerHTML = ''
+      meta.textContent = '\u2717 ' + (j.error || '\u53D6\u4EFB\u52A1\u94FE\u5931\u8D25')
+      return
+    }
+    const rows = (j.calls || []).map((c, i) => {
+      const time = c.time ? new Date(c.time).toLocaleTimeString('zh-CN', { hour12: false }) : ''
+      const cls = WRITE_TOOLS.has(c.name) ? 'nm w' : 'nm'
+      return '<div class="row">'
+        + '<span class="idx">' + (i + 1) + '</span>'
+        + '<span class="ts">' + escapeHtml(time) + '</span>'
+        + '<span class="' + cls + '">' + escapeHtml(c.name) + '</span>'
+        + '<span class="ar" title="' + escapeHtml(c.args) + '">' + escapeHtml(c.args) + '</span>'
+        + '</div>'
+    })
+    list.innerHTML = rows.join('') || '<div class="row"><span class="ar">\uFF08\u6CA1\u6709\u5339\u914D\u7684\u8C03\u7528\uFF09</span></div>'
+    $('chainTitle').textContent = 'TASK CHAIN \xB7 ' + (j.sessionId || '').replace('session-', '').slice(0, 8)
+    meta.textContent = \`\u5171 \${j.totalCalls} \u6761\u8C03\u7528\uFF0C\u663E\u793A\u6700\u540E \${(j.calls || []).length} \u6761  \xB7  \${ms}ms  \xB7  \${j.sessionPath || ''}\`
+  }catch(e){
+    list.innerHTML = ''
+    meta.textContent = '\u2717 \u8BF7\u6C42\u5931\u8D25\uFF1A' + e.message
+  }finally{
+    chainLoading = false
+  }
+}
+
+$('chainReload').onclick = loadChain
+$('chainFilter').addEventListener('keydown', e => { if (e.key === 'Enter') loadChain() })
+// \u2630 \u83DC\u5355\u91CC\u4E5F\u80FD\u6253\u5F00
+$('btnTaskChain').onclick = () => { WM.open('win-chain'); WM.raise('win-chain'); setTimeout(loadChain, 60) }
+// \u6253\u5F00\u4EFB\u52A1\u94FE\u7A97\u53E3\u65F6\u81EA\u52A8\u52A0\u8F7D\u4E00\u6B21
+document.querySelectorAll('.dockicon[data-win="win-chain"]').forEach(el => {
+  el.addEventListener('click', () => setTimeout(loadChain, 60))
+})
 async function probeCtl(){
   try{
     const r = await fetch('/api/control/health')
@@ -4881,7 +5148,7 @@ setInterval(probeCtl, 15000)
 `;
 
 // src/index.ts
-var LOG_TAG2 = "[dsh-control-center]";
+var LOG_TAG3 = "[dsh-control-center]";
 var server = null;
 var starting = null;
 async function ensureServer() {
@@ -4897,6 +5164,54 @@ async function ensureServer() {
   }
   return starting;
 }
+var taskChainTool = {
+  name: "get_task_chain",
+  description: '\u4ECE DSH \u4F1A\u8BDD\u8BB0\u5F55\uFF08~/.dsh/sessions/*/session-*/session.v4.jsonl.zstd\uFF09\u91CC\u8FD8\u539F"\u4EFB\u52A1\u94FE"\uFF1A\u6700\u8FD1\u8C03\u7528\u4E86\u54EA\u4E9B\u5DE5\u5177\u3001\u53C2\u6570\u662F\u4EC0\u4E48\u3002\u6CE8\u610F\uFF1A\u8FD9\u7C7B\u8BB0\u5F55\u662F\u591A\u5E27 zstd\uFF08\u7EA6 2.7 \u4E07\u5E27\uFF09\uFF0C\u5FC5\u987B\u9010\u5E27\u89E3\u538B\uFF0C\u76F4\u63A5\u6574\u4F53\u89E3\u538B\u53EA\u4F1A\u5F97\u5230 244 \u5B57\u8282\u7684 session \u5934\u3002',
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      workspace: { type: "string", description: "\u53EA\u770B\u5DE5\u4F5C\u533A\u540D\u5305\u542B\u8BE5\u5B50\u4E32\u7684\u4F1A\u8BDD\uFF08\u53EF\u7A7A\uFF09" },
+      tools: {
+        type: "array",
+        items: { type: "string" },
+        description: '\u53EA\u4FDD\u7559\u8FD9\u4E9B\u5DE5\u5177\u540D\uFF08\u5982 ["pwsh","read"]\uFF09\uFF0C\u53EF\u7A7A'
+      },
+      limit: { type: "integer", description: "\u8FD4\u56DE\u6700\u540E N \u6761\uFF0C\u9ED8\u8BA4 40" }
+    }
+  },
+  output: {
+    schema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        sessionId: { type: "string" },
+        totalCalls: { type: "integer" },
+        calls: { type: "array" },
+        error: { type: "string" }
+      }
+    },
+    render: (_a, v) => {
+      if (!v?.ok) return [{ type: "text", text: `\u274C \u53D6\u4EFB\u52A1\u94FE\u5931\u8D25\uFF1A${v?.error ?? "\u672A\u77E5"}` }];
+      const lines = (v.calls ?? []).map((c, i) => `${i + 1}. T${c.turn}/S${c.step} ${c.name}(${String(c.args ?? "").slice(0, 80)})`);
+      return [{
+        type: "text",
+        text: `\u{1F9ED} \u4EFB\u52A1\u94FE\uFF08${v.sessionId}\uFF0C\u5171 ${v.totalCalls} \u6761\uFF0C\u663E\u793A\u6700\u540E ${lines.length} \u6761\uFF09
+${lines.join("\n")}`
+      }];
+    }
+  },
+  async execute(args) {
+    return getTaskChain({
+      workspace: args?.workspace,
+      tools: Array.isArray(args?.tools) ? args.tools : void 0,
+      limit: typeof args?.limit === "number" ? args.limit : 40
+    });
+  },
+  presentCall() {
+    return { card: "generic", title: "get_task_chain", kind: "read" };
+  }
+};
 var openDashboardTool = {
   name: "open_dashboard",
   description: "\u542F\u52A8\u5E76\u8FD4\u56DE persona-os \u603B\u63A7\u9762\u677F\u5730\u5740\uFF08\u9ED8\u8BA4 http://127.0.0.1:8088\uFF09\u3002\u9762\u677F\u91CC\u6709\uFF1A\u5404\u5FAE\u670D\u52A1/\u63D2\u4EF6\u7684\u6B7B\u6D3B\uFF08\u7EFF\u706F/\u7EA2\u706F\u5B9E\u65F6\u5237\u65B0\uFF09\u3001\u5185\u5B58\u4E0E GPU \u663E\u5B58\u3001\u4EE5\u53CA\u4E00\u4E2A\u53D1\u9001\u6A21\u62DF\u5F39\u5E55\u5230 :9001 \u7684\u6D4B\u8BD5\u53F0\u3002",
@@ -4927,14 +5242,15 @@ var index_default = {
   async apply(ctx) {
     try {
       const s = await ensureServer();
-      console.log(`${LOG_TAG2} \u5DF2\u542F\u52A8\uFF1Ahttp://127.0.0.1:${s.port}`);
+      console.log(`${LOG_TAG3} \u5DF2\u542F\u52A8\uFF1Ahttp://127.0.0.1:${s.port}`);
     } catch (e) {
-      console.error(`${LOG_TAG2} \u542F\u52A8\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u5176\u4ED6\u63D2\u4EF6\uFF09\uFF1A${e.message}`);
+      console.error(`${LOG_TAG3} \u542F\u52A8\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u5176\u4ED6\u63D2\u4EF6\uFF09\uFF1A${e.message}`);
     }
     try {
       ctx.tools.register(openDashboardTool);
+      ctx.tools.register(taskChainTool);
     } catch (e) {
-      console.error(`${LOG_TAG2} \u6CE8\u518C\u5DE5\u5177\u5931\u8D25\uFF1A`, e);
+      console.error(`${LOG_TAG3} \u6CE8\u518C\u5DE5\u5177\u5931\u8D25\uFF1A`, e);
     }
     ctx.on("dispose", () => {
       if (server) {
@@ -4942,7 +5258,7 @@ var index_default = {
         server = null;
         starting = null;
       }
-      console.log(`${LOG_TAG2} disposed`);
+      console.log(`${LOG_TAG3} disposed`);
     });
   }
 };

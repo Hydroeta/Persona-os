@@ -18,6 +18,7 @@ import { extname, join, normalize, resolve } from 'node:path'
 import { probeAll, readHostInfo, type ServiceStatus, type HostInfo } from './probe.js'
 import { sendTestDanmaku, resolveDanmakuWsUrl, type DanmakuReply } from './danmaku.js'
 import { EventHub, type PanelEvent } from './events.js'
+import { getTaskChain } from './task-chain.js'
 
 const LOG_TAG = '[dsh-control-center]'
 
@@ -117,6 +118,18 @@ export async function startControlCenter(opts: { port?: number; page?: () => str
         if (!ev || typeof ev.type !== 'string') return json(res, 400, { ok: false, error: '缺少 type' })
         hub.publish(ev)
         return json(res, 200, { ok: true, listeners: hub.clientCount })
+      }
+
+      // 任务链：解析 DSH 会话记录里的 tool/call，用于面板「看她刚才查了什么」
+      if (req.method === 'GET' && url.startsWith('/api/task-chain')) {
+        const q = new URL(url, 'http://127.0.0.1')
+        const chain = getTaskChain({
+          sessionPath: q.searchParams.get('session') || undefined,
+          workspace: q.searchParams.get('workspace') || undefined,
+          tools: q.searchParams.get('tools') ? q.searchParams.get('tools')!.split(',').filter(Boolean) : undefined,
+          limit: q.searchParams.get('limit') ? Number(q.searchParams.get('limit')) : 40,
+        })
+        return json(res, chain.ok ? 200 : 404, chain)
       }
 
       if (req.method === 'GET' && url.startsWith('/api/latest-paint')) {

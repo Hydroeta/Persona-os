@@ -95,6 +95,32 @@
   .win-bar button.close:hover{background:var(--bad);border-color:var(--bad);color:#fff}
   .win-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
 
+  /* 任务链窗 */
+  #win-chain .win-body{padding:8px;display:flex;flex-direction:column;min-height:0}
+  #chainToolbar{display:flex;gap:6px;margin-bottom:6px;flex:none;flex-wrap:wrap}
+  #chainToolbar select,#chainToolbar input{
+    font:inherit;font-size:12px;padding:3px 6px;color:var(--white);
+    background:#04070f;border:2px solid rgba(0,240,255,.45);outline:none;
+  }
+  #chainToolbar input{flex:1;min-width:120px}
+  #chainToolbar button{
+    font:inherit;font-size:12px;padding:3px 10px;cursor:pointer;
+    background:var(--cyan);border:2px solid var(--cyan);color:var(--deep);
+  }
+  #chainToolbar button:hover{background:var(--white)}
+  #chainList{
+    flex:1;overflow:auto;min-height:0;background:#04070f;
+    border:2px solid rgba(0,240,255,.22);padding:6px;font-size:12px;line-height:1.5;
+    font-family:"Cascadia Mono",Consolas,monospace;
+  }
+  #chainList .row{display:flex;gap:8px;padding:1px 0;border-bottom:1px dashed rgba(0,240,255,.08)}
+  #chainList .idx{color:var(--dim);flex:none;width:30px;text-align:right}
+  #chainList .ts{color:var(--text-dim, #4a5c78);flex:none;width:62px}
+  #chainList .nm{flex:none;width:64px;color:var(--sea)}
+  #chainList .nm.w{padding-left:2px;border-left:2px solid var(--cyan)}  /* 写类工具加亮 */
+  #chainList .ar{flex:1;color:#9fb4cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #chainMeta{flex:none;margin-top:5px;font-size:11px;color:var(--dim)}
+
   /* 立绘窗 */
   /* 思考状态条：立绘底部的小 HUD，只在复杂指令时出现，1.5 秒后淡出 */
   #thinkBar{
@@ -237,6 +263,7 @@
   <button class="dbtn" id="btnStartAll">拉起全部微服务<small>POST :8010/start-all</small></button>
   <button class="dbtn" id="btnClearFeed">清空弹幕流<small>纯前端</small></button>
   <button class="dbtn" id="btnRawStatus">查看 /api/status<small>排查用</small></button>
+  <button class="dbtn" id="btnTaskChain">查看任务链<small>解析会话记录里的工具调用</small></button>
   <div class="note" id="ctlNote">控制接口未探测</div>
 </div>
 
@@ -249,6 +276,7 @@
   <div class="dockicon" data-win="win-console"><span class="glyph">▤</span>弹幕</div>
   <div class="dockicon" data-win="win-status"><span class="glyph">▦</span>状态</div>
   <div class="dockicon" data-win="win-paint"><span class="glyph">▣</span>画板</div>
+  <div class="dockicon" data-win="win-chain"><span class="glyph">⌘</span>任务链</div>
 </div>
 
 <!-- 窗口 1：立绘 -->
@@ -313,6 +341,29 @@
       <div class="hint" id="artHint">等待作画…</div>
       <img id="artImg" alt="" style="display:none">
     </div>
+  </div>
+</div>
+
+<!-- 窗口 5：任务链（默认关闭） -->
+<div class="win" id="win-chain" data-title="TASK CHAIN">
+  <div class="win-bar"><span class="title" id="chainTitle">TASK CHAIN</span>
+    <button data-act="min" title="最小化">—</button>
+    <button data-act="max" title="最大化">□</button>
+    <button data-act="close" class="close" title="关闭">✕</button>
+  </div>
+  <div class="win-body">
+    <div id="chainToolbar">
+      <select id="chainLimit">
+        <option value="20">最后 20 条</option>
+        <option value="40" selected>最后 40 条</option>
+        <option value="100">最后 100 条</option>
+        <option value="500">最后 500 条</option>
+      </select>
+      <input id="chainFilter" placeholder="只留这些工具（逗号分隔，如 pwsh,read）" autocomplete="off">
+      <button id="chainReload">刷新</button>
+    </div>
+    <div id="chainList"></div>
+    <div id="chainMeta"></div>
   </div>
 </div>
 
@@ -453,6 +504,9 @@ WM.state['win-console'].x = 12 + _colL + 14; WM.state['win-console'].y = 54
 WM.state['win-console'].w = _colR; WM.state['win-console'].h = _row1
 WM.state['win-paint'].x = Math.max(20, _W - 500); WM.state['win-paint'].y = Math.max(60, _H - 500)
 WM.state['win-paint'].w = 480; WM.state['win-paint'].h = 480
+// 任务链窗：默认也关闭，点 dock 图标才开（查看时才解析会话记录，不占常驻开销）
+WM.state['win-chain'].x = Math.max(20, Math.round(_W * 0.18)); WM.state['win-chain'].y = 80
+WM.state['win-chain'].w = Math.min(900, Math.round(_W * 0.62)); WM.state['win-chain'].h = Math.min(620, Math.round(_H * 0.7))
 WM.open('win-avatar'); WM.open('win-console')
 WM.open('win-status')
 // 画板默认关闭（发 !画 时自动开）
@@ -601,6 +655,61 @@ $('btnRawStatus').onclick = async () => {
   const j = await fetch('/api/status').then(r=>r.json())
   pushLine('sys', JSON.stringify(j, null, 1))
 }
+
+/* ================= 任务链（解析会话记录里的 tool/call） ================= */
+const WRITE_TOOLS = new Set(['edit', 'write', 'pwsh', 'app_call', 'diagram_apply', 'knowledge_write_node', 'memory_remember', 'memory_update'])
+let chainLoading = false
+
+async function loadChain(){
+  if (chainLoading) return
+  chainLoading = true
+  const list = $('chainList')
+  const meta = $('chainMeta')
+  list.innerHTML = '<div class="row"><span class="ar">解析会话记录中…（首次约 1~2 秒，之后走缓存）</span></div>'
+  meta.textContent = ''
+  try{
+    const limit = $('chainLimit').value || '40'
+    const filter = $('chainFilter').value.trim()
+    let url = '/api/task-chain?limit=' + encodeURIComponent(limit)
+    if (filter) url += '&tools=' + encodeURIComponent(filter)
+    const t0 = performance.now()
+    const r = await fetch(url, { cache: 'no-store' })
+    const j = await r.json()
+    const ms = Math.round(performance.now() - t0)
+    if (!j.ok){
+      list.innerHTML = ''
+      meta.textContent = '✗ ' + (j.error || '取任务链失败')
+      return
+    }
+    const rows = (j.calls || []).map((c, i) => {
+      const time = c.time ? new Date(c.time).toLocaleTimeString('zh-CN', { hour12: false }) : ''
+      const cls = WRITE_TOOLS.has(c.name) ? 'nm w' : 'nm'
+      return '<div class="row">'
+        + '<span class="idx">' + (i + 1) + '</span>'
+        + '<span class="ts">' + escapeHtml(time) + '</span>'
+        + '<span class="' + cls + '">' + escapeHtml(c.name) + '</span>'
+        + '<span class="ar" title="' + escapeHtml(c.args) + '">' + escapeHtml(c.args) + '</span>'
+        + '</div>'
+    })
+    list.innerHTML = rows.join('') || '<div class="row"><span class="ar">（没有匹配的调用）</span></div>'
+    $('chainTitle').textContent = 'TASK CHAIN · ' + (j.sessionId || '').replace('session-', '').slice(0, 8)
+    meta.textContent = `共 ${j.totalCalls} 条调用，显示最后 ${(j.calls || []).length} 条  ·  ${ms}ms  ·  ${j.sessionPath || ''}`
+  }catch(e){
+    list.innerHTML = ''
+    meta.textContent = '✗ 请求失败：' + e.message
+  }finally{
+    chainLoading = false
+  }
+}
+
+$('chainReload').onclick = loadChain
+$('chainFilter').addEventListener('keydown', e => { if (e.key === 'Enter') loadChain() })
+// ☰ 菜单里也能打开
+$('btnTaskChain').onclick = () => { WM.open('win-chain'); WM.raise('win-chain'); setTimeout(loadChain, 60) }
+// 打开任务链窗口时自动加载一次
+document.querySelectorAll('.dockicon[data-win="win-chain"]').forEach(el => {
+  el.addEventListener('click', () => setTimeout(loadChain, 60))
+})
 async function probeCtl(){
   try{
     const r = await fetch('/api/control/health')

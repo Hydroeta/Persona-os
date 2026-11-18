@@ -16,6 +16,7 @@
  */
 import { startControlCenter, type ControlCenterServer } from './server.js'
 import { PAGE_HTML } from './page.generated.js'
+import { getTaskChain } from './task-chain.js'
 
 const LOG_TAG = '[dsh-control-center]'
 
@@ -46,6 +47,59 @@ export interface DshTool {
   output?: { schema: Record<string, unknown>; render: (args: any, value: any) => any[] }
   execute: (args: any, exec: any) => Promise<any>
   presentCall?: (args: any) => any
+}
+
+/** 取任务链：解析会话记录里的 tool/call，看她刚才为了某个任务查了什么 */
+const taskChainTool: DshTool = {
+  name: 'get_task_chain',
+  description:
+    '从 DSH 会话记录（~/.dsh/sessions/*/session-*/session.v4.jsonl.zstd）里还原"任务链"：' +
+    '最近调用了哪些工具、参数是什么。' +
+    '注意：这类记录是多帧 zstd（约 2.7 万帧），必须逐帧解压，直接整体解压只会得到 244 字节的 session 头。',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      workspace: { type: 'string', description: '只看工作区名包含该子串的会话（可空）' },
+      tools: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '只保留这些工具名（如 ["pwsh","read"]），可空',
+      },
+      limit: { type: 'integer', description: '返回最后 N 条，默认 40' },
+    },
+  },
+  output: {
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        sessionId: { type: 'string' },
+        totalCalls: { type: 'integer' },
+        calls: { type: 'array' },
+        error: { type: 'string' },
+      },
+    },
+    render: (_a: any, v: any) => {
+      if (!v?.ok) return [{ type: 'text', text: `❌ 取任务链失败：${v?.error ?? '未知'}` }]
+      const lines = (v.calls ?? []).map((c: any, i: number) =>
+        `${i + 1}. T${c.turn}/S${c.step} ${c.name}(${String(c.args ?? '').slice(0, 80)})`)
+      return [{
+        type: 'text',
+        text: `🧭 任务链（${v.sessionId}，共 ${v.totalCalls} 条，显示最后 ${lines.length} 条）\n${lines.join('\n')}`,
+      }]
+    },
+  },
+  async execute(args: any) {
+    return getTaskChain({
+      workspace: args?.workspace,
+      tools: Array.isArray(args?.tools) ? args.tools : undefined,
+      limit: typeof args?.limit === 'number' ? args.limit : 40,
+    })
+  },
+  presentCall() {
+    return { card: 'generic', title: 'get_task_chain', kind: 'read' }
+  },
 }
 
 const openDashboardTool: DshTool = {
@@ -87,6 +141,7 @@ export default {
     }
     try {
       ctx.tools.register(openDashboardTool)
+      ctx.tools.register(taskChainTool)
     } catch (e) {
       console.error(`${LOG_TAG} 注册工具失败：`, e)
     }

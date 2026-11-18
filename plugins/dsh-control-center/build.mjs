@@ -29,3 +29,5 @@ await build({ ...common, entryPoints: ['src/probe.ts'], outfile: 'lib/probe.js' 
 await build({ ...common, entryPoints: ['src/danmaku.ts'], outfile: 'lib/danmaku.js' })
 // server.ts 也要单独出一份：test-mock.js 直接 import 它起临时面板（端口 0）
 await build({ ...common, entryPoints: ['src/server.ts'], outfile: 'lib/server.js' })
+// task-chain.ts 单独出一份：test-task-chain.mjs 直接测解析逻辑
+await build({ ...common, entryPoints: ['src/task-chain.ts'], outfile: 'lib/task-chain.js' })

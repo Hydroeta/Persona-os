@@ -193,7 +193,7 @@ var require_limiter = __commonJS({
 var require_permessage_deflate = __commonJS({
   "../../node_modules/.pnpm/ws@8.22.1/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
-    var zlib = __require("zlib");
+    var zlib2 = __require("zlib");
     var bufferUtil = require_buffer_util();
     var Limiter = require_limiter();
     var { kStatusCode } = require_constants();
@@ -460,8 +460,8 @@ var require_permessage_deflate = __commonJS({
         const endpoint = this._isServer ? "client" : "server";
         if (!this._inflate) {
           const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
-          this._inflate = zlib.createInflateRaw({
+          const windowBits = typeof this.params[key] !== "number" ? zlib2.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._inflate = zlib2.createInflateRaw({
             ...this._options.zlibInflateOptions,
             windowBits
           });
@@ -511,8 +511,8 @@ var require_permessage_deflate = __commonJS({
         const endpoint = this._isServer ? "server" : "client";
         if (!this._deflate) {
           const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
-          this._deflate = zlib.createDeflateRaw({
+          const windowBits = typeof this.params[key] !== "number" ? zlib2.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._deflate = zlib2.createDeflateRaw({
             ...this._options.zlibDeflateOptions,
             windowBits
           });
@@ -522,7 +522,7 @@ var require_permessage_deflate = __commonJS({
         }
         this._deflate[kCallback] = callback;
         this._deflate.write(data);
-        this._deflate.flush(zlib.Z_SYNC_FLUSH, () => {
+        this._deflate.flush(zlib2.Z_SYNC_FLUSH, () => {
           if (!this._deflate) {
             return;
           }
@@ -2285,7 +2285,7 @@ var require_websocket = __commonJS({
     var tls = __require("tls");
     var { randomBytes, createHash } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
-    var { URL } = __require("url");
+    var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
@@ -2799,11 +2799,11 @@ var require_websocket = __commonJS({
         );
       }
       let parsedUrl;
-      if (address instanceof URL) {
+      if (address instanceof URL2) {
         parsedUrl = address;
       } else {
         try {
-          parsedUrl = new URL(address);
+          parsedUrl = new URL2(address);
         } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
@@ -2945,7 +2945,7 @@ var require_websocket = __commonJS({
           req.abort();
           let addr;
           try {
-            addr = new URL(location, address);
+            addr = new URL2(location, address);
           } catch (e) {
             const err = new SyntaxError(`Invalid URL: ${location}`);
             emitErrorAndClose(websocket, err);
@@ -3735,7 +3735,7 @@ var require_websocket_server = __commonJS({
 // src/server.ts
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join as join2, normalize, resolve } from "node:path";
 
 // src/probe.ts
 import net from "node:net";
@@ -3968,12 +3968,160 @@ data: ${JSON.stringify(e)}
   }
 };
 
+// src/task-chain.ts
+import { readFileSync, statSync, readdirSync, existsSync } from "node:fs";
+import { join, basename } from "node:path";
+import zlib from "node:zlib";
+var LOG_TAG = "[dsh-control-center/task-chain]";
+var ZSTD_MAGIC = Buffer.from([40, 181, 47, 253]);
+function decodeZstdFrames(raw) {
+  const offsets = [];
+  let i = 0;
+  while ((i = raw.indexOf(ZSTD_MAGIC, i)) !== -1) {
+    offsets.push(i);
+    i += 4;
+  }
+  if (!offsets.length) {
+    try {
+      return zlib.zstdDecompressSync(raw).toString("utf8");
+    } catch {
+      return "";
+    }
+  }
+  const parts = [];
+  for (let k = 0; k < offsets.length; k++) {
+    const start = offsets[k];
+    const end = k + 1 < offsets.length ? offsets[k + 1] : raw.length;
+    try {
+      const out = zlib.zstdDecompressSync(raw.subarray(start, end)).toString("utf8");
+      if (out) parts.push(out);
+    } catch {
+    }
+  }
+  return parts.join("");
+}
+var lineCache = /* @__PURE__ */ new Map();
+function readLines(sessionPath) {
+  const st = statSync(sessionPath);
+  const hit = lineCache.get(sessionPath);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.lines;
+  const raw = readFileSync(sessionPath);
+  const text = decodeZstdFrames(raw);
+  const lines = text.split("\n").filter(Boolean);
+  lineCache.set(sessionPath, { mtimeMs: st.mtimeMs, size: st.size, lines });
+  return lines;
+}
+var MAX_ARGS_LEN = 300;
+function parseToolCalls(lines) {
+  const calls = [];
+  const resultIds = /* @__PURE__ */ new Set();
+  for (const ln of lines) {
+    if (!ln.includes("tool/call") && !ln.includes("tool/result")) continue;
+    let o;
+    try {
+      o = JSON.parse(ln);
+    } catch {
+      continue;
+    }
+    const d = o?.data;
+    if (!d) continue;
+    if (o.type === "tool/call") {
+      const args = typeof d.arguments === "string" ? d.arguments : JSON.stringify(d.arguments ?? "");
+      calls.push({
+        turn: Number(d.turn ?? 0),
+        step: Number(d.step ?? 0),
+        seq: Number(o.seq ?? 0),
+        time: Number(o.time ?? 0),
+        callId: String(d.callId ?? ""),
+        name: String(d.name ?? ""),
+        args: args.length > MAX_ARGS_LEN ? args.slice(0, MAX_ARGS_LEN) + "\u2026" : args
+      });
+    } else if (o.type === "tool/result") {
+      const id = d.toolCallId || d.message?.toolCallId || d.message?.source?.callId;
+      if (id) resultIds.add(String(id));
+    }
+  }
+  for (const c of calls) {
+    if (resultIds.has(c.callId)) c.hasResult = true;
+  }
+  return calls;
+}
+function findRecentSessions(opts = {}) {
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const root = join(home, ".dsh", "sessions");
+  if (!existsSync(root)) return [];
+  const out = [];
+  let wsDirs;
+  try {
+    wsDirs = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return [];
+  }
+  for (const ws of wsDirs) {
+    if (opts.workspace && !ws.includes(opts.workspace)) continue;
+    const wsPath = join(root, ws);
+    let sessions;
+    try {
+      sessions = readdirSync(wsPath, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith("session")).map((d) => d.name);
+    } catch {
+      continue;
+    }
+    for (const s of sessions) {
+      const f = join(wsPath, s, "session.v4.jsonl.zstd");
+      if (!existsSync(f)) continue;
+      try {
+        out.push({ path: f, mtime: statSync(f).mtimeMs });
+      } catch {
+      }
+    }
+  }
+  out.sort((a, b) => b.mtime - a.mtime);
+  return out.slice(0, Math.max(1, opts.recent ?? 1)).map((x) => x.path);
+}
+function sessionIdOf(sessionPath) {
+  const dir = basename(join(sessionPath, ".."));
+  return dir.startsWith("session") ? dir : basename(sessionPath);
+}
+function getTaskChain(opts = {}) {
+  try {
+    const sessionPath = opts.sessionPath || findRecentSessions({ workspace: opts.workspace, recent: 1 })[0];
+    if (!sessionPath) {
+      return { ok: false, error: "\u6CA1\u627E\u5230\u4F1A\u8BDD\u8BB0\u5F55\uFF08~/.dsh/sessions/*/session-*/session.v4.jsonl.zstd\uFF09" };
+    }
+    if (!existsSync(sessionPath)) {
+      return { ok: false, error: `\u4F1A\u8BDD\u6587\u4EF6\u4E0D\u5B58\u5728\uFF1A${sessionPath}` };
+    }
+    const lines = readLines(sessionPath);
+    let calls = parseToolCalls(lines);
+    if (opts.tools?.length) {
+      const set = new Set(opts.tools.map((t) => t.toLowerCase()));
+      calls = calls.filter((c) => set.has(c.name.toLowerCase()));
+    }
+    if (typeof opts.afterTurn === "number") {
+      calls = calls.filter((c) => c.turn > opts.afterTurn);
+    }
+    const total = calls.length;
+    const limit = Math.max(1, opts.limit ?? 40);
+    const tail = calls.slice(-limit);
+    console.log(`${LOG_TAG} \u89E3\u6790 ${basename(sessionPath)}\uFF1A${total} \u6761\u8C03\u7528\uFF0C\u8FD4\u56DE\u6700\u540E ${tail.length} \u6761`);
+    return {
+      ok: true,
+      sessionPath,
+      sessionId: sessionIdOf(sessionPath),
+      totalCalls: total,
+      calls: tail
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // src/server.ts
-var LOG_TAG = "[dsh-control-center]";
+var LOG_TAG2 = "[dsh-control-center]";
 var hub = new EventHub();
 var CONTROL_API = (process.env.SERVICE_CTL_URL || "http://127.0.0.1:8010").replace(/\/+$/, "");
 var PAINT_BOARD_PATH = String(process.env.PAINT_BOARD_PATH || "").trim();
-var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join(process.cwd(), "web", "assets"));
+var ASSETS_DIR = resolve(process.env.CONTROL_ASSETS_DIR || join2(process.cwd(), "web", "assets"));
 var MIME = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -4042,6 +4190,16 @@ async function startControlCenter(opts = {}) {
         hub.publish(ev);
         return json(res, 200, { ok: true, listeners: hub.clientCount });
       }
+      if (req.method === "GET" && url.startsWith("/api/task-chain")) {
+        const q = new URL(url, "http://127.0.0.1");
+        const chain = getTaskChain({
+          sessionPath: q.searchParams.get("session") || void 0,
+          workspace: q.searchParams.get("workspace") || void 0,
+          tools: q.searchParams.get("tools") ? q.searchParams.get("tools").split(",").filter(Boolean) : void 0,
+          limit: q.searchParams.get("limit") ? Number(q.searchParams.get("limit")) : 40
+        });
+        return json(res, chain.ok ? 200 : 404, chain);
+      }
       if (req.method === "GET" && url.startsWith("/api/latest-paint")) {
         if (!PAINT_BOARD_PATH) return json(res, 404, { ok: false, error: "\u672A\u914D\u7F6E PAINT_BOARD_PATH" });
         try {
@@ -4071,7 +4229,7 @@ async function startControlCenter(opts = {}) {
       }
       if (req.method === "GET" && url.startsWith("/assets/")) {
         const rel = decodeURIComponent(url.slice("/assets/".length).split("?")[0]);
-        const abs = resolve(join(ASSETS_DIR, normalize(rel)));
+        const abs = resolve(join2(ASSETS_DIR, normalize(rel)));
         if (!abs.startsWith(ASSETS_DIR)) return json(res, 403, { ok: false, error: "forbidden" });
         try {
           const buf = await readFile(abs);
@@ -4100,7 +4258,7 @@ async function startControlCenter(opts = {}) {
       }
       return json(res, 404, { ok: false, error: "not found" });
     } catch (e) {
-      console.error(`${LOG_TAG} \u5904\u7406\u5931\u8D25\uFF1A${e.message}`);
+      console.error(`${LOG_TAG2} \u5904\u7406\u5931\u8D25\uFF1A${e.message}`);
       return json(res, 500, { ok: false, error: e.message });
     }
   });
@@ -4108,7 +4266,7 @@ async function startControlCenter(opts = {}) {
     server.on("error", reject);
     server.listen(port, "127.0.0.1", () => {
       const actual = server.address().port;
-      console.log(`${LOG_TAG} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
+      console.log(`${LOG_TAG2} \u9762\u677F\u5DF2\u542F\u52A8 http://127.0.0.1:${actual}`);
       resolve2({
         port: actual,
         close: () => new Promise((r) => {
