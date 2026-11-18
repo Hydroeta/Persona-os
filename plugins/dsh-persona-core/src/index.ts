@@ -25,6 +25,11 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { execFile } from 'node:child_process'
 import { join, dirname, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  defaultMood, normalizeMood, applyDecay, applyEvent, detectEvent,
+  moodLabel, moodExpression, moodPrompt,
+  type MoodState,
+} from './mood.js'
 
 const LOG_TAG = '[dsh-persona-core]'
 
@@ -181,6 +186,51 @@ interface PersonaMeta {
 
 function readJsonSafe(p: string): any {
   return JSON.parse(readFileSync(p, 'utf-8'))
+}
+
+/**
+ * 从 agent/request 的 payload 里尽量取出"最后一条用户消息"的文本。
+ * 用途：判断这一轮用户是夸、是骂、还是普通说话（驱动 PAD）。
+ * 结构不确定时返回空串 —— 拿不到就不推进情绪，比推错好。
+ */
+function extractLastUserText(payload: any): string {
+  const dump = (v: unknown): string => {
+    if (typeof v === 'string') return v
+    if (Array.isArray(v)) return v.map(dump).join('\n')
+    if (v && typeof v === 'object') return JSON.stringify(v)
+    return ''
+  }
+  const walk = (msgs: any[]): string => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]
+      if (!m || typeof m !== 'object') continue
+      const role = m.role || m.type
+      if (role !== 'user') continue
+      // 常见几种形状都试一下
+      const c = m.content ?? m.text ?? m.message?.content ?? m.parts
+      const s = dump(c).trim()
+      if (s) return s
+    }
+    return ''
+  }
+  try {
+    const cands = [
+      payload?.messages,
+      payload?.agent?.messages,
+      payload?.agent?.session?.messages,
+      payload?.request?.messages,
+      payload?.agent?.session?.state?.messages,
+    ]
+    for (const c of cands) {
+      if (Array.isArray(c) && c.length) {
+        const s = walk(c)
+        if (s) return s.slice(0, 500)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return ''
 }
 
 function listPersonas(root: string): PersonaMeta[] {
@@ -364,6 +414,10 @@ export default {
     }
     const osRoot = resolve(personasRoot, '..', '..')
     const activeFile = join(personasRoot, 'active.json')
+    // PAD 心情状态落盘位置：显式可配，否则放 config/（和 personas 同级，仓库里可见便于调试）
+    const dataRoot = process.env.PERSONA_MOOD_DIR
+      ? resolve(process.env.PERSONA_MOOD_DIR)
+      : resolve(personasRoot, '..')
     console.log(`${LOG_TAG} personas root = ${personasRoot}`)
 
     let currentId = ''
@@ -557,6 +611,192 @@ export default {
       },
     }
 
+    // ---- PAD 心情引擎：本地 JSON + 定时注入 + 手动覆写工具 ----
+    //
+    // 设计取舍：
+    //   · 存储用插件目录下 mood_state.json，不建微服务（情绪更新频率低，不值得多一个进程）
+    //   · 每轮对话先按时间差衰减，再按这句话的情绪事件推进
+    //   · prompt 注入单独一个 section（和内心潜台词同级），SSE 推给面板联动立绘
+    const moodFile = join(dataRoot, 'mood_state.json')
+    let mood: MoodState = defaultMood()
+    let moodSectionDispose: (() => void) | null = null
+
+    const loadMood = (): MoodState => {
+      try {
+        if (existsSync(moodFile)) return normalizeMood(readJsonSafe(moodFile))
+      } catch (e) {
+        console.error(`${LOG_TAG} 读取心情状态失败，用默认值：${(e as Error).message}`)
+      }
+      return defaultMood()
+    }
+    const saveMood = (): void => {
+      try {
+        writeFileSync(moodFile, JSON.stringify(mood, null, 2), 'utf8')
+      } catch (e) {
+        console.error(`${LOG_TAG} 写心情状态失败：${(e as Error).message}`)
+      }
+    }
+
+    /** 重建心情 section 并推 SSE（面板据此换表情） */
+    const refreshMoodSection = (): void => {
+      const svc = ctx.get?.('systemPrompt')
+      if (svc && typeof svc.section === 'function') {
+        if (moodSectionDispose) {
+          try { moodSectionDispose() } catch { /* ignore */ }
+          moodSectionDispose = null
+        }
+        try {
+          moodSectionDispose = svc.section({
+            name: 'persona-core:mood',
+            order: THOUGHTS_SECTION_ORDER + 1,
+            text: moodPrompt(mood),
+          })
+        } catch (e) {
+          console.error(`${LOG_TAG} 心情注入失败：${(e as Error).message}`)
+        }
+      }
+      // 推给总控面板：立绘按 moodExpression 换表情
+      const eventUrl = String(process.env.PANEL_EVENT_URL || 'http://127.0.0.1:8088/api/event')
+      if (!eventUrl) return
+      void fetch(eventUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'mood',
+          mood: moodLabel(mood),
+          expression: moodExpression(mood),
+          energy: Math.round(mood.energy),
+          pleasure: Number(mood.pleasure.toFixed(2)),
+          affection: Math.round(mood.affection),
+          angryTurns: mood.angryTurns,
+        }),
+        signal: AbortSignal.timeout(1500),
+      }).catch(() => { /* 面板没开是常态 */ })
+    }
+
+    /** 处理一轮对话带来的情绪变化 */
+    const tickMood = (userText?: string): void => {
+      const now = Date.now()
+      mood = applyDecay(mood, now)
+      if (typeof userText === 'string' && userText.trim()) {
+        mood = applyEvent(mood, detectEvent(userText), now)
+      }
+      saveMood()
+      refreshMoodSection()
+    }
+
+    // ---- 工具：mood_status / set_mood（手动覆写，方便测"把她熬困/惹生气"）----
+    const moodStatusTool: DshTool = {
+      name: 'mood_status',
+      description: '查看当前 PAD 心情状态（愉悦/唤醒/支配、精力、亲密度、生气惯性剩余轮数）。',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            mood: { type: 'string' }, energy: { type: 'number' }, affection: { type: 'number' },
+            pleasure: { type: 'number' }, arousal: { type: 'number' }, dominance: { type: 'number' },
+            angryTurns: { type: 'integer' }, expression: { type: 'string' }, file: { type: 'string' },
+          },
+        },
+        render: (_a: any, v: any) => [{
+          type: 'text',
+          text: `💗 心情 ${v?.mood}（愉悦 ${v?.pleasure} / 唤醒 ${v?.arousal} / 支配 ${v?.dominance}）`
+            + `｜精力 ${v?.energy}%｜亲密度 ${v?.affection}%`
+            + (v?.angryTurns ? `｜还在生气 ${v.angryTurns} 轮` : '')
+            + `｜表情 ${v?.expression}`,
+        }],
+      },
+      async execute() {
+        mood = applyDecay(mood, Date.now())
+        saveMood()
+        return {
+          mood: moodLabel(mood),
+          energy: Math.round(mood.energy),
+          affection: Math.round(mood.affection),
+          pleasure: Number(mood.pleasure.toFixed(2)),
+          arousal: Number(mood.arousal.toFixed(2)),
+          dominance: Number(mood.dominance.toFixed(2)),
+          angryTurns: mood.angryTurns,
+          expression: moodExpression(mood),
+          file: moodFile,
+        }
+      },
+      presentCall() {
+        return { card: 'generic', title: 'mood_status', kind: 'read' }
+      },
+    }
+
+    const setMoodTool: DshTool = {
+      name: 'set_mood',
+      description:
+        '手动覆写 PAD 心情状态（测试用）。可以只传想改的字段，例如 { energy: 5 } 让她极度困倦，' +
+        '{ pleasure: -0.8, angryTurns: 3 } 让她生气。改完立刻生效并推给面板联动表情。',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          energy: { type: 'number', description: '精力 0~100' },
+          pleasure: { type: 'number', description: '愉悦 -1~1' },
+          arousal: { type: 'number', description: '唤醒 -1~1' },
+          dominance: { type: 'number', description: '支配 -1~1' },
+          affection: { type: 'number', description: '亲密度 0~100' },
+          angryTurns: { type: 'integer', description: '生气惯性剩余轮数' },
+          reset: { type: 'boolean', description: 'true = 先重置成默认值再应用其它字段' },
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            ok: { type: 'boolean' }, mood: { type: 'string' }, energy: { type: 'number' },
+            affection: { type: 'number' }, pleasure: { type: 'number' }, angryTurns: { type: 'integer' },
+            expression: { type: 'string' }, error: { type: 'string' },
+          },
+        },
+        render: (_a: any, v: any) => [{
+          type: 'text',
+          text: v?.ok
+            ? `✅ 心情已改为 ${v.mood}｜精力 ${v.energy}%｜愉悦 ${v.pleasure}`
+              + (v.angryTurns ? `｜生气 ${v.angryTurns} 轮` : '') + `｜表情 ${v.expression}`
+            : `❌ ${v?.error ?? '失败'}`,
+        }],
+      },
+      async execute(args: any) {
+        try {
+          const now = Date.now()
+          const base = args?.reset ? defaultMood(now) : { ...mood }
+          const pick = (k: string) => (args && args[k] !== undefined ? args[k] : (base as any)[k])
+          mood = normalizeMood({
+            pleasure: pick('pleasure'),
+            arousal: pick('arousal'),
+            dominance: pick('dominance'),
+            energy: pick('energy'),
+            affection: pick('affection'),
+            angryTurns: pick('angryTurns'),
+            turns: base.turns,
+            updatedAt: now,
+          }, now)
+          saveMood()
+          refreshMoodSection()
+          return {
+            ok: true,
+            mood: moodLabel(mood),
+            energy: Math.round(mood.energy),
+            affection: Math.round(mood.affection),
+            pleasure: Number(mood.pleasure.toFixed(2)),
+            angryTurns: mood.angryTurns,
+            expression: moodExpression(mood),
+          }
+        } catch (e) {
+          return { ok: false, error: (e as Error).message }
+        }
+      },
+      presentCall() {
+        return { card: 'generic', title: 'set_mood', kind: 'write' }
+      },
+    }
+
     // ---- 工具：list_personas ----
     const listTool: DshTool = {
       name: 'list_personas',
@@ -584,7 +824,41 @@ export default {
       },
     }
 
-    for (const t of [switchTool, listTool]) {
+    // 启动时先加载并注入一次
+    mood = loadMood()
+    refreshMoodSection()
+    console.log(`${LOG_TAG} 心情引擎已就绪（${moodLabel(mood)}，精力 ${Math.round(mood.energy)}%）：${moodFile}`)
+
+    // 每轮对话推进情绪。
+    // 用 agent/request 中间件而不新增轮询：它天然在一次真正请求时触发。
+    // 两个护栏：① 子代理会话不动本体情绪；② 同一条用户消息只处理一次（多步请求会重复回调）。
+    let lastUserText = ''
+    try {
+      ctx.on('agent/request', async (payload: any, next: any) => {
+        try {
+          const origin = payload?.agent?.session?.header?.origin
+          if (origin !== 'subagent') {
+            const text = extractLastUserText(payload)
+            // 时间衰减每次都做；情绪事件只对"新出现的那句用户话"做
+            if (text && text !== lastUserText) {
+              lastUserText = text
+              tickMood(text)
+            } else {
+              mood = applyDecay(mood, Date.now())
+              saveMood()
+            }
+          }
+        } catch (e) {
+          // 情绪出问题绝不能影响对话本身
+          console.error(`${LOG_TAG} 心情推进失败（已忽略）：${(e as Error).message}`)
+        }
+        return next()
+      })
+    } catch (e) {
+      console.error(`${LOG_TAG} 心情钩子注册失败（情绪不再自动推进）：${(e as Error).message}`)
+    }
+
+    for (const t of [switchTool, listTool, moodStatusTool, setMoodTool]) {
       try {
         const d = ctx.tools.register(t)
         if (typeof d === 'function') disposers.push(d)
@@ -599,6 +873,9 @@ export default {
       if (guideTimer) clearTimeout(guideTimer)
       if (sectionDispose) {
         try { sectionDispose() } catch { /* ignore */ }
+      }
+      if (moodSectionDispose) {
+        try { moodSectionDispose() } catch { /* ignore */ }
       }
       for (const d of disposers) {
         try { d() } catch { /* ignore */ }

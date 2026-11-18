@@ -4413,6 +4413,20 @@ var PAGE_HTML = `<!doctype html>
   }
   #thinkBar.show{opacity:1;transform:translateY(0)}
   #thinkBar .stage{color:var(--warn);margin-right:6px}
+  /* \u5FC3\u60C5\u5FBD\u6807\uFF1A\u5728\u601D\u8003\u6761\u4E0A\u65B9\uFF0C\u7A0D\u6DE1\u4E00\u70B9 */
+  #moodBar{
+    position:absolute;left:8px;right:8px;bottom:34px;z-index:6;pointer-events:none;
+    padding:2px 8px;font-size:11px;letter-spacing:.08em;text-align:right;
+    border:2px solid rgba(0,240,255,.4);background:rgba(4,7,15,.7);color:var(--sea);
+    opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  #moodBar.show{opacity:1;transform:translateY(0)}
+  /* \u7CBE\u529B\u8017\u5C3D\uFF1A\u8FB9\u6846\u6162\u95EA\uFF08\u50CF\u6CA1\u7535\uFF09 */
+  #win-avatar.exhausted{border-color:#6b7f99}
+  #win-avatar.exhausted img{animation:breathe 6s ease-in-out infinite}
+  /* \u751F\u6C14\uFF1A\u8FB9\u6846\u6CDB\u7EA2 */
+  #win-avatar.angry{border-color:var(--bad);box-shadow:0 0 14px rgba(255,77,109,.4)}
   #win-avatar .win-body{
     align-items:center;justify-content:center;cursor:pointer;
     background:
@@ -4574,6 +4588,7 @@ var PAGE_HTML = `<!doctype html>
     </div>
     <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u68C0\u67E5 web/assets/expr/pixel_*.png</small></div>
     <div id="thinkBar"></div>
+    <div id="moodBar"></div>
   </div>
 </div>
 
@@ -5092,6 +5107,33 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 }
 
+/* ================= \u5FC3\u60C5\u8054\u52A8\uFF08PAD\uFF0C\u7531 persona-core \u63A8\u9001\uFF09 ================= */
+// mood \u4E8B\u4EF6\u5F62\u72B6\uFF1A{ mood, expression, energy, pleasure, affection, angryTurns }
+function applyMood(ev){
+  const energy = Number(ev.energy ?? 100)
+  const aff = Number(ev.affection ?? 50)
+  const mood = String(ev.mood || '')
+  // 1) \u7ACB\u7ED8\u6309\u540E\u7AEF\u7ED9\u7684\u8868\u60C5\u6362\uFF08\u4E0D\u6253\u65AD\u8BF4\u8BDD/\u601D\u8003\u6001\uFF09
+  const expr = String(ev.expression || '').trim()
+  if (expr && EXPR_LIST.includes(expr) && !stage.classList.contains('talking') && !exprTimer) {
+    setExpr(expr, 1500)
+  }
+  // 2) \u7ACB\u7ED8\u4E0B\u65B9\u663E\u793A\u72B6\u6001\u5FBD\u6807
+  const bar = $('moodBar')
+  if (bar) {
+    bar.textContent = \`\u{1F497} \${mood}  \u7CBE\u529B \${energy}%  \u4EB2\u5BC6 \${aff}%\`
+    bar.classList.add('show')
+    if (moodBarTimer) clearTimeout(moodBarTimer)
+    moodBarTimer = setTimeout(() => bar.classList.remove('show'), 4000)
+  }
+  // 3) \u6781\u4F4E\u7CBE\u529B\u65F6\u5728\u7A97\u53E3\u8FB9\u6846\u4E0A\u7ED9\u4E2A\u89C6\u89C9\u63D0\u793A\uFF08\u547C\u5438\u66F4\u6162\uFF09
+  const box = $('win-avatar')
+  if (box) box.classList.toggle('exhausted', energy < 20)
+  // 4) \u751F\u6C14\u65F6\u8FB9\u6846\u6CDB\u7EA2
+  if (box) box.classList.toggle('angry', Number(ev.pleasure ?? 0) < -0.35)
+}
+let moodBarTimer = null
+
 /* ================= SSE \u4E8B\u4EF6\u901A\u9053\uFF08\u5E26\u91CD\u8FDE\uFF09 ================= */
 const wsBadge = $('wsBadge')
 function setWsBadge(on){
@@ -5110,6 +5152,9 @@ function connectEvents(){
     switch(ev.type){
       case 'thinking_stage':
         showThinkStage(ev.stage, ev.text)
+        break
+      case 'mood':
+        applyMood(ev)
         break
       case 'chat_reply':
         pushLine('bot', '\u300E\u9CB8\u9C7C\u5A18\u300F ' + (ev.text || ''))

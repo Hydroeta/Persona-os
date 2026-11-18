@@ -132,6 +132,20 @@
   }
   #thinkBar.show{opacity:1;transform:translateY(0)}
   #thinkBar .stage{color:var(--warn);margin-right:6px}
+  /* 心情徽标：在思考条上方，稍淡一点 */
+  #moodBar{
+    position:absolute;left:8px;right:8px;bottom:34px;z-index:6;pointer-events:none;
+    padding:2px 8px;font-size:11px;letter-spacing:.08em;text-align:right;
+    border:2px solid rgba(0,240,255,.4);background:rgba(4,7,15,.7);color:var(--sea);
+    opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  #moodBar.show{opacity:1;transform:translateY(0)}
+  /* 精力耗尽：边框慢闪（像没电） */
+  #win-avatar.exhausted{border-color:#6b7f99}
+  #win-avatar.exhausted img{animation:breathe 6s ease-in-out infinite}
+  /* 生气：边框泛红 */
+  #win-avatar.angry{border-color:var(--bad);box-shadow:0 0 14px rgba(255,77,109,.4)}
   #win-avatar .win-body{
     align-items:center;justify-content:center;cursor:pointer;
     background:
@@ -293,6 +307,7 @@
     </div>
     <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>检查 web/assets/expr/pixel_*.png</small></div>
     <div id="thinkBar"></div>
+    <div id="moodBar"></div>
   </div>
 </div>
 
@@ -811,6 +826,33 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 }
 
+/* ================= 心情联动（PAD，由 persona-core 推送） ================= */
+// mood 事件形状：{ mood, expression, energy, pleasure, affection, angryTurns }
+function applyMood(ev){
+  const energy = Number(ev.energy ?? 100)
+  const aff = Number(ev.affection ?? 50)
+  const mood = String(ev.mood || '')
+  // 1) 立绘按后端给的表情换（不打断说话/思考态）
+  const expr = String(ev.expression || '').trim()
+  if (expr && EXPR_LIST.includes(expr) && !stage.classList.contains('talking') && !exprTimer) {
+    setExpr(expr, 1500)
+  }
+  // 2) 立绘下方显示状态徽标
+  const bar = $('moodBar')
+  if (bar) {
+    bar.textContent = `💗 ${mood}  精力 ${energy}%  亲密 ${aff}%`
+    bar.classList.add('show')
+    if (moodBarTimer) clearTimeout(moodBarTimer)
+    moodBarTimer = setTimeout(() => bar.classList.remove('show'), 4000)
+  }
+  // 3) 极低精力时在窗口边框上给个视觉提示（呼吸更慢）
+  const box = $('win-avatar')
+  if (box) box.classList.toggle('exhausted', energy < 20)
+  // 4) 生气时边框泛红
+  if (box) box.classList.toggle('angry', Number(ev.pleasure ?? 0) < -0.35)
+}
+let moodBarTimer = null
+
 /* ================= SSE 事件通道（带重连） ================= */
 const wsBadge = $('wsBadge')
 function setWsBadge(on){
@@ -829,6 +871,9 @@ function connectEvents(){
     switch(ev.type){
       case 'thinking_stage':
         showThinkStage(ev.stage, ev.text)
+        break
+      case 'mood':
+        applyMood(ev)
         break
       case 'chat_reply':
         pushLine('bot', '『鲸鱼娘』 ' + (ev.text || ''))
