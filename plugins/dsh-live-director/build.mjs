@@ -33,3 +33,4 @@ await build({ ...common, entryPoints: ['src/art-panel.ts'], outfile: 'lib/art-pa
 await build({ ...common, entryPoints: ['src/tts.ts'], outfile: 'lib/tts.js' })
 await build({ ...common, entryPoints: ['src/fan-art.ts'], outfile: 'lib/fan-art.js' })
 await build({ ...common, entryPoints: ['src/report.ts'], outfile: 'lib/report.js' })
+await build({ ...common, entryPoints: ['src/rhythm.ts'], outfile: 'lib/rhythm.js' })

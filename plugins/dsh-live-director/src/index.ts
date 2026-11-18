@@ -22,6 +22,10 @@ import { MemoryClient, buildMemoryPrompt } from './memory'
 import { Perception, shouldCaptureScreen, buildScreenPrompt } from './perception'
 import { playBgm, stopBgm } from './bgm'
 import { reportEventNoWait } from './report'
+import {
+  isComplexInstruction, splitSentence, randInt,
+  withThinkingChain, THINKING_STAGES, STAGE_TEXT,
+} from './rhythm'
 
 const LOG_TAG = '[dsh-live-director]'
 const DANMAKU_PORT = Number(process.env.DSH_LIVE_DIRECTOR_PORT) || 9001
@@ -338,6 +342,21 @@ async function consumeDanmaku(ctx: any, item: QueuedItem): Promise<void> {
   const mem = getMemory()
   const perc = getPerception()
 
+  // 判定复杂度：短句秒回，复杂指令才停顿 + 四步思考链
+  const { complex, reason } = isComplexInstruction(text)
+  console.log(`${LOG_TAG} 复杂度判定：${complex ? '复杂' : '简单'}（${reason}）`)
+
+  if (complex) {
+    // 推四个阶段给面板状态条；文案如实反映动作，不假装上网搜索
+    for (const stage of THINKING_STAGES) {
+      reportEventNoWait({ type: 'thinking_stage', stage, text: STAGE_TEXT[stage] })
+    }
+    // 思考延迟：1.5~4 秒（随机，别让每条都一模一样）
+    const delay = randInt(1500, 4000)
+    console.log(`${LOG_TAG} 思考停顿 ${delay}ms`)
+    await new Promise<void>((r) => setTimeout(r, delay))
+  }
+
   // 1) 查观众记忆（3s 超时，失败降级为空，不阻塞）
   const userContext = mem ? await mem.getUserContext(user) : ''
 
@@ -348,14 +367,46 @@ async function consumeDanmaku(ctx: any, item: QueuedItem): Promise<void> {
   }
 
   // 3) 组装 LLM 请求（记忆进 System Prompt，画面进 User 上下文）
-  const messages = buildChatMessages({ user, text, userContext, screenContext })
+  const effectiveText = complex ? withThinkingChain(text) : text
+  const messages = buildChatMessages({ user, text: effectiveText, userContext, screenContext })
   const fallback = `收到「${user}」的「${text}」啦，安排上！`
   const reply = await chatWithMessages(ctx, messages, fallback)
 
-  speak(reply, { priority: item.priority, user, hasMemory: !!userContext, hasScreen: !!screenContext })
+  // 4) 分段播出：按标点切短句，一句一句推给面板（而不是一次性糊满屏）
+  await speakSegmented(reply, {
+    priority: item.priority, user,
+    hasMemory: !!userContext, hasScreen: !!screenContext, complex,
+  })
 
-  // 4) 异步存入记忆库（fire-and-forget，不阻塞响应）
+  // 5) 异步存入记忆库（fire-and-forget，不阻塞响应）
   mem?.saveUserInteraction(user, text)
+}
+
+/**
+ * 分段播出：把整段回复切成短句，每句间隔 0.5~1.5 秒推给面板。
+ * 面板的弹幕流因此会"一行一行蹦出来"，而不是一次性糊满屏。
+ */
+async function speakSegmented(text: string, meta: Record<string, unknown> = {}): Promise<void> {
+  const parts = splitSentence(text)
+  if (parts.length <= 1) {
+    speak(text, meta)
+    return
+  }
+  console.log(`${LOG_TAG} 分段播出：${parts.length} 段`)
+  for (let i = 0; i < parts.length; i++) {
+    // 第一段立刻出（前面可能已经有思考延迟了），后续每段等 0.5~1.5 秒
+    if (i > 0) {
+      await new Promise<void>((r) => setTimeout(r, randInt(500, 1500)))
+    }
+    reportEventNoWait({
+      type: 'chat_reply', text: parts[i], user: String(meta.user ?? ''),
+      meta: { ...meta, segment: i + 1, total: parts.length },
+    })
+    console.log(`${LOG_TAG} 🔊 [${i + 1}/${parts.length}] ${parts[i]}`)
+  }
+  director?.markInteraction()
+  // 拟声词建议按整段判断一次即可
+  void planVoiceFx(text)
 }
 
 // ---------------------------------------------------------------------------

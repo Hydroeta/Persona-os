@@ -96,6 +96,16 @@
   .win-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
 
   /* 立绘窗 */
+  /* 思考状态条：立绘底部的小 HUD，只在复杂指令时出现，1.5 秒后淡出 */
+  #thinkBar{
+    position:absolute;left:8px;right:8px;bottom:8px;z-index:6;pointer-events:none;
+    padding:3px 8px;font-size:12px;letter-spacing:.1em;
+    border:2px solid var(--cyan);background:rgba(4,7,15,.82);color:var(--cyan);
+    opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  #thinkBar.show{opacity:1;transform:translateY(0)}
+  #thinkBar .stage{color:var(--warn);margin-right:6px}
   #win-avatar .win-body{
     align-items:center;justify-content:center;cursor:pointer;
     background:
@@ -254,6 +264,7 @@
            onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
     </div>
     <div class="fallback" id="avatarFallback" style="display:none">立绘未就位<br><small>检查 web/assets/expr/pixel_*.png</small></div>
+    <div id="thinkBar"></div>
   </div>
 </div>
 
@@ -674,6 +685,23 @@ function stopTalking(){
   setExpr(EXPR_DEFAULT)
 }
 
+/* ================= 思考状态条（复杂指令时才出现） ================= */
+let thinkTimer = null
+const THINK_EXPR = { 定向: 'nervous', 深挖: 'puzzled', 借力: 'sleepy', 实践: 'starry' }
+function showThinkStage(stage, text){
+  const bar = $('thinkBar')
+  if (!bar) return
+  bar.innerHTML = '<span class="stage">[' + escapeHtml(stage || '') + ']</span>' + escapeHtml(text || '')
+  bar.classList.add('show')
+  // 阶段联动立绘表情（不打断说话态）
+  if (!stage.classList.contains('talking') && THINK_EXPR[stage]) setExpr(THINK_EXPR[stage], 1200)
+  if (thinkTimer) clearTimeout(thinkTimer)
+  thinkTimer = setTimeout(() => { bar.classList.remove('show'); thinkTimer = null }, 1500)
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+}
+
 /* ================= SSE 事件通道（带重连） ================= */
 const wsBadge = $('wsBadge')
 function setWsBadge(on){
@@ -690,6 +718,9 @@ function connectEvents(){
     try { ev = JSON.parse(e.data) } catch(_) { return }
     if (!ev || !ev.type) return
     switch(ev.type){
+      case 'thinking_stage':
+        showThinkStage(ev.stage, ev.text)
+        break
       case 'chat_reply':
         pushLine('bot', '『鲸鱼娘』 ' + (ev.text || ''))
         if (ev.text) startTalking()

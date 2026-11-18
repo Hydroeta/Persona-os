@@ -4219,6 +4219,16 @@ var PAGE_HTML = `<!doctype html>
   .win-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
 
   /* \u7ACB\u7ED8\u7A97 */
+  /* \u601D\u8003\u72B6\u6001\u6761\uFF1A\u7ACB\u7ED8\u5E95\u90E8\u7684\u5C0F HUD\uFF0C\u53EA\u5728\u590D\u6742\u6307\u4EE4\u65F6\u51FA\u73B0\uFF0C1.5 \u79D2\u540E\u6DE1\u51FA */
+  #thinkBar{
+    position:absolute;left:8px;right:8px;bottom:8px;z-index:6;pointer-events:none;
+    padding:3px 8px;font-size:12px;letter-spacing:.1em;
+    border:2px solid var(--cyan);background:rgba(4,7,15,.82);color:var(--cyan);
+    opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  #thinkBar.show{opacity:1;transform:translateY(0)}
+  #thinkBar .stage{color:var(--warn);margin-right:6px}
   #win-avatar .win-body{
     align-items:center;justify-content:center;cursor:pointer;
     background:
@@ -4377,6 +4387,7 @@ var PAGE_HTML = `<!doctype html>
            onerror="this.style.display='none';document.getElementById('avatarFallback').style.display='block'">
     </div>
     <div class="fallback" id="avatarFallback" style="display:none">\u7ACB\u7ED8\u672A\u5C31\u4F4D<br><small>\u68C0\u67E5 web/assets/expr/pixel_*.png</small></div>
+    <div id="thinkBar"></div>
   </div>
 </div>
 
@@ -4797,6 +4808,23 @@ function stopTalking(){
   setExpr(EXPR_DEFAULT)
 }
 
+/* ================= \u601D\u8003\u72B6\u6001\u6761\uFF08\u590D\u6742\u6307\u4EE4\u65F6\u624D\u51FA\u73B0\uFF09 ================= */
+let thinkTimer = null
+const THINK_EXPR = { \u5B9A\u5411: 'nervous', \u6DF1\u6316: 'puzzled', \u501F\u529B: 'sleepy', \u5B9E\u8DF5: 'starry' }
+function showThinkStage(stage, text){
+  const bar = $('thinkBar')
+  if (!bar) return
+  bar.innerHTML = '<span class="stage">[' + escapeHtml(stage || '') + ']</span>' + escapeHtml(text || '')
+  bar.classList.add('show')
+  // \u9636\u6BB5\u8054\u52A8\u7ACB\u7ED8\u8868\u60C5\uFF08\u4E0D\u6253\u65AD\u8BF4\u8BDD\u6001\uFF09
+  if (!stage.classList.contains('talking') && THINK_EXPR[stage]) setExpr(THINK_EXPR[stage], 1200)
+  if (thinkTimer) clearTimeout(thinkTimer)
+  thinkTimer = setTimeout(() => { bar.classList.remove('show'); thinkTimer = null }, 1500)
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+}
+
 /* ================= SSE \u4E8B\u4EF6\u901A\u9053\uFF08\u5E26\u91CD\u8FDE\uFF09 ================= */
 const wsBadge = $('wsBadge')
 function setWsBadge(on){
@@ -4813,6 +4841,9 @@ function connectEvents(){
     try { ev = JSON.parse(e.data) } catch(_) { return }
     if (!ev || !ev.type) return
     switch(ev.type){
+      case 'thinking_stage':
+        showThinkStage(ev.stage, ev.text)
+        break
       case 'chat_reply':
         pushLine('bot', '\u300E\u9CB8\u9C7C\u5A18\u300F ' + (ev.text || ''))
         if (ev.text) startTalking()
