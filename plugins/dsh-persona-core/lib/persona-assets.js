@@ -66,7 +66,7 @@ function loadPersonaAssets(opts = {}) {
     id,
     displayName: String(assets.display_name || identity.self_name || id),
     exprDir: resolveInRoot(root, exprDirRel),
-    exprPrefix: String(assets.expr_prefix || "pixel_"),
+    exprPrefix: typeof assets.expr_prefix === "string" ? assets.expr_prefix : "pixel_",
     themeColor: String(assets.theme_color || "#00F0FF"),
     themeSea: String(assets.theme_sea || "#5BC0BE"),
     ttsRefAudio: refRel ? resolveExisting(root, refRel) : "",

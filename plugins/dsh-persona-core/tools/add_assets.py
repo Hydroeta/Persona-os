@@ -23,6 +23,7 @@ ASSETS = {
     "ohwhale": {
         "$comment": "面板/前端用的视觉资产。相对路径一律相对仓库根（PERSONA_OS_ROOT）。",
         "display_name": "鲸鲸",
+        "style": "pixel",
         "expr_dir": "plugins/dsh-control-center/web/assets/expr",
         "expr_prefix": "pixel_",
         "theme_color": "#00F0FF",
@@ -31,9 +32,9 @@ ASSETS = {
     "mortis": {
         "$comment": "面板/前端用的视觉资产。相对路径一律相对仓库根（PERSONA_OS_ROOT）。",
         "display_name": "Mortis",
-        # mortis 还没有自己的表情差分，先共用同一目录；等她有了改这里即可
-        "expr_dir": "plugins/dsh-control-center/web/assets/expr",
-        "expr_prefix": "pixel_",
+        "style": "hd",
+        "expr_dir": "plugins/dsh-control-center/web/assets/expr_mortis",
+        "expr_prefix": "",
         "theme_color": "#C77DFF",
         "theme_sea": "#9D4EDD",
     },

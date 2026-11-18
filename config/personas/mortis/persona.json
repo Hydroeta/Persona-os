@@ -134,8 +134,9 @@
   "assets": {
     "$comment": "面板/前端用的视觉资产。相对路径一律相对仓库根（PERSONA_OS_ROOT）。",
     "display_name": "Mortis",
-    "expr_dir": "plugins/dsh-control-center/web/assets/expr",
-    "expr_prefix": "pixel_",
+    "style": "hd",
+    "expr_dir": "plugins/dsh-control-center/web/assets/expr_mortis",
+    "expr_prefix": "",
     "theme_color": "#C77DFF",
     "theme_sea": "#9D4EDD"
   }

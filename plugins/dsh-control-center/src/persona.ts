@@ -15,6 +15,8 @@ import { join, resolve, isAbsolute } from 'node:path'
 export interface PanelPersona {
   id: string
   displayName: string
+  /** 'pixel' = 像素图（硬边、nearest 放大）；'hd' = 高清图（平滑缩放） */
+  style: 'pixel' | 'hd'
   /** 表情目录（相对 URL，形如 /persona-expr），前端拼 `${exprBase}/${prefix}xxx.png` */
   exprUrlBase: string
   /** 表情目录的绝对路径（用于静态文件映射） */
@@ -89,7 +91,9 @@ export function loadPanelPersona(opts: LoadPersonaOptions = {}): PanelPersona {
   const identity = (persona?.identity && typeof persona.identity === 'object') ? persona.identity : {}
 
   const exprDirRel = String(assets.expr_dir || 'plugins/dsh-control-center/web/assets/expr')
-  const prefix = String(assets.expr_prefix || 'pixel_')
+  // 注意：expr_prefix 允许是**空字符串**（高清立绘不带前缀），
+  // 所以不能用 `assets.expr_prefix || 'pixel_'` —— 那会把空串当缺失。
+  const prefix = typeof assets.expr_prefix === 'string' ? assets.expr_prefix : 'pixel_'
   const exprDirAbs = isAbsolute(exprDirRel) ? exprDirRel : resolve(root, exprDirRel)
 
   return {
@@ -98,6 +102,7 @@ export function loadPanelPersona(opts: LoadPersonaOptions = {}): PanelPersona {
     exprUrlBase: '/persona-expr',
     exprDirAbs,
     exprPrefix: prefix,
+    style: String(assets.style || 'pixel').toLowerCase() === 'hd' ? 'hd' : 'pixel',
     themeColor: String(assets.theme_color || '#00F0FF'),
     themeSea: String(assets.theme_sea || '#5BC0BE'),
     expressions: listExpressions(exprDirAbs, prefix),

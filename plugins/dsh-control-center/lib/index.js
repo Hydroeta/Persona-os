@@ -4165,7 +4165,7 @@ function loadPanelPersona(opts = {}) {
   const assets = persona?.assets && typeof persona.assets === "object" ? persona.assets : {};
   const identity = persona?.identity && typeof persona.identity === "object" ? persona.identity : {};
   const exprDirRel = String(assets.expr_dir || "plugins/dsh-control-center/web/assets/expr");
-  const prefix = String(assets.expr_prefix || "pixel_");
+  const prefix = typeof assets.expr_prefix === "string" ? assets.expr_prefix : "pixel_";
   const exprDirAbs = isAbsolute(exprDirRel) ? exprDirRel : resolve(root, exprDirRel);
   return {
     id,
@@ -4173,6 +4173,7 @@ function loadPanelPersona(opts = {}) {
     exprUrlBase: "/persona-expr",
     exprDirAbs,
     exprPrefix: prefix,
+    style: String(assets.style || "pixel").toLowerCase() === "hd" ? "hd" : "pixel",
     themeColor: String(assets.theme_color || "#00F0FF"),
     themeSea: String(assets.theme_sea || "#5BC0BE"),
     expressions: listExpressions(exprDirAbs, prefix)
@@ -4529,6 +4530,11 @@ var PAGE_HTML = `<!doctype html>
     transform:translate(var(--look-x,0px),var(--look-y,0px));transition:transform .18s ease-out;position:relative;z-index:1}
   #avatarImg{height:92%;width:auto;max-width:92%;object-fit:contain;object-position:center bottom;
     display:block;animation:breathe 3.6s ease-in-out infinite}
+  /* \u6E32\u67D3\u65B9\u5F0F\u8DDF\u7740\u89D2\u8272\u8D70\uFF1A\u50CF\u7D20\u56FE\u8981 nearest \u786C\u8FB9\uFF0C\u9AD8\u6E05\u56FE\u8981\u5E73\u6ED1\u7F29\u653E\uFF08\u5426\u5219\u4F1A\u6709\u952F\u9F7F\uFF09 */
+  #win-avatar.style-pixel #avatarImg{image-rendering:pixelated}
+  #win-avatar.style-hd #avatarImg{image-rendering:auto;filter:drop-shadow(0 4px 14px rgba(0,0,0,.45))}
+  /* \u9AD8\u6E05\u56FE\u5728\u65B9\u5F62\u6846\u91CC\u901A\u5E38\u6BD4\u50CF\u7D20\u56FE\u7A84\uFF0C\u7ED9\u4E00\u70B9\u6A2A\u5411\u4F59\u91CF\uFF0C\u907F\u514D\u8D34\u7740\u8FB9\u6846 */
+  #win-avatar.style-hd #avatarImg{max-width:100%;height:96%}
   #avatarStage.talking #avatarImg{animation:talkBob .15s steps(2,end) infinite}
   @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
   @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
@@ -5132,12 +5138,13 @@ async function loadPersona(){
     const p = await r.json()
     if (!p.ok) throw new Error(p.error || '\u63A5\u53E3\u8FD4\u56DE\u5931\u8D25')
     EXPR_BASE = (p.exprUrlBase || '/persona-expr') + '/'
-    EXPR_PREFIX = p.exprPrefix || 'pixel_'
+    EXPR_PREFIX = p.exprPrefix ?? 'pixel_'
     if (Array.isArray(p.expressions) && p.expressions.length) {
       EXPR_LIST = p.expressions
       // \u9ED8\u8BA4\u6001\u4F18\u5148 smile\uFF0C\u6CA1\u6709\u5C31\u7528\u7B2C\u4E00\u4E2A
       EXPR_DEFAULT = EXPR_LIST.includes('smile') ? 'smile' : EXPR_LIST[0]
     }
+    applyStyle(p.style)
     applyTheme(p.themeColor, p.themeSea, p.displayName)
     preloadAll()
     img.src = exprUrl(EXPR_DEFAULT)
@@ -5151,6 +5158,15 @@ async function loadPersona(){
   }
 }
 
+/** \u6E32\u67D3\u98CE\u683C\uFF1A\u50CF\u7D20 vs \u9AD8\u6E05\uFF08\u53EA\u5207 CSS \u7C7B\uFF0C\u4E0D\u52A8\u7ED3\u6784\uFF09 */
+function applyStyle(style){
+  const box = $('win-avatar')
+  if (!box) return
+  const hd = String(style || '').toLowerCase() === 'hd'
+  box.classList.toggle('style-hd', hd)
+  box.classList.toggle('style-pixel', !hd)
+}
+
 /** \u4E3B\u9898\u8272\u4ECE\u89D2\u8272\u914D\u7F6E\u6765\uFF1A\u53EA\u6539 CSS \u53D8\u91CF\uFF0C\u4E0D\u52A8\u7ED3\u6784 */
 function applyTheme(color, sea, name){
   if (color) document.documentElement.style.setProperty('--cyan', color)
@@ -5159,8 +5175,11 @@ function applyTheme(color, sea, name){
 }
 
 function setExpr(name, holdMs){
-  if (!EXPR_LIST.includes(name)) return
-  img.src = exprUrl(name)
+  // \u89D2\u8272\u53EF\u80FD\u53EA\u6709\u5C11\u6570\u51E0\u5F20\u8868\u60C5\uFF08\u6BD4\u5982 mortis \u53EA\u6709 content\uFF09\uFF1A\u7F3A\u54EA\u5F20\u5C31\u9000\u56DE\u9ED8\u8BA4\uFF0C
+  // \u800C\u4E0D\u662F\u9759\u9ED8\u4EC0\u4E48\u90FD\u4E0D\u505A\u2014\u2014\u5426\u5219\u5207\u8868\u60C5\u770B\u8D77\u6765"\u5361\u4F4F\u4E86"\u3002
+  const target = EXPR_LIST.includes(name) ? name : EXPR_DEFAULT
+  if (!EXPR_LIST.includes(target)) return
+  img.src = exprUrl(target)
   if (holdMs) {
     if (exprTimer) clearTimeout(exprTimer)
     exprTimer = setTimeout(() => { exprTimer = null; setExpr(EXPR_DEFAULT) }, holdMs)

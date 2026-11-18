@@ -4165,7 +4165,7 @@ function loadPanelPersona(opts = {}) {
   const assets = persona?.assets && typeof persona.assets === "object" ? persona.assets : {};
   const identity = persona?.identity && typeof persona.identity === "object" ? persona.identity : {};
   const exprDirRel = String(assets.expr_dir || "plugins/dsh-control-center/web/assets/expr");
-  const prefix = String(assets.expr_prefix || "pixel_");
+  const prefix = typeof assets.expr_prefix === "string" ? assets.expr_prefix : "pixel_";
   const exprDirAbs = isAbsolute(exprDirRel) ? exprDirRel : resolve(root, exprDirRel);
   return {
     id,
@@ -4173,6 +4173,7 @@ function loadPanelPersona(opts = {}) {
     exprUrlBase: "/persona-expr",
     exprDirAbs,
     exprPrefix: prefix,
+    style: String(assets.style || "pixel").toLowerCase() === "hd" ? "hd" : "pixel",
     themeColor: String(assets.theme_color || "#00F0FF"),
     themeSea: String(assets.theme_sea || "#5BC0BE"),
     expressions: listExpressions(exprDirAbs, prefix)

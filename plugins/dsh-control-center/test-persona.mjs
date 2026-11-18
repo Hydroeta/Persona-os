@@ -70,7 +70,26 @@ check('bob 列出它自己的 2 个表情', b.expressions.length === 2, b.expres
 check('bob 没配 display_name 时回退 self_name', b.displayName === 'BOB', b.displayName)
 check('bob 没配 theme_sea 时有默认值', b.themeSea === '#5BC0BE', b.themeSea)
 
-// ---------- 4. active.json 改了立刻生效（不需要重启）----------
+// ---------- 4.5 style 与「空前缀」（高清立绘不带前缀）----------
+// 造一个 hd 角色：前缀为空、只有 content.png
+const exprHd = join(root, 'assets', 'exprHd')
+mkdirSync(exprHd, { recursive: true })
+writeFileSync(join(exprHd, 'content.png'), 'x')
+mkdirSync(join(personas, 'carol'), { recursive: true })
+writeFileSync(join(personas, 'carol', 'persona.json'), JSON.stringify({
+  id: 'carol', identity: { self_name: 'Carol' },
+  assets: { style: 'hd', expr_dir: 'assets/exprHd', expr_prefix: '', theme_color: '#C77DFF' },
+}, null, 2), 'utf-8')
+
+const carol = loadPanelPersona({ osRoot: root, personaId: 'carol' })
+check('style=hd 被读到', carol.style === 'hd', carol.style)
+check('**空前缀不会被默认值吃掉**', carol.exprPrefix === '', JSON.stringify(carol.exprPrefix))
+check('空前缀下能列出无前缀的表情', carol.expressions.length === 1 && carol.expressions[0] === 'content',
+  carol.expressions.join(','))
+check('alice 是 pixel 风格', a.style === 'pixel', a.style)
+check('未配 style 时默认 pixel', b.style === 'pixel', b.style)
+
+// ---------- 5. active.json 改了立刻生效（不需要重启）----------
 writeFileSync(join(personas, 'active.json'), JSON.stringify({ active_id: 'bob' }), 'utf-8')
 const afterSwitch = loadPanelPersona({ osRoot: root })
 check('改 active.json 后立刻读到 bob', afterSwitch.id === 'bob', afterSwitch.id)

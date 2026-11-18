@@ -161,6 +161,11 @@
     transform:translate(var(--look-x,0px),var(--look-y,0px));transition:transform .18s ease-out;position:relative;z-index:1}
   #avatarImg{height:92%;width:auto;max-width:92%;object-fit:contain;object-position:center bottom;
     display:block;animation:breathe 3.6s ease-in-out infinite}
+  /* 渲染方式跟着角色走：像素图要 nearest 硬边，高清图要平滑缩放（否则会有锯齿） */
+  #win-avatar.style-pixel #avatarImg{image-rendering:pixelated}
+  #win-avatar.style-hd #avatarImg{image-rendering:auto;filter:drop-shadow(0 4px 14px rgba(0,0,0,.45))}
+  /* 高清图在方形框里通常比像素图窄，给一点横向余量，避免贴着边框 */
+  #win-avatar.style-hd #avatarImg{max-width:100%;height:96%}
   #avatarStage.talking #avatarImg{animation:talkBob .15s steps(2,end) infinite}
   @keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
   @keyframes talkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
@@ -764,12 +769,13 @@ async function loadPersona(){
     const p = await r.json()
     if (!p.ok) throw new Error(p.error || '接口返回失败')
     EXPR_BASE = (p.exprUrlBase || '/persona-expr') + '/'
-    EXPR_PREFIX = p.exprPrefix || 'pixel_'
+    EXPR_PREFIX = p.exprPrefix ?? 'pixel_'
     if (Array.isArray(p.expressions) && p.expressions.length) {
       EXPR_LIST = p.expressions
       // 默认态优先 smile，没有就用第一个
       EXPR_DEFAULT = EXPR_LIST.includes('smile') ? 'smile' : EXPR_LIST[0]
     }
+    applyStyle(p.style)
     applyTheme(p.themeColor, p.themeSea, p.displayName)
     preloadAll()
     img.src = exprUrl(EXPR_DEFAULT)
@@ -783,6 +789,15 @@ async function loadPersona(){
   }
 }
 
+/** 渲染风格：像素 vs 高清（只切 CSS 类，不动结构） */
+function applyStyle(style){
+  const box = $('win-avatar')
+  if (!box) return
+  const hd = String(style || '').toLowerCase() === 'hd'
+  box.classList.toggle('style-hd', hd)
+  box.classList.toggle('style-pixel', !hd)
+}
+
 /** 主题色从角色配置来：只改 CSS 变量，不动结构 */
 function applyTheme(color, sea, name){
   if (color) document.documentElement.style.setProperty('--cyan', color)
@@ -791,8 +806,11 @@ function applyTheme(color, sea, name){
 }
 
 function setExpr(name, holdMs){
-  if (!EXPR_LIST.includes(name)) return
-  img.src = exprUrl(name)
+  // 角色可能只有少数几张表情（比如 mortis 只有 content）：缺哪张就退回默认，
+  // 而不是静默什么都不做——否则切表情看起来"卡住了"。
+  const target = EXPR_LIST.includes(name) ? name : EXPR_DEFAULT
+  if (!EXPR_LIST.includes(target)) return
+  img.src = exprUrl(target)
   if (holdMs) {
     if (exprTimer) clearTimeout(exprTimer)
     exprTimer = setTimeout(() => { exprTimer = null; setExpr(EXPR_DEFAULT) }, holdMs)

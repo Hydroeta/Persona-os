@@ -16,6 +16,9 @@ models/
 backups/
 config/state.json
 config/personas/*/state.json
+# PAD 情绪状态：本地运行时数据，各角色一份，不入库
+config/moods/
+**/mood_state.json
 **/_forgotten/
 **/call_metrics.jsonl
 **/memory_audit.jsonl

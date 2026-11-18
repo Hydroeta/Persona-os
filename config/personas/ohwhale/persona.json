@@ -112,6 +112,7 @@
   "assets": {
     "$comment": "面板/前端用的视觉资产。相对路径一律相对仓库根（PERSONA_OS_ROOT）。",
     "display_name": "鲸鲸",
+    "style": "pixel",
     "expr_dir": "plugins/dsh-control-center/web/assets/expr",
     "expr_prefix": "pixel_",
     "theme_color": "#00F0FF",
