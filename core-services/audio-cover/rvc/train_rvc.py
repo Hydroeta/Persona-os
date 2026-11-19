@@ -89,16 +89,17 @@ def run(cmd: list[str], cwd: Path, step: str) -> None:
     log(f"✔ {step} 完成，用时 {time.time() - started:.0f}s")
 
 
-def done_marker(work: Path, name: str) -> Path:
-    return work / f"{name}.done"
+def done_marker(work: Path, step: str) -> Path:
+    """步骤完成标记文件：<work>/.<step>.done"""
+    return work / f".{step}.done"
 
 
-def step_done(work: Path, name: str, step: str) -> bool:
-    return done_marker(work, name).joinpath(step).exists() if False else (work / f".{step}.done").exists()
+def step_done(work: Path, step: str) -> bool:
+    return done_marker(work, step).exists()
 
 
 def mark(work: Path, step: str) -> None:
-    (work / f".{step}.done").write_text(str(time.time()), encoding="utf-8")
+    done_marker(work, step).write_text(str(time.time()), encoding="utf-8")
 
 
 def find_python(explicit: str | None) -> str:

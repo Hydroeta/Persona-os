@@ -53,7 +53,7 @@
 - 🖍️ **笔触堆叠排线**（`core-services/painter/test_stroke.py`，离线出片）：网格采样取「颜色 + 纹理方向」，每格叠 N 笔排线（格内位置/角度/长度各自随机、明暗 ±14%），几万根铺满白纸出**油画/素描质感**；参数 `--step`（密度）/`--pen`（笔宽）/`--layers`（叠笔）/`--length-k`（笔长），定稿组合 `step4/pen0.6/layers3` = 54831 笔 / 20 秒。
 - 🔀 **LLM 智能路由**（`dsh-llm-router`）：长上下文/后台静默任务走本地 Ollama 省成本，主对话走 DeepSeek。
 - 🧬 **人格自进化**（`dsh-self-play`）：每天 03:00 复盘角色近期回复，本地 Ollama 审查 AI 味 / 客服腔，提炼负向指令自动追加到 `config/personas/<id>/rules.json`（先备份再写入、去重、原子写）；Ollama 离线或 3s 超时时安全降级，绝不崩溃、绝不误写。
-- 🎤 **实时 AI 翻唱**（`dsh-audio-cover` + `audio-cover` :8005）：弹幕 `!翻唱 <歌名>` 开唱、`!停唱` 收工；音频走 `VB-CABLE` 闭环，OBS 伴奏可联动；RVC 推理放在独立常驻 worker 里，模型缺失/超时一律回退直通不停播。
+- 🎤 **实时 AI 翻唱**（`dsh-audio-cover` + `audio-cover` :8005）：弹幕 `!翻唱 <歌名>` 开唱、`!停唱` 收工；音频走 `VB-CABLE` 闭环，OBS 伴奏可联动；RVC 推理放在独立常驻 worker 里，模型缺失/超时一律回退直通不停播。仓库自带 `rvc/train_rvc.py` 训练流水线和 `rvc/export_rvc_checkpoint.py` 导出器——**训练产出的 `G_*.pth` 不能直接推理**，要重排成 `{weight, config, f0, version}` 并把 `config` 展平成 18 个位置参数才能被 `infer/rtrvc.py` 读；索引必须放纯 ASCII 路径（faiss 打不开中文路径）。
 - 🌦️ **环境感知**（`dsh-persona-core`）：每 2 小时取天气、每 60 秒读显卡温度/显存，作为隐藏上下文注入——她知道外面在下雨、也知道自己这块卡快烧了。
 - 🎙️ **拟声词引擎**（`voice_fx.py`）：叹气/轻笑/哈欠与语音 30ms 交叉淡化后拼接，给 TTS 补上「呼吸感」。
 - 💭 **内心潜台词**（`inner_thoughts` 独立表）：夜间用本地 Ollama 复盘当天素材，生成第一人称「没说出口的心里话」；只影响语气、禁止当事实转述，第二天她会用欲言又止的方式流露。

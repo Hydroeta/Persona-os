@@ -37,6 +37,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+# RVC 仓库里 infer/rtrvc.py 等模块写死了相对路径（./i18n/locale/xx.json），
+# 所以导入前必须切到仓库根目录，并把仓库根加进 sys.path。
+RVC_REPO = os.environ.get("RVC_REPO") or ""
+if not RVC_REPO:
+    _cands = [
+        os.path.join(os.path.dirname(HERE), "..", "..", "..", "svc",
+                     "Retrieval-based-Voice-Conversion-WebUI-main"),
+        r"C:\Users\79365\Desktop\新建文件夹 (2)\svc\Retrieval-based-Voice-Conversion-WebUI-main",
+    ]
+    for _c in _cands:
+        _c = os.path.abspath(_c)
+        if os.path.isdir(_c):
+            RVC_REPO = _c
+            break
+if RVC_REPO and os.path.isdir(RVC_REPO):
+    if RVC_REPO not in sys.path:
+        sys.path.insert(0, RVC_REPO)
+    try:
+        os.chdir(RVC_REPO)
+    except OSError:
+        pass
+
 TAG_J = b"J"
 TAG_A = b"A"
 
@@ -75,6 +97,21 @@ def send_audio(pcm: np.ndarray) -> None:
     send(TAG_A, pcm.astype(np.int16).tobytes())
 
 
+def _fit_length(pcm: np.ndarray, target: int) -> np.ndarray:
+    """把输出裁/补到与输入块等长，保证流式拼接不错位。"""
+    if target <= 0:
+        return np.zeros(0, dtype=np.int16)
+    pcm = np.asarray(pcm, dtype=np.int16).flatten()
+    if pcm.size == target:
+        return pcm
+    if pcm.size > target:
+        return pcm[:target]
+    if pcm.size == 0:
+        return np.zeros(target, dtype=np.int16)
+    tail = np.repeat(pcm[-1:], target - pcm.size)
+    return np.concatenate([pcm, tail]).astype(np.int16)
+
+
 # ---------------------------------------------------------------------------
 # 引擎
 # ---------------------------------------------------------------------------
@@ -91,7 +128,7 @@ class Engine:
         self.calls = 0
 
     def load(self, model_path: str, index_path: str = "", pitch: int = 0,
-             f0method: str = "rmvpe", device: str = "cpu", is_half: bool = False) -> dict:
+             f0method: str = "rmvpe", device: str = "cuda", is_half: bool = True) -> dict:
         import time
         t0 = time.perf_counter()
         self.pitch = int(pitch)
@@ -128,14 +165,17 @@ class Engine:
             _log("RVC 构造完成")
             self.tgt_sr = int(getattr(self.rvc, "tgt_sr", 40000))
             # 预热：跑一块静音，避免第一块超时（RVC_NO_WARMUP=1 可跳过，便于定位加载问题）
+            # 实测：rmvpe 第一次推理要 6~8 秒（加载模型权重），预热后每 200ms 块仅 0.1 秒。
             if os.environ.get('RVC_NO_WARMUP', '0') != '1':
-                warm = np.zeros(16000 // 3, dtype=np.int16)
+                warm = np.zeros(16000 * 2, dtype=np.int16)
                 self._infer_real(warm)
                 _log('warmup ok')
             self.mock = False
             note = "真实 RVC 引擎已加载"
         except Exception as exc:
             note = f"RVC 加载失败，降级 mock 变调：{type(exc).__name__}: {exc}"
+            _log(f'FAILED {type(exc).__name__}: {exc}')
+            _log(traceback.format_exc()[-1200:])
             self.rvc = None
             self.mock = True
         _log(f'returning ready mock={self.mock} tgt_sr={self.tgt_sr}')
@@ -155,12 +195,19 @@ class Engine:
         x = pcm16.astype(np.float32) / 32768.0
         tensor = torch.from_numpy(x).to(self.rvc.device)
         n = int(tensor.numel())
-        out = self.rvc.infer(tensor, n, 0, n, self.f0method)
+        # rtrvc.infer(tensor, sid, skip_head, return_length, f0_method)
+        # 注意：skip_head / return_length 的单位是**帧**，不是采样点（早期版本按采样点传，
+        # 100 倍放大直接把显存打爆 / 只出哗啦声）。这里按 16k 输入帧数传，输出长度由
+        # tgt_sr/16000 的比例决定，调用方只取与输入对齐的部分。
+        n_frames = max(1, n // 160)  # 16k 输入 -> 100fps 帧
+        out = self.rvc.infer(tensor, n, 0, n_frames, self.f0method)
         if isinstance(out, tuple):
             out = out[0]
         if hasattr(out, "detach"):
             out = out.detach().cpu().numpy()
         out = np.asarray(out, dtype=np.float32).flatten()
+        if out.size == 0:
+            return np.zeros(0, dtype=np.int16)
         return np.clip(out * 32767.0, -32768, 32767).astype(np.int16)
 
     # -- mock 变调（仅验证链路）---------------------------------------------
@@ -180,6 +227,7 @@ class Engine:
     def process(self, pcm16: np.ndarray) -> np.ndarray:
         import time
         t0 = time.perf_counter()
+        in_len = int(pcm16.size)
         if self.rvc is not None:
             try:
                 out = self._infer_real(pcm16)
@@ -195,7 +243,7 @@ class Engine:
         if self.calls % 50 == 0:
             send_json({"event": "stats", "infer_ms": round(self.infer_ms, 1), "calls": self.calls,
                        "mock": self.mock, "tgt_sr": self.tgt_sr})
-        return out
+        return _fit_length(out, in_len)
 
 
 def main() -> None:
@@ -221,7 +269,8 @@ def main() -> None:
                     send_json(eng.load(
                         msg.get("model_path", ""), msg.get("index_path", ""),
                         int(msg.get("pitch", 0)), msg.get("f0method", "rmvpe"),
-                        msg.get("device", "cpu"), bool(msg.get("is_half", False)),
+                        msg.get("device") or os.environ.get("RVC_DEVICE", "cuda"),
+                        bool(msg.get("is_half", True)),
                     ))
                 except Exception as exc:
                     send_json({"event": "error", "error": f"{type(exc).__name__}: {exc}",
